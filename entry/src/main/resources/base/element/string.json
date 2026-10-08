@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "app_name",
+      "value": "武科大助手"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "label"
+    },
+    {
+      "name": "permission_read_media_reason",
+      "value": "用于读取头像和图片缓存，以优化图片加载体验"
+    }
+  ]
+}

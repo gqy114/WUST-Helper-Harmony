@@ -1,0 +1,11 @@
+{
+  "src": [
+    "pages/splash/LaunchPage",
+    "pages/login/LoginPage",
+    "pages/main/MainPage",
+    "pages/campus/grade/GradePage",
+    "pages/library/LibraryPage",
+    "pages/mine/MinePage",
+    "pages/course/CoursePage"
+  ]
+}
