@@ -34,7 +34,7 @@ export class ApiService {
         student_type: 'undergrad',
       });
     }
-const { data } = await HttpRequest.postForm<BaseResponse<TokenDataContent>>(
+const { data } = await HttpRequest.postJson<BaseResponse<TokenDataContent>>(
       UG_LOGIN_V2,
       { username: studentId, password },
     );
@@ -60,7 +60,7 @@ const { data } = await HttpRequest.postForm<BaseResponse<TokenDataContent>>(
         idNumber: '420106200301010000',
       });
     }
-const { data } = await HttpRequest.postForm<BaseResponse<GraduateLoginDataContent>>(
+const { data } = await HttpRequest.postJson<BaseResponse<GraduateLoginDataContent>>(
       GRADUATE_LOGIN_V2,
       { student_id: studentId, password },
     );
@@ -82,7 +82,7 @@ const { data } = await HttpRequest.postForm<BaseResponse<GraduateLoginDataConten
         user: { displayName: 'Zhang San', avatarUrl: '' },
       });
     }
-const { data } = await HttpRequest.postForm<BaseResponse<AppAuthDataContent>>(
+const { data } = await HttpRequest.postJson<BaseResponse<AppAuthDataContent>>(
       APP_AUTH_LOGIN,
       {
         student_id: studentId,
@@ -90,7 +90,7 @@ const { data } = await HttpRequest.postForm<BaseResponse<AppAuthDataContent>>(
         studentType: isGraduate ? 'graduate' : 'undergrad',
         platform: 'android',
       },
-      { 'X-Skip-Auth-Interceptor': 'true' },
+      { 'X-Wust-Skip-Auth-Interceptor': 'true' },
     );
     return data;
   }

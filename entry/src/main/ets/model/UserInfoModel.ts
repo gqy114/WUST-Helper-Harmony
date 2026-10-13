@@ -26,16 +26,29 @@ export interface UserInfo {
 
 /** 后端 StudentData.Content — @SerializedName("value") 为 JSON key */
 export interface StudentApiContent {
-  stuNum: string;
-  stuName: string;
-  nickName: string;
-  college: string;
-  major: string;
-  classes: string;
+  stuNum?: string;
+  studentNumber?: string;
+  studentId?: string;
+  stuName?: string;
+  name?: string;
+  nickName?: string;
+  college?: string;
+  major?: string;
+  classes?: string;
+  clazz?: string;
 }
 
 export interface StudentApiResponse {
   code: number;
   msg: string;
   data?: StudentApiContent;
+  /** 部分接口版本使用 dataObject/value/message 包装学生信息。 */
+  dataObject?: StudentApiContent;
+  value?: StudentApiContent;
+  message?: string;
+  studentNumber?: string;
+  name?: string;
+  college?: string;
+  major?: string;
+  clazz?: string;
 }

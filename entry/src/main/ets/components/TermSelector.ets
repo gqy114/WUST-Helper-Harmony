@@ -6,6 +6,8 @@
  *
  * 文件路径：entry/src/main/ets/components/TermSelector.ets
  */
+import { promptAction, router } from '@kit.ArkUI';
+
 @Component
 export struct TermSelector {
   private termOptions: string[] = [];
@@ -14,26 +16,52 @@ export struct TermSelector {
 
   build() {
     Row() {
-      Text(this.selectedTerm)
-        .fontSize(15)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#333333')
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text('←')
+        .fontSize(24)
+        .fontColor('#FFFFFF')
+        .margin({ left: 16 })
+        .onClick(() => router.back())
 
-      Image($r('app.media.ic_arrow_down'))
-        .width(16).height(16)
-        .objectFit(ImageFit.Contain)
-        .margin({ left: 4 })
+      Row() {
+        Text(this.selectedTerm)
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#FFFFFF')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Image($r('app.media.keyboard_arrow_down'))
+          .width(20)
+          .height(20)
+          .fillColor('#FFFFFF')
+          .margin({ left: 4 })
+      }
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => this.showTermPicker())
+
+      Image($r('app.media.search'))
+        .width(22)
+        .height(22)
+        .fillColor('#FFFFFF')
+        .margin({ right: 20 })
+        .onClick(() => {
+          promptAction.showToast({ message: '搜索功能开发中', duration: 1200 });
+        })
+
+      Image($r('app.media.more_vert'))
+        .width(22)
+        .height(22)
+        .fillColor('#FFFFFF')
+        .margin({ right: 16 })
+        .onClick(() => {
+          promptAction.showToast({ message: '更多功能开发中', duration: 1200 });
+        })
     }
     .width('100%')
-    .height(40)
-    .padding({ left: 16, right: 16 })
-    .backgroundColor(Color.White)
-    .borderRadius(8)
-    .onClick(() => {
-      this.showTermPicker();
-    })
+    .height(56)
+    .backgroundColor('#23C087')
+    .alignItems(VerticalAlign.Center)
   }
 
   private showTermPicker(): void {

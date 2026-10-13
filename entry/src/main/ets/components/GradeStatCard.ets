@@ -5,24 +5,23 @@
  *
  * 文件路径：entry/src/main/ets/components/GradeStatCard.ets
  */
-import { GradeStatSummary } from '../model/GradeModel';
-
 @Component
 export struct GradeStatCard {
-  private summary: GradeStatSummary = {
-    totalCredits: '0', averageGpa: '0', courseCount: 0, failedCount: 0,
-  };
+  @Prop totalCredits: string = '0';
+  @Prop averageGpa: string = '0';
+  @Prop courseCount: number = 0;
+  @Prop failedCount: number = 0;
 
   build() {
     Row() {
-      this.statItem('平均绩点', this.summary.averageGpa, '#1ec98d')
+      this.statItem('平均绩点', this.averageGpa, '#1ec98d')
       Text('').width(1).height(32).backgroundColor('#EEEEEE')
-      this.statItem('总学分', this.summary.totalCredits, '#2196f3')
+      this.statItem('总学分', this.totalCredits, '#2196f3')
       Text('').width(1).height(32).backgroundColor('#EEEEEE')
-      this.statItem('课程', `${this.summary.courseCount}`, '#ff9800')
-      if (this.summary.failedCount > 0) {
+      this.statItem('课程', `${this.courseCount}`, '#ff9800')
+      if (this.failedCount > 0) {
         Text('').width(1).height(32).backgroundColor('#EEEEEE')
-        this.statItem('未通过', `${this.summary.failedCount}`, '#f44336')
+        this.statItem('未通过', `${this.failedCount}`, '#f44336')
       }
     }
     .width('100%').height(80)

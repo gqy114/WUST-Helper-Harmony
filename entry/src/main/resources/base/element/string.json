@@ -19,6 +19,18 @@
     {
       "name": "permission_read_media_reason",
       "value": "用于读取头像和图片缓存，以优化图片加载体验"
+    },
+    {
+      "name": "permission_read_calendar_reason",
+      "value": "用于读取课程日程"
+    },
+    {
+      "name": "permission_write_calendar_reason",
+      "value": "用于导入和删除课程日程"
+    },
+    {
+      "name": "permission_camera_reason",
+      "value": "用于扫码功能"
     }
   ]
 }

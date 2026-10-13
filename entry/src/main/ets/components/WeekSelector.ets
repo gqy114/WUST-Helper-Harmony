@@ -32,7 +32,7 @@ export struct WeekSelector {
   /** 总教学周数。 */
   private totalWeeks: number = 25;
   /** 全部课程，不过滤周次，用于计算每周是否有课。 */
-  private courseList: CourseData[] = [];
+  @Prop courseList: CourseData[] = [];
   /** 选择教学周回调。 */
   private onWeekSelect?: (week: number) => void;
 

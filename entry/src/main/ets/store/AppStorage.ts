@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 对应原 Android 端 SharePreferenceLab + SPTool
  * 统一封装 preferences，单 store 存储
  *
@@ -6,6 +6,7 @@
  */
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import { ScheduleSettings, DEFAULT_SETTINGS, CourseArchive, CourseData } from '../model/CourseModel';
 
 const STORE_NAME = 'wusthelper_prefs';
 
@@ -30,7 +31,18 @@ export class AppStorage {
 
   private async getStr(key: string, def: string = ''): Promise<string> {
     const raw = await this.kvStore?.get(key, JSON.stringify(def));
-    return raw !== undefined ? JSON.parse(raw as string) : def;
+    if (raw === undefined) {
+      return def;
+    }
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        return typeof parsed === 'string' ? parsed : def;
+      } catch {
+        return def;
+      }
+    }
+    return typeof raw === 'string' ? raw : def;
   }
 
   private async putStr(key: string, value: string): Promise<void> {
@@ -40,7 +52,21 @@ export class AppStorage {
 
   private async getBool(key: string, def: boolean = false): Promise<boolean> {
     const raw = await this.kvStore?.get(key, JSON.stringify(def));
-    return raw !== undefined ? JSON.parse(raw as string) : def;
+    if (raw === undefined) {
+      return def;
+    }
+    if (typeof raw === 'boolean') {
+      return raw;
+    }
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        return typeof parsed === 'boolean' ? parsed : def;
+      } catch {
+        return def;
+      }
+    }
+    return def;
   }
 
   private async putBool(key: string, value: boolean): Promise<void> {
@@ -65,7 +91,7 @@ export class AppStorage {
 
   // ── Mock 模拟开关 ──
 
-  async getUseMock(): Promise<boolean> { return this.getBool('useMock', true); }
+  async getUseMock(): Promise<boolean> { return this.getBool('useMock', false); }
   async setUseMock(v: boolean): Promise<void> { return this.putBool('useMock', v); }
 
   // ── 学期 ──
@@ -83,6 +109,8 @@ export class AppStorage {
   async setWeek(v: number): Promise<void> { return this.putNum('week', v); }
   async getWeekday(): Promise<number> { return this.getNum('weekday'); }
   async setWeekday(v: number): Promise<void> { return this.putNum('weekday', v); }
+  async getTermStartDate(): Promise<string> { return this.getStr('termStartDate'); }
+  async setTermStartDate(v: string): Promise<void> { return this.putStr('termStartDate', v); }
 
   // ── 登录与 Token ──
 
@@ -131,5 +159,99 @@ export class AppStorage {
     const expiresAt = await this.getAppAuthExpiresAt();
     if (!token || token.trim().length === 0) return false;
     return expiresAt > Date.now() + 60_000;
+  }
+
+  async getScheduleSettings(): Promise<ScheduleSettings> {
+    const raw = await this.getStr('scheduleSettings', '');
+    if (raw) {
+      return JSON.parse(raw) as ScheduleSettings;
+    }
+    return DEFAULT_SETTINGS;
+  }
+
+  async setScheduleSettings(settings: ScheduleSettings): Promise<void> {
+    await this.putStr('scheduleSettings', JSON.stringify(settings));
+  }
+
+  // ── 课表与日程设置 ──
+
+  async getCourseAsHome(): Promise<boolean> { return this.getBool('courseAsHome', true); }
+  async setCourseAsHome(value: boolean): Promise<void> { return this.putBool('courseAsHome', value); }
+  async getSundayFirst(): Promise<boolean> { return this.getBool('sundayFirst'); }
+  async setSundayFirst(value: boolean): Promise<void> { return this.putBool('sundayFirst', value); }
+  async getAllWeeksImported(): Promise<boolean> { return this.getBool('allWeeksImported'); }
+  async setAllWeeksImported(value: boolean): Promise<void> { return this.putBool('allWeeksImported', value); }
+  async getImportedEventIds(): Promise<number[]> {
+    const raw = await this.getStr('importedEventIds', '');
+    if (!raw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(raw) as number[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  async setImportedEventIds(value: number[]): Promise<void> {
+    return this.putStr('importedEventIds', JSON.stringify(value));
+  }
+
+  async getCourseArchives(): Promise<CourseArchive[]> {
+    const raw = await this.getStr('courseArchives', '');
+    if (!raw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(raw) as CourseArchive[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async setCourseArchives(value: CourseArchive[]): Promise<void> {
+    return this.putStr('courseArchives', JSON.stringify(value));
+  }
+
+  async getCurrentArchiveId(): Promise<string> {
+    return this.getStr('currentArchiveId', 'mine');
+  }
+
+  async setCurrentArchiveId(value: string): Promise<void> {
+    return this.putStr('currentArchiveId', value);
+  }
+
+  async getCurrentCourses(): Promise<CourseData[]> {
+    const raw = await this.getStr('currentCourses', '');
+    if (!raw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(raw) as CourseData[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async setCurrentCourses(value: CourseData[]): Promise<void> {
+    return this.putStr('currentCourses', JSON.stringify(value));
+  }
+
+  async getSettingBool(key: string, defaultValue: boolean): Promise<boolean> {
+    return this.getBool(key, defaultValue);
+  }
+
+  async setSettingBool(key: string, value: boolean): Promise<void> {
+    return this.putBool(key, value);
+  }
+
+  async getSettingNumber(key: string, defaultValue: number = 0): Promise<number> {
+    return this.getNum(key, defaultValue);
+  }
+
+  async setSettingNumber(key: string, value: number): Promise<void> {
+    return this.putNum(key, value);
   }
 }

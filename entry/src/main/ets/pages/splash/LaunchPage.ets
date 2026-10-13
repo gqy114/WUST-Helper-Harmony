@@ -132,7 +132,7 @@ struct LaunchPage {
 
       // 中部：Logo + 标语
       Column() {
-        Image($r('app.media.logo_foreground'))
+        Image($r('app.media.logo'))
           .width(120)
           .height(120)
           .objectFit(ImageFit.Contain)

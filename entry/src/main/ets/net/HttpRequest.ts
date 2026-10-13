@@ -35,12 +35,12 @@ export class HttpRequest {
       if (options?.body) {
         if (options.isForm) {
           // form‑urlencoded表单格式，用于登录
-          header['Content‑Type'] = 'application/x‑www‑form‑urlencoded';
+          header['Content-Type'] = 'application/x-www-form-urlencoded';
           extraData = Object.entries(options.body)
             .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
             .join('&');
         } else {
-          header['Content‑Type'] = 'application/json';
+          header['Content-Type'] = 'application/json';
           extraData = JSON.stringify(options.body);
         }
       }
@@ -49,7 +49,7 @@ export class HttpRequest {
         method: method === 'GET' ? http.RequestMethod.GET : http.RequestMethod.POST,
         header,
         extraData,
-        expectDataType: options?.expectDataType ?? http.HttpDataType.OBJECT,
+        expectDataType: options?.expectDataType ?? http.HttpDataType.STRING,
         connectTimeout:10000,
         readTimeout:10000
       });

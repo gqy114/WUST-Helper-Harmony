@@ -40,7 +40,7 @@ interface CardItem {
 
 //热门功能2列Grid数组：倒计时、图书馆、培养方案、教室查询、双创学分、AI问答、主修进度
 const hotFuncList: CardItem[] = [
-  { title: "倒计时", desc: "鸽子模拟器 咕咕咕", bgColor: "#E3F2FD", titleColor: "#3949ab", icon: $r('app.media.ic_countdown'), route: "pages/common/WebPage", url: "" },
+  { title: "倒计时", desc: "鸽子模拟器 咕咕咕", bgColor: "#E3F2FD", titleColor: "#3949ab", icon: $r('app.media.ic_countdown'), route: "pages/countdown/CountdownPage" },
   { title: "图书馆", desc: "检索借阅与图书", bgColor: "#FFE5E5", titleColor: "#e53935", icon: $r('app.media.ic_library_normal'), route: "pages/library/LibraryPage" },
   { title: "培养方案", desc: "掌握修读情况", bgColor: "#FFF3E0", titleColor: "#f57c00", icon: $r('app.media.ic_credit'), route: "pages/common/WebPage", url: "" },
   { title: "教室查询", desc: "空教室与课程", bgColor: "#F3E5F5", titleColor: "#7b1fa2", icon: $r('app.media.ic_emptyroom'), route: "pages/common/WebPage", url: "" },
@@ -87,8 +87,14 @@ struct MainPage {
 
   aboutToAppear(): void {
     console.info(TAG, 'aboutToAppear');
+    this.loadDefaultTab();
     console.info(TAG, `[module-debug] toolList.length=${toolList.length}`);
     console.info(TAG, `[module-debug] campusWallItem.title=${campusWallItem.title}, desc=${campusWallItem.desc}, route=${campusWallItem.route}`);
+  }
+
+  private async loadDefaultTab(): Promise<void> {
+    const courseAsHome = await AppStorage.getInstance().getCourseAsHome();
+    this.currentTab = courseAsHome ? TabIndex.COURSE : TabIndex.HOME;
   }
 
   /** onPageShow — 页面显示，校验登录态 */
@@ -329,6 +335,10 @@ struct MainPage {
 
   /** 热门功能卡片统一跳转 */
   private openHotFeature(item: CardItem): void {
+    if (item.onCardClick) {
+      item.onCardClick();
+      return;
+    }
     if (!item.route) {
       promptAction.showToast({ message: `${item.title} 功能开发中`, duration: 2000 });
       return;
@@ -400,14 +410,13 @@ struct MainPage {
             .margin({ left: 16, right: 16, top: 24 })
 
           // ── 成绩查询（通栏） ──
-          Stack() {
-            this.CardItem({
+          Column() {
+            this.HotWideCard({
               title: '成绩查询',
               desc: '成绩查询 绩点计算 平均绩点',
-              bgColor: '#DDF7E3',
-              titleColor: '#279e46',
+              bgColor: '#E7F6E9',
+              titleColor: '#4CAF50',
               icon: $r('app.media.ic_grade_normal'),
-              rotated: true,
               onCardClick: () => {
                 console.info(TAG, '成绩查询卡片点击，准备跳转 GradePage');
                 router.pushUrl({ url: 'pages/campus/grade/GradePage' });
@@ -418,27 +427,51 @@ struct MainPage {
           .margin({ left: 16, right: 16, top: 12 })
 
 
-          // ── 热门功能网格 ──
-          Grid() {
-            ForEach(hotFuncList, (item: CardItem) => {
-              GridItem() {
-                this.CardItem(item)
+          // ── 倒计时跨两行，右侧图书馆与培养方案 ──
+          Row() {
+            this.HotCountdownCard(hotFuncList[0])
+            Column() {
+              this.HotSmallCard(hotFuncList[1])
+              Column() {
+                this.HotSmallCard(hotFuncList[2])
               }
-            }, (item: CardItem) => item.title)
+              .margin({ top: 12 })
+            }
+            .layoutWeight(1)
           }
-          .columnsTemplate('1fr 1fr')
-          .columnsGap(12)
-          .rowsGap(12)
-          .padding({ left: 16, right: 16 })
           .width('100%')
-          .margin({ top: 12 })
+          .padding({ left: 16, right: 16 })
+          .margin({ top: 16 })
 
-          Text('测试-校园社区模块开始')
-            .fontSize(14)
-            .fontColor('#FF0000')
+          Row() {
+            Column() {
+              this.HotSmallCard(hotFuncList[3])
+            }
+            .layoutWeight(1)
+            .margin({ right: 12 })
+            Column() {
+              this.HotSmallCard(hotFuncList[4])
+            }
+            .layoutWeight(1)
+          }
             .width('100%')
-            .textAlign(TextAlign.Start)
-            .margin({ left: 16, right: 16, top: 16 })
+            .padding({ left: 16, right: 16 })
+            .margin({ top: 16 })
+
+          Row() {
+            Column() {
+              this.HotSmallCard(hotFuncList[6])
+            }
+            .layoutWeight(1)
+            .margin({ right: 12 })
+            Column() {
+              this.HotSmallCard(hotFuncList[5])
+            }
+            .layoutWeight(1)
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16 })
+          .margin({ top: 16 })
 
           // ── 校园社区标题 ──
           Text('校园社区')
@@ -494,6 +527,103 @@ struct MainPage {
     }
     .padding({ bottom: 100 })
   }
+
+    /** 热门功能：通栏成绩卡片 */
+    @Builder
+    private HotWideCard(item: CardItem) {
+      Row() {
+        Column() {
+          Text(item.title)
+            .fontSize(22)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(item.titleColor)
+          Text(item.desc)
+            .fontSize(11)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(item.titleColor)
+            .maxLines(1)
+            .margin({ top: 6 })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+        Image(item.icon)
+          .width(128)
+          .height(128)
+          .objectFit(ImageFit.Contain)
+          .translate({ x: 16, y: 20 })
+      }
+      .width('100%')
+      .height(144)
+      .padding({ left: 18, right: 4 })
+      .backgroundColor(item.bgColor)
+      .borderRadius(12)
+      .clip(true)
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => this.openHotFeature(item))
+    }
+
+    /** 热门功能：左侧跨两行的倒计时卡片 */
+    @Builder
+    private HotCountdownCard(item: CardItem) {
+      Column() {
+        Image(item.icon)
+          .width(70)
+          .height(70)
+          .objectFit(ImageFit.Contain)
+        Text(item.title)
+          .fontSize(21)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(item.titleColor)
+          .margin({ top: 12 })
+        Text(item.desc)
+          .fontSize(11)
+          .fontColor(item.titleColor)
+          .maxLines(1)
+          .margin({ top: 4 })
+      }
+      .layoutWeight(1)
+      .height(212)
+      .backgroundColor(item.bgColor)
+      .borderRadius(12)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .margin({ right: 12 })
+      .onClick(() => this.openHotFeature(item))
+    }
+
+    /** 热门功能：两列常规卡片 */
+    @Builder
+    private HotSmallCard(item: CardItem) {
+      Row() {
+        Column() {
+          Text(item.title)
+            .fontSize(18)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(item.titleColor)
+            .maxLines(1)
+          Text(item.desc)
+            .fontSize(11)
+            .fontColor(item.titleColor)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 5 })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+        Image(item.icon)
+          .width(54)
+          .height(54)
+          .objectFit(ImageFit.Contain)
+          .margin({ left: 2 })
+      }
+      .width('100%')
+      .height(100)
+      .padding({ left: 12, right: 8 })
+      .backgroundColor(item.bgColor)
+      .borderRadius(12)
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => this.openHotFeature(item))
+    }
 
     /** 通用卡片组件 */
     @Builder

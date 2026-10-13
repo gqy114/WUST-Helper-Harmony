@@ -6,7 +6,8 @@
  *   上层：CourseItem 色块（根据 dayOfWeek/startPeriod/endPeriod 定位）
  *
  * 每个课程色块的位置计算：
- *   x = LABEL_WIDTH + (dayOfWeek - 1) × columnWidth
+ *   x = LABEL_WIDTH + columnIndex × columnWidth
+ *   columnIndex uses dayOfWeek - 1 (Monday first) or dayOfWeek % 7 (Sunday first)
  *   y = (startPeriod - 1) × PERIOD_HEIGHT
  *   width  = columnWidth
  *   height = (endPeriod - startPeriod + 1) × PERIOD_HEIGHT - 2
@@ -23,7 +24,8 @@ import { CourseStore } from '../store/CourseStore';
 
 const PERIOD_ARRAY: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const DAYS_7: number[] = [1, 2, 3, 4, 5, 6, 7];
-const WEEKDAY_NAMES: string[] = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+const WEEKDAY_NAMES_MONDAY_FIRST: string[] = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+const WEEKDAY_NAMES_SUNDAY_FIRST: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const PERIOD_SLOT_HEIGHT: number = PERIOD_HEIGHT * 2 + 5;
 
 @Component
@@ -38,6 +40,12 @@ export struct CourseCalendar {
   @Prop weekDates: string[] = [];
   /** 左侧月份，由 CoursePage 根据当前周计算。 */
   @Prop monthLabel: string = '9月';
+  /** 当前校区作息时间表。 */
+  @Prop timeSlots: CourseTimeSlot[] = TIME_SLOTS;
+  @Prop courseFontSize: number = 11;
+  @Prop courseItalic: boolean = false;
+  /** 是否将周日作为表头第一列。 */
+  @Prop sundayFirst: boolean = false;
   /** 课程点击回调 */
   onCourseClick?: (course: CourseData) => void;
 
@@ -84,6 +92,21 @@ export struct CourseCalendar {
     return day === 0 ? 7 : day;
   }
 
+  private displayWeekday(day: number): number {
+    return this.sundayFirst ? (day === 1 ? 7 : day - 1) : day;
+  }
+
+  private displayWeekdayName(day: number): string {
+    const names = this.sundayFirst
+      ? WEEKDAY_NAMES_SUNDAY_FIRST
+      : WEEKDAY_NAMES_MONDAY_FIRST;
+    return names[day - 1];
+  }
+
+  private getColumnIndex(dayOfWeek: number): number {
+    return this.sundayFirst ? dayOfWeek % 7 : dayOfWeek - 1;
+  }
+
   build() {
     Column() {
       // ── 日头 ──
@@ -92,10 +115,10 @@ export struct CourseCalendar {
           .fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
         ForEach(DAYS_7, (day: number) => {
           Column() {
-            Text(WEEKDAY_NAMES[day - 1]).fontSize(13).fontWeight(FontWeight.Medium)
-              .fontColor(day === this.todayWeekday() ? '#2196F3' : '#666666')
+            Text(this.displayWeekdayName(day)).fontSize(13).fontWeight(FontWeight.Medium)
+              .fontColor(this.displayWeekday(day) === this.todayWeekday() ? '#2196F3' : '#666666')
             Text(this.weekDates[day - 1] ? this.weekDates[day - 1] : '').fontSize(10)
-              .fontColor(day === this.todayWeekday() ? '#2196F3' : '#999999')
+              .fontColor(this.displayWeekday(day) === this.todayWeekday() ? '#2196F3' : '#999999')
               .margin({ top: 3 })
           }
           .width(this.columnWidth)
@@ -111,7 +134,7 @@ export struct CourseCalendar {
         Stack() {
           // 背景网格
           Column() {
-            ForEach(TIME_SLOTS, (slot: CourseTimeSlot) => {
+            ForEach(this.timeSlots, (slot: CourseTimeSlot) => {
               Column() {
                 Row() {
                   Column() {
@@ -142,6 +165,8 @@ export struct CourseCalendar {
                 location: course.location,
                 color: course.color ? course.color : '#66cc99',
                 isDimmed: !isCourseInWeek(course, this.currentWeek),   // 直接内联计算
+                fontSize: this.courseFontSize,
+                italic: this.courseItalic,
                 onItemTap: () => {
                   if (this.onCourseClick !== undefined && this.onCourseClick !== null) {
                     this.onCourseClick(course);
@@ -149,8 +174,9 @@ export struct CourseCalendar {
                 },
               })
             }
-            .position({
-              x: (typeof LABEL_WIDTH === 'number' ? LABEL_WIDTH : 36) + (course.dayOfWeek - 1) * this.columnWidth + 1,
+              .position({
+              x: (typeof LABEL_WIDTH === 'number' ? LABEL_WIDTH : 36) +
+                this.getColumnIndex(course.dayOfWeek) * this.columnWidth + 1,
               y: (course.startPeriod - 1) * ((typeof PERIOD_HEIGHT === 'number' ? PERIOD_HEIGHT : 60) + 5) + 1,
             })
             .width(this.columnWidth - 3)
@@ -158,7 +184,7 @@ export struct CourseCalendar {
           }, (course: CourseData) => `${this.refreshKey}-${course.dayOfWeek}-${course.startPeriod}-${course.courseName}`)
         }
         .width('100%')
-        .height(TIME_SLOTS.length * PERIOD_SLOT_HEIGHT + 10)
+        .height(this.timeSlots.length * PERIOD_SLOT_HEIGHT + 10)
         .onAreaChange((_old: Area, newArea: Area) => {
           const raw = newArea.width;
           const w = typeof raw === 'number' && !isNaN(raw) && raw > 0 ? raw : 360;

@@ -1,17 +1,23 @@
-﻿/**
+/**
  * CoursePage — 课表页面（不含 @Entry，供 MainPage Tabs 嵌入）
  *
  * 文件路径：entry/src/main/ets/pages/course/CoursePage.ets
  */
 import { RouterUtil } from '../../utils/RouterUtil';
-import { AppStorage } from '../../store/AppStorage';
+import { AppStorage as PreferenceStorage } from '../../store/AppStorage';
 import { CourseApi } from '../../net/CourseApi';
 import { CourseStore } from '../../store/CourseStore';
 import { WeekSelector } from '../../components/WeekSelector';
 import { CourseCalendar } from '../../components/CourseCalendar';
 import { CourseMoreMenu } from '../../components/CourseMoreMenu';
-import { CourseData, isCourseInWeek } from '../../model/CourseModel';
-import { promptAction } from '@kit.ArkUI';
+import { CampusPicker } from '../../components/CampusPicker';
+import { SemesterPicker } from '../../components/SemesterPicker';
+import { WeekAdjustPicker } from '../../components/WeekAdjustPicker';
+import { CourseData, isCourseInWeek, getTimeSlotsByCampus, ScheduleSettings, DEFAULT_SETTINGS } from '../../model/CourseModel';
+import { router, promptAction } from '@kit.ArkUI';
+import { scanBarcode, scanCore } from '@kit.ScanKit';
+import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
+import common from '@ohos.app.ability.common';
 
 const TAG = 'CoursePage';
 
@@ -81,7 +87,7 @@ export struct CoursePage {
   @State private errorMsg: string = '';
   @State private empty: boolean = false;
 
-  private isUseMockData: boolean = true;
+  private isUseMockData: boolean = false;
   private store: CourseStore = CourseStore.getInstance();
   @State private courseList: CourseData[] = [];
   @State private allCourseList: CourseData[] = [];
@@ -103,21 +109,148 @@ export struct CoursePage {
   @State private showMoreMenu: boolean = false;
   @State private menuAnim: boolean = false;
   @State private onlyThisWeek: boolean = false;
+  @State private showCampusPicker: boolean = false;
+  @State private currentCampus: string = '黄家湖校区';
+  @State private showSemesterPicker: boolean = false;
+  @State private showWeekAdjust: boolean = false;
+  @State private currentSemester: string = '2026-2027-1';
+  @StorageLink('scheduleSettings') scheduleSettings: ScheduleSettings = DEFAULT_SETTINGS;
+  @StorageLink('sundayFirst') sundayFirst: boolean = false;
   private semesterStart: Date = new Date(2025, 8, 1);
 
   aboutToAppear(): void {
-    const store = CourseStore.getInstance();
-    const thisWeek = this.calcCurrentWeek();
-    this.currentWeek = thisWeek;
-    this.actualCurrentWeek = thisWeek;
-    this.store.setCurrentWeek(thisWeek);
-    this.calendarCourseList = Array.isArray(store.courses) ? [...store.courses] : [];
+    this.initializeWeek();
+  }
+
+  private async initializeWeek(): Promise<void> {
+    await this.resolveSemesterStart();
+    const autoWeek = this.calcCurrentWeek();
+    const adjustedWeek = await this.getAdjustedWeek();
+    const initialWeek = adjustedWeek >= 1 && adjustedWeek <= 25 ? adjustedWeek : autoWeek;
+    this.actualCurrentWeek = initialWeek;
+    this.currentWeek = initialWeek;
+    this.store.setCurrentWeek(initialWeek);
+    this.calendarCourseList = Array.isArray(this.store.courses) ? [...this.store.courses] : [];
     this.updateWeekDates();
+    this.loadCalendarOrderSetting();
+    this.loadScheduleSettings();
     this.verifyAndLoad();
+  }
+
+  /** 从缓存或 getData 接口解析学期起始日，覆盖 2025-09-01 的默认值。 */
+  private async resolveSemesterStart(): Promise<void> {
+    const s = PreferenceStorage.getInstance();
+    try {
+      const cached = await s.getTermStartDate();
+      if (this.applyTermStartDateFromString(cached)) {
+        console.info(TAG, `resolveSemesterStart from cache: ${cached}`);
+        return;
+      }
+    } catch {
+      // 忽略缓存读取异常。
+    }
+
+    try {
+      const token = await s.getToken();
+      if (!token) {
+        return;
+      }
+      const resp = await CourseApi.getTermStartDate(token);
+      if (resp.code === 10000 || resp.code === 200 || resp.code === 0) {
+        if (resp.data) {
+          const year = resp.data.year;
+          const month = resp.data.month;
+          const day = resp.data.day;
+          if (year > 0 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+            this.semesterStart = new Date(year, month - 1, day);
+            const mm = month < 10 ? `0${month}` : `${month}`;
+            const dd = day < 10 ? `0${day}` : `${day}`;
+            await s.setTermStartDate(`${year}-${mm}-${dd}`);
+            console.info(TAG, `resolveSemesterStart from api: ${year}-${mm}-${dd}`);
+          }
+        }
+      }
+    } catch {
+      console.warn(TAG, 'resolveSemesterStart error');
+    }
+  }
+
+  private applyTermStartDateFromString(value: string): boolean {
+    if (!value || value.length === 0) {
+      return false;
+    }
+    const parts = value.split('-');
+    if (parts.length !== 3) {
+      return false;
+    }
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    if (isNaN(year) || isNaN(month) || isNaN(day)) {
+      return false;
+    }
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+      return false;
+    }
+    this.semesterStart = new Date(year, month - 1, day);
+    return true;
+  }
+
+  private async getAdjustedWeek(): Promise<number> {
+    const memoryWeek = AppStorage.get<number>('adjustedCurrentWeek');
+    if (memoryWeek !== undefined && memoryWeek >= 1 && memoryWeek <= 25) {
+      return memoryWeek;
+    }
+    const savedWeek = await PreferenceStorage.getInstance().getSettingNumber('adjustedCurrentWeek', 0);
+    if (savedWeek >= 1 && savedWeek <= 25) {
+      AppStorage.setOrCreate('adjustedCurrentWeek', savedWeek);
+      return savedWeek;
+    }
+    return 0;
+  }
+
+  private async loadScheduleSettings(): Promise<void> {
+    try {
+      const settings = await PreferenceStorage.getInstance().getScheduleSettings();
+      // 整体替换对象，确保 StorageLink 和 CourseCalendar 都收到更新。
+      this.scheduleSettings = {
+        bgImage: settings.bgImage,
+        bgOpacity: settings.bgOpacity,
+        bgFullscreen: settings.bgFullscreen,
+        fontSize: settings.fontSize,
+        italic: settings.italic,
+      };
+      console.info('CoursePage', `schedule settings: fontSize=${settings.fontSize}, italic=${settings.italic}`);
+    } catch {
+      this.scheduleSettings = {
+        bgImage: DEFAULT_SETTINGS.bgImage,
+        bgOpacity: DEFAULT_SETTINGS.bgOpacity,
+        bgFullscreen: DEFAULT_SETTINGS.bgFullscreen,
+        fontSize: DEFAULT_SETTINGS.fontSize,
+        italic: DEFAULT_SETTINGS.italic,
+      };
+    }
+  }
+
+  private async loadCalendarOrderSetting(): Promise<void> {
+    this.sundayFirst = await PreferenceStorage.getInstance().getSundayFirst();
+    this.updateWeekDates();
   }
 
   onPageShow(): void {
     const store = CourseStore.getInstance();
+    const adjustedWeek = AppStorage.get<number>('adjustedCurrentWeek');
+    if (adjustedWeek !== undefined && adjustedWeek >= 1 && adjustedWeek <= 25) {
+      this.actualCurrentWeek = adjustedWeek;
+      this.currentWeek = adjustedWeek;
+      store.setCurrentWeek(adjustedWeek);
+      this.updateWeekDates();
+      this.applyOnlyThisWeekFilter();
+    }
+    this.loadCurrentArchiveCourses();
+    // 从背景与字体设置页返回时立即重新读取最新值。
+    this.loadScheduleSettings();
+    this.loadCalendarOrderSetting();
     this.calendarCourseList = Array.isArray(store.courses) ? [...store.courses] : [];
     console.info("CoursePage onPageShow len=", this.calendarCourseList.length);
     this.calendarCourseList = [];
@@ -159,6 +292,7 @@ export struct CoursePage {
       }
       this.store.setCourses(mockCourseList);
       this.allCourseList = [...mockCourseList];
+      this.loadCurrentArchiveCourses();
       this.applyOnlyThisWeekFilter();
       this.empty = this.allCourseList.length === 0;
       this.errorMsg = '';
@@ -170,7 +304,7 @@ export struct CoursePage {
     }
 
     try {
-      const s = AppStorage.getInstance();
+      const s = PreferenceStorage.getInstance();
       const token = await s.getToken();
       const isLogin = await s.getIsLogin();
       if (!token || !isLogin) {
@@ -178,7 +312,15 @@ export struct CoursePage {
         return;
       }
       await this.store.restoreFromStorage();
-      this.currentWeek = this.store.currentWeek;
+      this.currentSemester = this.store.semester || this.calcSemesterFallback();
+      const adjustedWeek = AppStorage.get<number>('adjustedCurrentWeek');
+      if (adjustedWeek !== undefined && adjustedWeek >= 1 && adjustedWeek <= 25) {
+        this.actualCurrentWeek = adjustedWeek;
+        this.currentWeek = adjustedWeek;
+        this.store.setCurrentWeek(adjustedWeek);
+      } else {
+        this.currentWeek = this.store.currentWeek;
+      }
       this.updateWeekDates();
       this.loading = true;
       await this.fetchCourses();
@@ -193,7 +335,7 @@ export struct CoursePage {
   /** 调用真实 API 获取课表 */
   private async fetchCourses(): Promise<void> {
     try {
-      const s = AppStorage.getInstance();
+      const s = PreferenceStorage.getInstance();
       const token = await s.getToken();
       if (!token) {
         this.errorMsg = '登录已失效，请重新登录';
@@ -213,10 +355,11 @@ export struct CoursePage {
 
       const resp = await CourseApi.getCourseTable(semester, token);
 
-      if (resp.code === 200 || resp.code === 0) {
+      if (resp.code === 10000 || resp.code === 200 || resp.code === 0) {
         const list: CourseData[] = resp.data ? resp.data : [];
         this.store.setCourses(list);
-        this.allCourseList = [...list];
+        const colored = this.store.courses;
+        this.allCourseList = Array.isArray(colored) ? [...colored] : [...list];
         this.applyOnlyThisWeekFilter();
         this.empty = list.length === 0;
         this.errorMsg = '';
@@ -229,7 +372,7 @@ export struct CoursePage {
         this.filterVisibleCourses();
 
         console.info(TAG, `loaded ${list.length} courses`);
-      } else if (resp.code === 401 || resp.code === 403) {
+      } else if (resp.code === 401 || resp.code === 403 || resp.code === 10001 || resp.code === 30001) {
         // Token 失效 → 跳转登录
         this.errorMsg = '登录已过期，正在跳转...';
         setTimeout(() => RouterUtil.toLogin(), 1500);
@@ -278,6 +421,20 @@ export struct CoursePage {
     console.info('CoursePage', `applyOnlyThisWeekFilter only=${this.onlyThisWeek} all=${this.allCourseList.length} current=${this.currentWeek} result=${this.courseList.length}`);
   }
 
+  private async loadCurrentArchiveCourses(): Promise<boolean> {
+    const currentCourses = await PreferenceStorage.getInstance().getCurrentCourses();
+    if (!currentCourses || currentCourses.length === 0) {
+      return false;
+    }
+    this.store.setCourses(currentCourses);
+    this.allCourseList = [...currentCourses];
+    this.applyOnlyThisWeekFilter();
+    this.empty = this.allCourseList.length === 0;
+    this.filterVisibleCourses();
+    console.info(TAG, `loaded current archive courses: ${currentCourses.length}`);
+    return true;
+  }
+
   private filterVisibleCourses(): void {
     this.visibleList = [...this.courseList];
     this.calendarCourseList = Array.isArray(this.visibleList) ? [...this.visibleList] : [];
@@ -301,19 +458,49 @@ export struct CoursePage {
 
   /** 根据当前教学周生成表头日期和左侧月份。 */
   private updateWeekDates(): void {
-    const semesterStart = new Date(2025, 8, 1);
+    const semesterStart = new Date(this.semesterStart);
     const weekMonday = new Date(semesterStart);
     weekMonday.setDate(semesterStart.getDate() + (this.currentWeek - 1) * 7);
 
     const dates: string[] = [];
+    const firstDay = this.sundayFirst
+      ? new Date(weekMonday.getTime() - 24 * 60 * 60 * 1000)
+      : weekMonday;
     for (let i = 0; i < 7; i++) {
-      const day = new Date(weekMonday);
-      day.setDate(weekMonday.getDate() + i);
+      const day = new Date(firstDay);
+      day.setDate(firstDay.getDate() + i);
       dates.push(`${day.getMonth() + 1}/${day.getDate()}`);
     }
     this.weekDates = dates;
     this.monthLabel = `${weekMonday.getMonth() + 1}月`;
     console.info(TAG, `updateWeekDates: week=${this.currentWeek}, dates=${JSON.stringify(this.weekDates)}, month=${this.monthLabel}`);
+  }
+
+  private async startScan(): Promise<void> {
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      const atManager = abilityAccessCtrl.createAtManager();
+      const permissionResult = await atManager.requestPermissionsFromUser(context, [
+        'ohos.permission.CAMERA'
+      ]);
+      if (!permissionResult.authResults || permissionResult.authResults[0] !== 0) {
+        promptAction.showToast({ message: '需要相机权限才能扫码', duration: 1500 });
+        return;
+      }
+      const options: scanBarcode.ScanOptions = {
+        scanTypes: [scanCore.ScanType.ALL],
+        enableMultiMode: false,
+        enableAlbum: true
+      };
+      const result = await scanBarcode.startScanForResult(context, options);
+      console.info('CoursePage', `扫码结果: ${JSON.stringify(result)}`);
+      if (result.originalValue) {
+        promptAction.showToast({ message: `扫码结果: ${result.originalValue}`, duration: 2000 });
+      }
+    } catch (err) {
+      console.error('CoursePage', `扫码失败: ${JSON.stringify(err)}`);
+      promptAction.showToast({ message: '扫码已取消', duration: 1500 });
+    }
   }
 
   /** 周切换回调 */
@@ -336,7 +523,7 @@ export struct CoursePage {
       this.refreshRotate = (this.refreshRotate + 9) % 360;
     }, 20);
 
-    setTimeout(() => {
+    setTimeout(async () => {
       if (this.isUseMockData) {
         this.store.setCourses(mockCourseList);
         this.allCourseList = [...mockCourseList];
@@ -346,7 +533,9 @@ export struct CoursePage {
         this.refreshKey = this.refreshKey + 1;
         console.info('CoursePage', 'mock data refreshed');
       } else {
-        console.info('CoursePage', 'api data refreshed (placeholder)');
+        await this.fetchCourses();
+        this.refreshKey = this.refreshKey + 1;
+        console.info('CoursePage', 'api data refreshed');
       }
 
       if (this.refreshTimer !== -1) {
@@ -379,6 +568,31 @@ export struct CoursePage {
       console.info('CoursePage', `onlyThisWeek=${this.onlyThisWeek}`);
       return;
     }
+    if (index === 1) {
+      this.showSemesterPicker = true;
+      return;
+    }
+    if (index === 2) {
+      this.showCampusPicker = true;
+      return;
+    }
+    if (index === 3) {
+      this.showWeekAdjust = true;
+      this.showMoreMenu = false;
+      return;
+    }
+    if (index === 4) {
+      router.pushUrl({ url: 'pages/course/CourseArchivePage' });
+      return;
+    }
+    if (index === 5) {
+      router.pushUrl({ url: 'pages/course/ScheduleSetting' });
+      return;
+    }
+    if (index === 6) {
+      router.pushUrl({ url: 'pages/course/BackgroundSetting' });
+      return;
+    }
     console.info('CoursePage', `more menu clicked index=${index}`);
   }
 
@@ -396,6 +610,32 @@ export struct CoursePage {
     this.fetchCourses().finally(() => { this.loading = false; });
   }
 
+  /** 保存所选学期并重新请求该学期课表。 */
+  private async switchSemester(semester: string): Promise<void> {
+    if (!semester || semester === this.store.semester) {
+      this.currentSemester = semester || this.currentSemester;
+      return;
+    }
+
+    const s = PreferenceStorage.getInstance();
+    this.currentSemester = semester;
+    this.store.setSemester(semester);
+    await s.setSemester(semester);
+    await s.setSelectSemester(semester);
+
+    this.loading = true;
+    this.errorMsg = '';
+    try {
+      await this.fetchCourses();
+      this.refreshKey = this.refreshKey + 1;
+      if (!this.errorMsg) {
+        promptAction.showToast({ message: `已切换到${semester}`, duration: 1500 });
+      }
+    } finally {
+      this.loading = false;
+    }
+  }
+
   /** fallback 学期计算 */
   private calcSemesterFallback(): string {
     const now = new Date();
@@ -409,6 +649,14 @@ export struct CoursePage {
 
   build() {
     Stack({ alignContent: Alignment.TopEnd }) {
+      if (this.scheduleSettings.bgImage) {
+        Image(this.scheduleSettings.bgImage)
+          .width('100%')
+          .height('100%')
+          .objectFit(ImageFit.Cover)
+          .opacity(this.scheduleSettings.bgOpacity)
+      }
+
       Column() {
       Stack({ alignContent: Alignment.TopEnd }) {
         Row() {
@@ -428,10 +676,22 @@ export struct CoursePage {
             .fontColor('#333333')
             .margin({ left: 10 })
 
-          Text(this.selectorHeight > 0 ? '▲' : '▼')
-            .fontSize(14)
-            .fontColor('#999999')
-            .margin({ left: 4 })
+          Image($r('app.media.keyboard_arrow_down'))
+            .width(20)
+            .height(20)
+            .fillColor('#333333')
+            .rotate({ angle: this.selectorHeight > 0 ? 180 : 0 })
+            .animation({ duration: 200 })
+            .margin({ left: 2 })
+
+          if (this.currentWeek !== this.actualCurrentWeek) {
+            Text('（非本周）')
+              .fontSize(13)
+              .fontColor('#B0B0B0')
+              .fontWeight(FontWeight.Normal)
+              .margin({ left: 6 })
+              .lineHeight(18)
+          }
         }
         .onClick(() => {
           const isExpanded = this.selectorHeight > 0;
@@ -441,33 +701,29 @@ export struct CoursePage {
         })
 
         Row() {
-          Text('⛶')
-            .fontSize(16)
-            .fontColor('#333333')
-            .width(32)
-            .height(32)
-            .textAlign(TextAlign.Center)
-            .margin({ right: 4 })
-            .onClick(() => console.info('CoursePage', '点击全屏'))
+          Image($r('app.media.qrcode_scanner'))
+            .width(22)
+            .height(22)
+            .fillColor('#333333')
+            .margin({ right: 8 })
+            .onClick(() => {
+              this.startScan();
+            })
 
-          Text('↻')
-            .fontSize(16)
-            .fontColor('#333333')
-            .width(32)
-            .height(32)
-            .textAlign(TextAlign.Center)
-            .margin({ right: 4 })
+          Image($r('app.media.refresh'))
+            .width(22)
+            .height(22)
+            .fillColor('#333333')
+            .margin({ right: 8 })
             .rotate({ angle: this.refreshRotate })
             .onClick(() => {
               this.onRefresh();
             })
 
-          Text('⋮')
-            .fontSize(16)
-            .fontColor('#333333')
-            .width(32)
-            .height(32)
-            .textAlign(TextAlign.Center)
+          Image($r('app.media.more_vert'))
+            .width(22)
+            .height(22)
+            .fillColor('#333333')
             .onClick(() => {
               if (this.showMoreMenu) {
                 this.closeMoreMenu();
@@ -497,7 +753,7 @@ export struct CoursePage {
           currentWeek: this.currentWeek,
           actualCurrentWeek: this.actualCurrentWeek,
           totalWeeks: this.store.totalWeeks,
-          courseList: this.courseList,
+          courseList: this.allCourseList,
           onWeekSelect: (week: number) => {
             console.info('CoursePage', `onWeekSelect: ${week}`);
             this.currentWeek = week;
@@ -560,6 +816,10 @@ export struct CoursePage {
           courseList: this.courseList,
           weekDates: this.weekDates,
           monthLabel: this.monthLabel,
+          timeSlots: getTimeSlotsByCampus(this.currentCampus),
+          sundayFirst: this.sundayFirst,
+          courseFontSize: this.scheduleSettings.fontSize,
+          courseItalic: this.scheduleSettings.italic,
         })
           .layoutWeight(1)
       }
@@ -571,7 +831,7 @@ export struct CoursePage {
       }
       }
       .width('100%').height('100%')
-      .backgroundColor('#F5F5F5')
+      .backgroundColor(this.scheduleSettings.bgImage ? '#00F5F5F5' : '#F5F5F5')
 
       if (this.showMoreMenu) {
         Stack({ alignContent: Alignment.TopEnd }) {
@@ -603,6 +863,85 @@ export struct CoursePage {
         .width('100%')
         .height('100%')
         .position({ x: 0, y: 0 })
+      }
+
+      CampusPicker({
+        visible: this.showCampusPicker,
+        selectedCampus: this.currentCampus,
+        onCancel: () => {
+          this.showCampusPicker = false;
+        },
+        onConfirm: (campus: string) => {
+          this.currentCampus = campus;
+          this.showCampusPicker = false;
+          promptAction.showToast({ message: `已切换到${campus}`, duration: 1500 });
+        }
+      })
+
+      SemesterPicker({
+        visible: this.showSemesterPicker,
+        selectedSemester: this.currentSemester,
+        onCancel: () => {
+          this.showSemesterPicker = false;
+        },
+        onConfirm: (semester: string) => {
+          this.showSemesterPicker = false;
+          this.switchSemester(semester);
+        }
+      })
+
+      WeekAdjustPicker({
+        visible: this.showWeekAdjust,
+        currentWeek: this.currentWeek,
+        onConfirm: (week: number) => {
+          this.actualCurrentWeek = week;
+          this.currentWeek = week;
+          AppStorage.setOrCreate('adjustedCurrentWeek', week);
+          PreferenceStorage.getInstance().setSettingNumber('adjustedCurrentWeek', week);
+          this.store.setCurrentWeek(week);
+          this.updateWeekDates();
+          this.refreshKey = this.refreshKey + 1;
+          if (this.onlyThisWeek) {
+            this.applyOnlyThisWeekFilter();
+          }
+          this.showWeekAdjust = false;
+          promptAction.showToast({ message: `已校准为第${week}周`, duration: 1500 });
+        },
+        onCancel: () => {
+          this.showWeekAdjust = false;
+        }
+      })
+
+      // 回到本周定位按钮（仅非本周时显示）
+      if (this.currentWeek !== this.actualCurrentWeek) {
+        Column() {
+          Image($r('app.media.location_on'))
+            .width(24)
+            .height(24)
+            .fillColor('#666666')
+        }
+        .width(44)
+        .height(44)
+        .borderRadius(12)
+        .backgroundColor('#F0F0F0')
+        .justifyContent(FlexAlign.Center)
+        .shadow({
+          radius: 6,
+          color: '#30000000',
+          offsetX: 0,
+          offsetY: 2
+        })
+        .position({ x: '86%', y: '72%' })
+        .onClick(() => {
+          this.currentWeek = this.actualCurrentWeek;
+          this.store.setCurrentWeek(this.actualCurrentWeek);
+          this.updateWeekDates();
+          this.refreshKey = this.refreshKey + 1;
+          if (this.onlyThisWeek) {
+            this.applyOnlyThisWeekFilter();
+          }
+          promptAction.showToast({ message: '已经回到当前周', duration: 1500 });
+        })
       }
     }
     .width('100%').height('100%')

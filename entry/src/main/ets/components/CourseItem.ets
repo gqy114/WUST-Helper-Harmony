@@ -3,30 +3,35 @@
  */
 @Component
 export struct CourseItem {
-  private courseName: string = '';
-  private teacher: string = '';
-  private location: string = '';
-  private color: string = '#66cc99';
-  private isDimmed: boolean = false;
+  @Prop courseName: string = '';
+  @Prop teacher: string = '';
+  @Prop location: string = '';
+  @Prop color: string = '#66cc99';
+  @Prop isDimmed: boolean = false;
+  @Prop fontSize: number = 11;
+  @Prop italic: boolean = false;
   private onItemTap?: () => void;
 
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
       Column() {
         Text(this.courseName)
-          .fontSize(11)
+          .fontSize(this.fontSize)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.isDimmed ? '#666666' : '#FFFFFF')
+          .fontStyle(this.italic ? FontStyle.Italic : FontStyle.Normal)
           .maxLines(3)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .textAlign(TextAlign.Center)
           .width('100%')
 
         Text(this.location)
-          .fontSize(11)
+          .fontSize(Math.max(9, this.fontSize - 2))
           .fontColor(this.isDimmed ? '#888888' : '#FFFFFF')
+          .fontStyle(this.italic ? FontStyle.Italic : FontStyle.Normal)
           .opacity(this.isDimmed ? 1 : 0.9)
-          .maxLines(3)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
           .textAlign(TextAlign.Center)
           .margin({ top: 4 })
           .width('100%')

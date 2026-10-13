@@ -11,7 +11,7 @@ import { GradeBean } from '../model/GradeModel';
 
 @Component
 export struct GradeItem {
-  private grade: GradeBean = {
+  @Prop grade: GradeBean = {
     courseName: '', grade: '0', courseCredit: '0',
     courseHours: '0', gradePoint: '0', evaluationMode: '',
     examNature: '', courseNature: '', schoolTerm: '',
@@ -22,9 +22,19 @@ export struct GradeItem {
   build() {
     Row() {
       Column() {
-        Text(this.grade.courseName)
-          .fontSize(15).fontWeight(FontWeight.Medium).fontColor('#333333')
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        Row() {
+          Text(this.grade.courseName)
+            .fontSize(15).fontWeight(FontWeight.Medium).fontColor('#333333')
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          if (this.isFullGpa()) {
+            Image($r('app.media.ic_medal'))
+              .width(20)
+              .height(20)
+              .margin({ left: 6 })
+          }
+        }
+        .width('100%')
 
         Row() {
           Text(this.grade.courseNature).fontSize(11).fontColor('#999999')
@@ -54,5 +64,10 @@ export struct GradeItem {
     if (num < 60) return '#f44336';
     if (num >= 85) return '#1ec98d';
     return '#333333';
+  }
+
+  private isFullGpa(): boolean {
+    const gpa = parseFloat(this.grade.gradePoint);
+    return !isNaN(gpa) && gpa >= 4.0;
   }
 }

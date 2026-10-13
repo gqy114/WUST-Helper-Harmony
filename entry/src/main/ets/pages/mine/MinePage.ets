@@ -10,7 +10,7 @@
  *
  * 文件路径：entry/src/main/ets/pages/mine/MinePage.ets
  */
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
 import { RouterUtil } from '../../utils/RouterUtil';
 import { AppStorage } from '../../store/AppStorage';
 import { StorageUtil } from '../../utils/StorageUtil';
@@ -26,9 +26,6 @@ interface MineFeatureItem {
   bgColor: string;
   icon: Resource;
 }
-
-const mockNickName: string = '滚木';
-const mockStudentId: string = '114514191981';
 
 const mineFeatureList: MineFeatureItem[] = [
   { title: '提交反馈', desc: '快来吐槽吧', bgColor: '#FFFFFF', icon: $r('app.media.ic_feedback') },
@@ -127,13 +124,16 @@ struct MinePage {
         const data = resp.data;
         if (data) {
           const s = AppStorage.getInstance();
-          if (data.stuName) {
-            await s.setRealName(data.stuName);
+          const realName = data.stuName || data.name || '';
+          const studentId = data.stuNum || data.studentNumber || data.studentId || '';
+          if (realName) {
+            await s.setRealName(realName);
             const nick = await s.getUserName();
             if (!nick || nick === '木有设置') {
-              await s.setUserName(data.stuName);
+              await s.setUserName(realName);
             }
           }
+          if (studentId) { await s.setStudentId(studentId); }
           if (data.college) { await s.setCollege(data.college); }
           if (data.major) { await s.setMajor(data.major); }
           // 刷新界面
@@ -194,13 +194,16 @@ struct MinePage {
                   .borderRadius(10)
                   .backgroundColor(Color.White)
               }
+              .onClick(() => {
+                router.pushUrl({ url: 'pages/profile/InfoSettingsPage' });
+              })
 
               Column() {
-                Text(mockNickName)
+                Text(this.userInfo.userName || this.userInfo.realName || '未获取姓名')
                   .fontSize(18)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#333333')
-                Text(mockStudentId)
+                Text(this.userInfo.studentId || '未获取学号')
                   .fontSize(13)
                   .fontColor('#999999')
                   .margin({ top: 4 })
@@ -208,6 +211,9 @@ struct MinePage {
               .alignItems(HorizontalAlign.Start)
               .layoutWeight(1)
               .margin({ left: 12 })
+              .onClick(() => {
+                router.pushUrl({ url: 'pages/profile/InfoSettingsPage' });
+              })
 
               Text('注销')
                 .fontSize(13)
@@ -264,7 +270,11 @@ struct MinePage {
                   .borderRadius(12)
                   .alignItems(VerticalAlign.Center)
                   .onClick(() => {
-                    promptAction.showToast({ message: `${item.title} 功能待实现`, duration: 2000 });
+                    if (item.title === '关于APP') {
+                      router.pushUrl({ url: 'pages/profile/AboutPage' });
+                    } else {
+                      promptAction.showToast({ message: `${item.title} 功能待实现`, duration: 2000 });
+                    }
                   })
                 }
               }, (item: MineFeatureItem) => item.title)
@@ -295,7 +305,7 @@ struct MinePage {
             .margin({ top: 16 })
             .alignItems(VerticalAlign.Center)
             .onClick(() => {
-              promptAction.showToast({ message: '设置页面待实现', duration: 2000 });
+              router.pushUrl({ url: 'pages/profile/SettingsPage' });
             })
 
             Text('领航工作室出品')

@@ -343,7 +343,7 @@ struct LoginPage {
         : await ApiService.loginUndergrad(sid, pwd);
       this.clearLoginTimer();
 
-      if (resp && (resp.code === 200 || resp.code === 0)) {
+      if (resp && (resp.code === 200 || resp.code === 0 || resp.code === 10000 || resp.code === 11000)) {
         const s = AppStorage.getInstance();
         if (resp.data) {
           if (this.isGraduate) {
@@ -395,7 +395,7 @@ struct LoginPage {
     try {
       const resp = await ApiService.loginUndergrad(sid, pwd);
       this.clearLoginTimer();
-      if (resp && (resp.code === 200 || resp.code === 0) && resp.data?.token) {
+      if (resp && (resp.code === 200 || resp.code === 0 || resp.code === 10000 || resp.code === 11000) && resp.data?.token) {
         await this.saveLoginData(resp.data.token, resp.msg ?? '', sid, pwd);
         this.silentAppAuth(sid, pwd, false);
         this.syncOnLogin();
@@ -414,7 +414,7 @@ struct LoginPage {
     try {
       const resp = await ApiService.loginGraduate(sid, pwd);
       this.clearLoginTimer();
-      if (resp && (resp.code === 200 || resp.code === 0)) {
+      if (resp && (resp.code === 200 || resp.code === 0 || resp.code === 10000 || resp.code === 11000)) {
         const token = 'grad_' + sid;
         await this.saveLoginData(token, resp.msg ?? '', sid, pwd);
         if (resp.data) {

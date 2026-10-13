@@ -6,6 +6,16 @@
     "pages/campus/grade/GradePage",
     "pages/library/LibraryPage",
     "pages/mine/MinePage",
-    "pages/course/CoursePage"
+    "pages/course/CoursePage",
+    "pages/course/CourseArchivePage",
+    "pages/course/BackgroundSetting",
+    "pages/course/ScheduleSetting",
+    "pages/profile/SettingsPage",
+    "pages/profile/InfoSettingsPage",
+    "pages/profile/AboutPage",
+    "pages/campus/grade/ScholarshipCalculatorPage",
+    "pages/campus/grade/ChartStatisticsPage",
+    "pages/countdown/CountdownPage"
   ]
 }
+
