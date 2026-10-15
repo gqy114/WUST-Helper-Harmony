@@ -12,6 +12,7 @@ struct CourseSharePage {
   @State private isDynamic: boolean = true;
   @State private inviteToken: string = '';
   @State private expiresIn: number = 0;
+  @State private qrUrl: string = '';
   private timer?: number;
 
   aboutToAppear(): void {
@@ -25,6 +26,7 @@ struct CourseSharePage {
       const result = await DynamicScheduleApi.createInvite('2026-2027-1', this.allowExtra);
       this.inviteToken = result.token;
       this.expiresIn = result.expiresIn || 300;
+      this.updateDynamicQr();
       if (this.timer !== undefined) clearInterval(this.timer);
       this.timer = setInterval(() => { if (this.expiresIn > 0) this.expiresIn -= 1; }, 1000);
     } catch (err) {
@@ -36,6 +38,16 @@ struct CourseSharePage {
     const storage = AppStorage.getInstance();
     this.nickname = (await storage.getRealName()) || (await storage.getUserName()) || '我的';
     this.avatarUrl = await storage.getAvatarUrl();
+    this.updateStaticQr();
+  }
+
+  private updateStaticQr(): void {
+    const payload = `wusthelper://schedule?student=${encodeURIComponent(this.nickname)}&semester=2026-2027-1`;
+    this.qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=540x540&data=${encodeURIComponent(payload)}`;
+  }
+
+  private updateDynamicQr(): void {
+    this.qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=540x540&data=${encodeURIComponent(`wusthelper://dynamic-schedule?token=${this.inviteToken}`)}`;
   }
 
   build() {
@@ -60,10 +72,7 @@ struct CourseSharePage {
               }.alignItems(HorizontalAlign.Start).margin({ left: 18 });
             }.width('100%').padding({ left: 24, top: 24, bottom: 24 });
             Column() {
-              Column() {
-                Text(this.inviteToken ? '动态二维码已生成' : '点击下方按钮生成二维码').fontSize(18).fontColor('#777777');
-                if (this.inviteToken) { Text(this.inviteToken).fontSize(12).fontColor('#999999').margin({ top: 12 }); }
-              }.width(270).height(270).justifyContent(FlexAlign.Center).backgroundColor('#FFFFFF');
+              Image(this.qrUrl).width(270).height(270).objectFit(ImageFit.Contain);
               Text('使用武科大助手扫一扫').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#444444').margin({ top: 16 });
               Row() {
                 Text(this.isDynamic ? `${Math.floor(this.expiresIn / 60).toString().padStart(2, '0')}:${(this.expiresIn % 60).toString().padStart(2, '0')} 内可扫码` : '使用武科大助手扫码').fontSize(16).fontColor('#999999');
@@ -84,7 +93,7 @@ struct CourseSharePage {
           Row() {
             Text('⇄').fontSize(28).fontColor('#2A8F70');
             Text(this.isDynamic ? '切换到普通课表' : '切换到动态课表').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#2A8F70').margin({ left: 12 });
-          }.margin({ top: 26 }).onClick(() => { this.isDynamic = !this.isDynamic; if (this.isDynamic) this.createInvite(); });
+          }.margin({ top: 26 }).onClick(() => { this.isDynamic = !this.isDynamic; if (this.isDynamic) this.createInvite(); else { this.updateStaticQr(); this.expiresIn = 0; } });
           Text(this.isDynamic ? '动态课表允许他人实时查看你的课表变化。\n需使用安卓版本武科大助手 5.3.0.158 及以上版本。' : '普通课表二维码仅包含当前课表档案，可供武科大助手扫码导入。')
             .fontSize(16).fontColor('#999999').textAlign(TextAlign.Center).lineHeight(28).margin({ top: 28, bottom: 30 });
         }.width('100%').padding({ top: 44, bottom: 24 }).alignItems(HorizontalAlign.Center);
