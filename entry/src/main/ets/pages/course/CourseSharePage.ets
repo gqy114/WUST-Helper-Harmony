@@ -1,5 +1,7 @@
 import router from '@ohos.router';
+import { promptAction } from '@kit.ArkUI';
 import { AppStorage } from '../../store/AppStorage';
+import { DynamicScheduleApi } from '../../net/DynamicScheduleApi';
 
 @Entry
 @Component
@@ -8,9 +10,26 @@ struct CourseSharePage {
   @State private avatarUrl: string = '';
   @State private allowExtra: boolean = false;
   @State private isDynamic: boolean = true;
+  @State private inviteToken: string = '';
+  @State private expiresIn: number = 0;
+  private timer?: number;
 
   aboutToAppear(): void {
     this.loadProfile();
+  }
+
+  aboutToDisappear(): void { if (this.timer !== undefined) clearInterval(this.timer); }
+
+  private async createInvite(): Promise<void> {
+    try {
+      const result = await DynamicScheduleApi.createInvite('2026-2027-1', this.allowExtra);
+      this.inviteToken = result.token;
+      this.expiresIn = result.expiresIn || 300;
+      if (this.timer !== undefined) clearInterval(this.timer);
+      this.timer = setInterval(() => { if (this.expiresIn > 0) this.expiresIn -= 1; }, 1000);
+    } catch (err) {
+      promptAction.showToast({ message: `${err}`, duration: 1800 });
+    }
   }
 
   private async loadProfile(): Promise<void> {
@@ -41,13 +60,14 @@ struct CourseSharePage {
               }.alignItems(HorizontalAlign.Start).margin({ left: 18 });
             }.width('100%').padding({ left: 24, top: 24, bottom: 24 });
             Column() {
-              // 二维码按需求暂不生成，保留与正式二维码相同的占位区域。
-              Blank().width(270).height(270).backgroundColor(Color.White);
-              Text('二维码暂未生成').fontSize(16).fontColor('#BBBBBB').margin({ top: 10 });
+              Column() {
+                Text(this.inviteToken ? '动态二维码已生成' : '点击下方按钮生成二维码').fontSize(18).fontColor('#777777');
+                if (this.inviteToken) { Text(this.inviteToken).fontSize(12).fontColor('#999999').margin({ top: 12 }); }
+              }.width(270).height(270).justifyContent(FlexAlign.Center).backgroundColor('#FFFFFF');
               Text('使用武科大助手扫一扫').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#444444').margin({ top: 16 });
               Row() {
-                Text(this.isDynamic ? '05:00 内可扫码' : '使用武科大助手扫码').fontSize(16).fontColor('#999999');
-                if (this.isDynamic) { Text('↻ 刷新').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#2A8F70').margin({ left: 20 }); }
+                Text(this.isDynamic ? `${Math.floor(this.expiresIn / 60).toString().padStart(2, '0')}:${(this.expiresIn % 60).toString().padStart(2, '0')} 内可扫码` : '使用武科大助手扫码').fontSize(16).fontColor('#999999');
+                if (this.isDynamic) { Text('↻ 刷新').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#2A8F70').margin({ left: 20 }).onClick(() => this.createInvite()); }
               }.margin({ top: 12 });
             }.width('100%').padding({ top: 20, bottom: 20 });
             Divider().strokeWidth(1).color('#E5EAE8').margin({ left: 24, right: 24 });
@@ -64,7 +84,7 @@ struct CourseSharePage {
           Row() {
             Text('⇄').fontSize(28).fontColor('#2A8F70');
             Text(this.isDynamic ? '切换到普通课表' : '切换到动态课表').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#2A8F70').margin({ left: 12 });
-          }.margin({ top: 26 }).onClick(() => { this.isDynamic = !this.isDynamic; });
+          }.margin({ top: 26 }).onClick(() => { this.isDynamic = !this.isDynamic; if (this.isDynamic) this.createInvite(); });
           Text(this.isDynamic ? '动态课表允许他人实时查看你的课表变化。\n需使用安卓版本武科大助手 5.3.0.158 及以上版本。' : '普通课表二维码仅包含当前课表档案，可供武科大助手扫码导入。')
             .fontSize(16).fontColor('#999999').textAlign(TextAlign.Center).lineHeight(28).margin({ top: 28, bottom: 30 });
         }.width('100%').padding({ top: 44, bottom: 24 }).alignItems(HorizontalAlign.Center);
