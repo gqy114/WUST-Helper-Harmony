@@ -2,6 +2,7 @@
  * 低层 HTTP 封装，对应原 Android 端 OkHttp + CommonRequest
  */
 import { http } from '@kit.NetworkKit';
+import { AppStorage } from '../store/AppStorage';
 
 const TAG = 'HttpRequest';
 
@@ -49,8 +50,17 @@ export class HttpRequest {
         }
       }
 
-      const response = await httpRequest.request(url, {
-        method: method === 'GET' ? http.RequestMethod.GET : http.RequestMethod.POST,
+      let requestUrl = url;
+      let requestMethod = method === 'GET' ? http.RequestMethod.GET : http.RequestMethod.POST;
+      if (await HttpRequest.shouldUseCampusProxy(url)) {
+        extraData = JSON.stringify({ method, url, headers: header, body: extraData ?? '' });
+        requestUrl = 'https://lyzyy.love:8081/CampusProxy/Support/request';
+        requestMethod = http.RequestMethod.POST;
+        header = { 'Content-Type': 'application/json' };
+        console.info(TAG, `campus proxy enabled for ${method} ${url}`);
+      }
+      const response = await httpRequest.request(requestUrl, {
+        method: requestMethod,
         header,
         extraData,
         expectDataType: options?.expectDataType ?? http.HttpDataType.STRING,
@@ -73,6 +83,11 @@ export class HttpRequest {
     } finally {
       httpRequest.destroy();
     }
+  }
+
+  private static async shouldUseCampusProxy(url: string): Promise<boolean> {
+    const enabled = await AppStorage.getInstance().getSettingBool('useCampusProxy', false);
+    return enabled && /^https:\/\/([a-z0-9-]+\.)*wust\.edu\.cn(?::\d+)?(?:\/|$)/i.test(url);
   }
 
   /** post json请求 */
