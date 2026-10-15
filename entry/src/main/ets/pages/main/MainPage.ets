@@ -89,6 +89,7 @@ struct MainPage {
   @State private currentTab: number = 2;
   @State private catSleep: boolean = false;
   @State private catGirl: boolean = false;
+  @State private showCampusCat: boolean = true;
   /** 底部导航栏是否隐藏 */
   @State private barHidden: boolean = false;
   // ── 非 @State 内部变量 ──
@@ -100,6 +101,7 @@ struct MainPage {
   aboutToAppear(): void {
     console.info(TAG, 'aboutToAppear');
     this.loadDefaultTab();
+    this.loadCatVisibility();
     this.updateCatState();
     console.info(TAG, `[module-debug] toolList.length=${toolList.length}`);
     console.info(TAG, `[module-debug] campusWallItem.title=${campusWallItem.title}, desc=${campusWallItem.desc}, route=${campusWallItem.route}`);
@@ -119,8 +121,13 @@ struct MainPage {
   onPageShow(): void {
     console.info(TAG, 'onPageShow');
     this.updateCatState();
+    this.loadCatVisibility();
     this.refreshCatEasterEgg();
     this.verifyLoginState();
+  }
+
+  private async loadCatVisibility(): Promise<void> {
+    this.showCampusCat = await AppStorage.getInstance().getSettingBool('showCampusCat', true);
   }
 
   /** onBackPress — 双击退出 */
@@ -329,7 +336,7 @@ struct MainPage {
       .onChange((index: number) => {
         this.currentTab = index;
       })
-      if (this.currentTab === TabIndex.HOME) {
+      if (this.currentTab === TabIndex.HOME && this.showCampusCat) {
         Image(this.catGirl
           ? (this.catSleep ? $r('app.media.campus_cat_girl_sleep') : $r('app.media.campus_cat_girl'))
           : (this.catSleep ? $r('app.media.campus_cat_sleep') : $r('app.media.campus_cat')))
