@@ -4,9 +4,11 @@ import { CourseData } from '../model/CourseModel';
 
 /** 本科生课表查询 —— 一步式生效接口 */
 const UG_COURSE_TABLE_URL = 'https://lyzyy.love:8081/UnderGraduate/Support/getCoursesPage';
+const UG_COURSE_TABLE_BACKUP_URL = 'https://www.lyzyy.love:8081/UnderGraduate/Support/getCoursesPage';
 
 /** 学期起始日接口（用于计算真实当前周）。 */
 const UG_TERM_STARTDATE_URL = 'https://lyzyy.love:8081/UnderGraduate/Support/getData';
+const UG_TERM_STARTDATE_BACKUP_URL = 'https://www.lyzyy.love:8081/UnderGraduate/Support/getData';
 
 /** 一步式课表接口原始返回项。字段名与教务处接口保持一致。 */
 export interface CourseApiRawItem {
@@ -56,6 +58,8 @@ export interface TermStartDateResult {
   month: number;
   day: number;
 }
+interface CourseHttpResult<T> { data: T; }
+interface CourseHeaders extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
 
 function asInt(value: string | number | undefined, fallback: number): number {
   if (value === undefined || value === '') {
@@ -102,12 +106,18 @@ export class CourseApi {
    * @param token    登录后拿到的 legacy token（作为 Bearer token 使用）
    */
   static async getCourseTable(semester: string, token: string): Promise<BaseResponse<CourseData[]>> {
-    const url = `${UG_COURSE_TABLE_URL}?term=${encodeURIComponent(semester)}`;
     try {
-      const result = await HttpRequest.get<CourseApiEnvelope>(url, {
+      const headers: CourseHeaders = {
         Authorization: token.trim().startsWith('Bearer ') ? token.trim() : `Bearer ${token.trim()}`,
         Platform: 'android',
-      });
+        Accept: 'application/json',
+      };
+      let result: CourseHttpResult<CourseApiEnvelope>;
+      try {
+        result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_URL}?term=${encodeURIComponent(semester)}`, headers);
+      } catch {
+        result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_BACKUP_URL}?term=${encodeURIComponent(semester)}`, headers);
+      }
       const resp = result.data;
 
       if (resp && (resp.code === 10000 || resp.code === 200 || resp.code === 0) && resp.data) {
@@ -139,9 +149,12 @@ export class CourseApi {
    */
   static async getTermStartDate(token: string): Promise<BaseResponse<TermStartDateResult>> {
     try {
-      const result = await HttpRequest.get<TermStartDateEnvelope>(UG_TERM_STARTDATE_URL, {
-        Authorization: `Bearer ${token}`,
-      });
+      let result: CourseHttpResult<TermStartDateEnvelope>;
+      try {
+        result = await HttpRequest.get<TermStartDateEnvelope>(UG_TERM_STARTDATE_URL, { Authorization: `Bearer ${token}` });
+      } catch {
+        result = await HttpRequest.get<TermStartDateEnvelope>(UG_TERM_STARTDATE_BACKUP_URL, { Authorization: `Bearer ${token}` });
+      }
       const resp = result.data;
 
       if (resp && (resp.code === 10000 || resp.code === 200 || resp.code === 0) && resp.data) {

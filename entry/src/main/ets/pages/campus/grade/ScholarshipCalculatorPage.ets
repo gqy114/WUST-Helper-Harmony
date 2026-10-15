@@ -248,15 +248,14 @@ struct ScholarshipCalculatorPage {
     this.courses = newList;
     this.recalculate(true);
   }
-  /** 与安卓 ScholarshipPresenter 一致：绩点按学分和手动权重共同加权。 */
+  /** 与安卓 ScholarshipPresenter 一致：权重只作用于分子，分母仍为原始总学分。 */
   private recalculate(animated: boolean = false): void {
     const selected = this.selectedCourses();
     let weighted = 0;
     let totalCredits = 0;
     for (let i = 0; i < selected.length; i++) {
-      const effectiveCredit = selected[i].credit * selected[i].weight;
-      weighted += selected[i].gpa * effectiveCredit;
-      totalCredits += effectiveCredit;
+      weighted += selected[i].gpa * selected[i].credit * selected[i].weight;
+      totalCredits += selected[i].credit;
     }
     const target = totalCredits > 0 ? weighted / totalCredits : 0;
     if (animated) {

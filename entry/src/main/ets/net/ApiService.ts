@@ -12,11 +12,34 @@ import {
 import { AppStorage } from '../store/AppStorage';
 
 // 从 WustApi.java 抽取的常量子集
-export const UG_LOGIN_V2 = 'https://lyzyy.love:8081/UnderGraduate/Support/loginGetCookie';
-export const GRADUATE_LOGIN_V2 = 'https://lyzyy.love:8081/Graduate/Support/loginPage';
+// 登录接口以 iOS 接口文档为准：本科生换取教务 Cookie，研究生直接返回个人信息。
+export const UG_LOGIN_V2 = 'https://www.lyzyy.love/UnderGraduate/Support/loginGetCookie';
+const UG_LOGIN_V2_BACKUP = 'https://lyzyy.love/UnderGraduate/Support/loginGetCookie';
+export const GRADUATE_LOGIN_V2 = 'https://www.lyzyy.love:8009/personal-info';
+const GRADUATE_LOGIN_V2_BACKUP = 'https://lyzyy.love:8009/personal-info';
 export const APP_AUTH_LOGIN = 'https://lyzyy.love:8081/api/v1/auth/login';
+const APP_AUTH_LOGIN_BACKUP = 'https://www.lyzyy.love:8081/api/v1/auth/login';
+const UG_TWO_VERIFY_SEND = 'https://www.lyzyy.love/UnderGraduate/Support/twoVerify/sendCode';
+const UG_TWO_VERIFY_CHECK = 'https://www.lyzyy.love/UnderGraduate/Support/twoVerify/verify';
+
+interface UndergradLoginResponse {
+  code: number;
+  msg?: string;
+  message?: string;
+  data?: TokenDataContent | string;
+  dataObject?: TokenDataContent;
+}
 
 export class ApiService {
+  static async sendUndergradVerifyCode(state: string): Promise<BaseResponse<{ cooldown_seconds?: number }>> {
+    const result = await HttpRequest.postJson<BaseResponse<{ cooldown_seconds?: number }>>(UG_TWO_VERIFY_SEND, { state });
+    return result.data;
+  }
+
+  static async verifyUndergradCode(state: string, code: string): Promise<BaseResponse<TokenDataContent>> {
+    const result = await HttpRequest.postJson<BaseResponse<TokenDataContent>>(UG_TWO_VERIFY_CHECK, { state, code });
+    return result.data;
+  }
   /** Mock helper: wrap success response */
   private static mockSuccess<T>(data: T): BaseResponse<T> {
     return { code: 200, msg: 'ok', data };
@@ -34,11 +57,37 @@ export class ApiService {
         student_type: 'undergrad',
       });
     }
-const { data } = await HttpRequest.postJson<BaseResponse<TokenDataContent>>(
-      UG_LOGIN_V2,
-      { username: studentId, password },
-    );
-    return data;
+    let data: UndergradLoginResponse;
+    try {
+      const result = await HttpRequest.postJson<UndergradLoginResponse>(UG_LOGIN_V2, { username: studentId, password });
+      data = result.data;
+      // 旧版教务接口使用 form-urlencoded；JSON 返回非成功码时兼容重试。
+      if (data.code !== 200) {
+        const formResult = await HttpRequest.postForm<UndergradLoginResponse>(UG_LOGIN_V2, { username: studentId, password });
+        if (formResult.data.code === 200) data = formResult.data;
+      }
+    } catch {
+      try {
+        const result = await HttpRequest.postJson<UndergradLoginResponse>(UG_LOGIN_V2_BACKUP, { username: studentId, password });
+        data = result.data;
+      } catch {
+        const formResult = await HttpRequest.postForm<UndergradLoginResponse>(UG_LOGIN_V2_BACKUP, { username: studentId, password });
+        data = formResult.data;
+      }
+    }
+    console.info('ApiService', `undergrad login response code=${data.code}, hasData=${data.data !== undefined}, hasDataObject=${data.dataObject !== undefined}`);
+    if (typeof data.data === 'string') {
+      return {
+        code: data.code,
+        msg: data.msg ?? data.message ?? '',
+        data: { token: data.data, student_id: studentId, student_type: 'undergrad' },
+      };
+    }
+    return {
+      code: data.code,
+      msg: data.msg ?? data.message ?? '',
+      data: data.data ?? data.dataObject,
+    };
   }
 
   /** 研究生登录 */
@@ -60,11 +109,19 @@ const { data } = await HttpRequest.postJson<BaseResponse<TokenDataContent>>(
         idNumber: '420106200301010000',
       });
     }
-const { data } = await HttpRequest.postJson<BaseResponse<GraduateLoginDataContent>>(
-      GRADUATE_LOGIN_V2,
-      { student_id: studentId, password },
-    );
-    return data;
+    try {
+      const result = await HttpRequest.postJson<BaseResponse<GraduateLoginDataContent>>(
+        GRADUATE_LOGIN_V2,
+        { student_id: studentId, password },
+      );
+      return result.data;
+    } catch {
+      const result = await HttpRequest.postJson<BaseResponse<GraduateLoginDataContent>>(
+        GRADUATE_LOGIN_V2_BACKUP,
+        { student_id: studentId, password },
+      );
+      return result.data;
+    }
   }
 
   /** App Auth 登录 */
@@ -82,17 +139,20 @@ const { data } = await HttpRequest.postJson<BaseResponse<GraduateLoginDataConten
         user: { displayName: 'Zhang San', avatarUrl: '' },
       });
     }
-const { data } = await HttpRequest.postJson<BaseResponse<AppAuthDataContent>>(
-      APP_AUTH_LOGIN,
-      {
-        student_id: studentId,
-        password,
-        studentType: isGraduate ? 'graduate' : 'undergrad',
-        platform: 'android',
-      },
-      { 'X-Wust-Skip-Auth-Interceptor': 'true' },
-    );
-    return data;
+    const body = {
+      student_id: studentId,
+      password,
+      studentType: isGraduate ? 'graduate' : 'undergrad',
+      platform: 'android',
+    };
+    const headers = { 'X-Wust-Skip-Auth-Interceptor': 'true' };
+    try {
+      const result = await HttpRequest.postJson<BaseResponse<AppAuthDataContent>>(APP_AUTH_LOGIN, body, headers);
+      return result.data;
+    } catch {
+      const result = await HttpRequest.postJson<BaseResponse<AppAuthDataContent>>(APP_AUTH_LOGIN_BACKUP, body, headers);
+      return result.data;
+    }
   }
 
   /** 用保存的凭据恢复 App Auth */
@@ -118,7 +178,7 @@ const { data } = await HttpRequest.postJson<BaseResponse<AppAuthDataContent>>(
           // 可根据业务需要存到 UserInfo
         }
         if (d.user.avatarUrl?.trim()) {
-          // 可根据业务需要存到 UserInfo
+          await storage.setAvatarUrl(d.user.avatarUrl.trim());
         }
       }
       console.info('ApiService', 'app auth restored');

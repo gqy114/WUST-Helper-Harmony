@@ -170,6 +170,30 @@ struct LoadingDialog {
   }
 }
 
+@CustomDialog
+struct TwoVerifyDialog {
+  controller?: CustomDialogController;
+  phone: string = '';
+  onSend?: () => void;
+  onSubmit?: (code: string) => void;
+  @State private code: string = '';
+  build() {
+    Column() {
+      Text('需要短信验证').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333').margin({ top: 16 })
+      Text(`验证码将发送至 ${this.phone || '绑定手机号'}`).fontSize(14).fontColor('#777').margin({ top: 12 })
+      Row() {
+        TextInput({ placeholder: '请输入验证码' }).layoutWeight(1).height(44).onChange((v: string) => this.code = v)
+        Text('发送验证码').fontSize(14).fontColor(C_THEME).margin({ left: 10 }).onClick(() => this.onSend?.())
+      }.width('88%').margin({ top: 18 })
+      Row() {
+        Text('取消').fontSize(16).fontColor('#777').layoutWeight(1).textAlign(TextAlign.Center).onClick(() => this.controller?.close())
+        Text('验证登录').fontSize(16).fontColor(C_THEME).layoutWeight(1).textAlign(TextAlign.Center)
+          .onClick(() => this.onSubmit?.(this.code))
+      }.width('88%').margin({ top: 22, bottom: 16 })
+    }.width('84%').backgroundColor(Color.White).borderRadius(12).alignItems(HorizontalAlign.Center)
+  }
+}
+
 // ═══════════════════════════════════════════════ UpdateDialog═══════════════════════════════════════════════
 
 @CustomDialog
@@ -205,6 +229,7 @@ struct LoginPage {
   @State private isShowErrorDialog: boolean = false;
   @State private errorTitle: string = '';
   @State private errorContent: string = '';
+  private twoVerifyController?: CustomDialogController;
   // ── 内部状态 ──
   private errorCount: Record<string, number> = {};
   private isLoggingIn: boolean = false;
@@ -343,7 +368,17 @@ struct LoginPage {
         : await ApiService.loginUndergrad(sid, pwd);
       this.clearLoginTimer();
 
-      if (resp && (resp.code === 200 || resp.code === 0 || resp.code === 10000 || resp.code === 11000)) {
+      if (!this.isGraduate) {
+        const undergradData = resp.data as TokenDataContent | undefined;
+        if (resp.code === 428 && undergradData?.state) {
+          this.hideLoading();
+          this.isLoggingIn = false;
+          this.showTwoVerify(undergradData.state, undergradData.phone ?? '');
+          return;
+        }
+      }
+
+      if (resp && (resp.code === 200 || String(resp.code) === '200' || resp.code === 0 || resp.code === 10000 || resp.code === 11000)) {
         const s = AppStorage.getInstance();
         if (resp.data) {
           if (this.isGraduate) {
@@ -391,11 +426,38 @@ struct LoginPage {
       console.error(TAG, 'login error');
     }
   }
+
+  private showTwoVerify(state: string, phone: string): void {
+    this.twoVerifyController = new CustomDialogController({
+      builder: TwoVerifyDialog({
+        phone,
+        onSend: async () => {
+          const result = await ApiService.sendUndergradVerifyCode(state);
+          promptAction.showToast({ message: (result.code === 200 || String(result.code) === '200') ? '验证码已发送' : (result.msg ?? '验证码发送失败'), duration: 1800 });
+        },
+        onSubmit: async (code: string) => {
+          if (!code.trim()) { promptAction.showToast({ message: '请输入验证码', duration: 1200 }); return; }
+          const result = await ApiService.verifyUndergradCode(state, code.trim());
+          if ((result.code === 200 || String(result.code) === '200') && result.data?.token) {
+            await this.saveLoginData(result.data.token, result.msg ?? '', this.studentId, this.password);
+            this.twoVerifyController?.close();
+            promptAction.showToast({ message: '登录成功', duration: 1500 });
+            router.pushUrl({ url: 'pages/main/MainPage' });
+          } else {
+            promptAction.showToast({ message: result.msg ?? '验证码错误', duration: 1800 });
+          }
+        }
+      }),
+      alignment: DialogAlignment.Center,
+      autoCancel: false
+    });
+    this.twoVerifyController.open();
+  }
   private async loginUndergrad(sid: string, pwd: string): Promise<void> {
     try {
       const resp = await ApiService.loginUndergrad(sid, pwd);
       this.clearLoginTimer();
-      if (resp && (resp.code === 200 || resp.code === 0 || resp.code === 10000 || resp.code === 11000) && resp.data?.token) {
+      if (resp && (resp.code === 200 || String(resp.code) === '200' || resp.code === 0 || resp.code === 10000 || resp.code === 11000) && resp.data?.token) {
         await this.saveLoginData(resp.data.token, resp.msg ?? '', sid, pwd);
         this.silentAppAuth(sid, pwd, false);
         this.syncOnLogin();
@@ -414,7 +476,7 @@ struct LoginPage {
     try {
       const resp = await ApiService.loginGraduate(sid, pwd);
       this.clearLoginTimer();
-      if (resp && (resp.code === 200 || resp.code === 0 || resp.code === 10000 || resp.code === 11000)) {
+      if (resp && (resp.code === 200 || String(resp.code) === '200' || resp.code === 0 || resp.code === 10000 || resp.code === 11000)) {
         const token = 'grad_' + sid;
         await this.saveLoginData(token, resp.msg ?? '', sid, pwd);
         if (resp.data) {

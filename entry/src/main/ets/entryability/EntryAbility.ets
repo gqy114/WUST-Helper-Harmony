@@ -38,10 +38,10 @@ export default class EntryAbility extends UIAbility {
       StorageUtil.init(this.context),
       AppStorage.getInstance().init(this.context),
     ]).then(() => {
-      const target = StorageUtil.isLoggedIn() ? 'pages/main/MainPage' : 'pages/login/LoginPage';
-      loadPage(target);
+      // 统一先进入开屏页，由 LaunchPage 决定登录页或主页，并展示自定义 open.png。
+      loadPage('pages/splash/LaunchPage');
     }).catch(() => {
-      loadPage('pages/login/LoginPage');
+      loadPage('pages/splash/LaunchPage');
     });
   }
 

@@ -18,7 +18,7 @@
         "description": "$string:EntryAbility_desc",
         "icon": "$media:logo",
         "label": "$string:app_name",
-        "startWindowIcon": "$media:startIcon",
+        "startWindowIcon": "$media:start_placeholder",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
 

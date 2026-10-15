@@ -141,6 +141,10 @@ export class AppStorage {
   async setCollege(v: string): Promise<void> { return this.putStr('college', v); }
   async getMajor(): Promise<string> { return this.getStr('major'); }
   async setMajor(v: string): Promise<void> { return this.putStr('major', v); }
+  async getAvatarUrl(): Promise<string> { return this.getStr('avatarUrl'); }
+  async setAvatarUrl(v: string): Promise<void> { return this.putStr('avatarUrl', v); }
+  async getClasses(): Promise<string> { return this.getStr('classes'); }
+  async setClasses(v: string): Promise<void> { return this.putStr('classes', v); }
 
   // ── App Auth ──
 

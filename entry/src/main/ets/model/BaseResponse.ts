@@ -13,6 +13,9 @@ export interface TokenDataContent {
   token: string;
   student_id: string;
   student_type: string;
+  state?: string;
+  phone?: string;
+  status?: string;
 }
 
 export interface GraduateLoginDataContent {

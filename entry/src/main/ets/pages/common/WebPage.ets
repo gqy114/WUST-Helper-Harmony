@@ -11,7 +11,7 @@
  * 文件路径：entry/src/main/ets/pages/common/WebPage.ets
  */
 import { router } from '@kit.ArkUI';
-import { webview } from '@kit.ArkUI';
+import webview from '@ohos.web.webview';
 
 const TAG = 'WebPage';
 
@@ -26,8 +26,8 @@ struct WebPage {
   @State private pageTitle: string = '';
   @State private pageUrl: string = '';
   @State private loadError: boolean = false;
-
   private webController: webview.WebviewController = new webview.WebviewController();
+
 
   aboutToAppear(): void {
     const params = router.getParams() as Record<string, string>;
@@ -37,17 +37,6 @@ struct WebPage {
       this.pageUrl = rawUrl;
     }
     console.info(TAG, `load url: ${rawUrl}`);
-  }
-
-  onPageShow(): void {
-    if (this.pageUrl && this.pageUrl !== '' && !this.loadError) {
-      try {
-        this.webController.loadUrl(this.pageUrl);
-      } catch {
-        console.warn(TAG, `loadUrl error: ${e}`);
-        this.loadError = true;
-      }
-    }
   }
 
   build() {
@@ -96,7 +85,7 @@ struct WebPage {
           .javaScriptAccess(true)
           .domStorageAccess(true)
           .onErrorReceive((event) => {
-            console.warn(TAG, `web error: ${event?.error?.info ?? 'unknown'}`);
+            console.warn(TAG, `web error: ${event?.error?.getErrorCode() ?? 'unknown'}`);
             this.loadError = true;
           })
       }

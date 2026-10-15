@@ -57,7 +57,11 @@ struct AboutPage {
             .backgroundColor('#F5F7FA');
 
           this.aboutItem($r('app.media.person_edit'), '作者介绍', () => {
-            promptAction.showToast({ message: '开发中', duration: 1500 });
+            promptAction.showDialog({
+              title: '作者介绍',
+              message: '武科大助手由武汉科技大学领航工作室开发与维护。\n\n我们致力于为武科大学生提供便捷、实用的校园服务。',
+              buttons: [{ text: '知道了', color: '#1EC98D' }]
+            });
           });
 
           Text('其它')
@@ -68,11 +72,17 @@ struct AboutPage {
             .backgroundColor('#F5F7FA');
 
           this.aboutItem($r('app.media.computer'), '领航官网', () => {
-            promptAction.showToast({ message: '开发中', duration: 1500 });
+            router.pushUrl({
+              url: 'pages/common/WebPage',
+              params: { title: '领航官网', url: 'https://wustlinghang.cn' }
+            });
           });
 
           this.aboutItem($r('app.media.description'), '用户协议与隐私政策', () => {
-            promptAction.showToast({ message: '开发中', duration: 1500 });
+            router.pushUrl({
+              url: 'pages/common/WebPage',
+              params: { title: '用户协议与隐私政策', url: 'https://wusthelper.wustlinghang.cn/page/android_privacy.html' }
+            });
           });
         }
         .width('100%');

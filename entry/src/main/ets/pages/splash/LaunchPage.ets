@@ -26,6 +26,8 @@ class TokenHolder {
 @Entry
 @Component
 struct LaunchPage {
+  private navigationScheduled: boolean = false;
+
   aboutToAppear(): void {
     // 竖屏锁定 → 在 module.json5 abilities[].orientation = "portrait"
     // 页面过渡动画 → 使用 pageTransition 声明式 API（见底部）
@@ -35,7 +37,11 @@ struct LaunchPage {
   onPageShow(): void {
     // 对应 onResume()
     console.info(TAG, 'onPageShow');
-    this.handleNavigation();
+    if (!this.navigationScheduled) {
+      this.navigationScheduled = true;
+      // 给开屏图保留完整展示时间，再进入登录页或主页。
+      setTimeout(() => this.handleNavigation(), 1500);
+    }
   }
 
   onBackPress(): boolean {
@@ -49,7 +55,23 @@ struct LaunchPage {
   private async handleNavigation(): Promise<void> {
     try {
       const storage = AppStorage.getInstance();
-      const isLogin = await storage.getIsLogin();
+      let isLogin = await storage.getIsLogin();
+
+      // After a reboot or an app update the persisted teaching-system token
+      // may be empty/expired, while the saved credentials are still present.
+      // Re-establish the session before deciding to show the login page.
+      if (!isLogin || !(await storage.getToken())) {
+        const sid = await storage.getStudentId();
+        const pwd = await storage.getPassword();
+        if (sid && pwd) {
+          const graduate = await storage.getIsGraduate();
+          const refreshed = graduate
+            ? await ApiService.refreshGraduateToken(storage, sid, pwd)
+            : await ApiService.refreshUndergradToken(storage, sid, pwd);
+          isLogin = refreshed;
+          if (refreshed) await storage.setIsLogin(true);
+        }
+      }
 
       if (isLogin) {
         // ① 恢复内存 Token
@@ -124,47 +146,15 @@ struct LaunchPage {
 
   build() {
     Stack() {
-      // 纯黑背景
-      Column()
+      Image($r('app.media.open'))
         .width('100%')
         .height('100%')
-        .backgroundColor(Color.Black)
-
-      // 中部：Logo + 标语
-      Column() {
-        Image($r('app.media.logo'))
-          .width(120)
-          .height(120)
-          .objectFit(ImageFit.Contain)
-
-        Text('随时随地  开启校园之旅')
-          .fontSize(17)
-          .fontColor('#787878')
-          .margin({ top: 16 })
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
-      .position({ x: 0, y: '25%' })
-
-      // 底部版权信息
-      Column() {
-        Text('武科大教务处唯一授权')
-          .fontSize(17)
-          .fontColor(Color.White)
-          .margin({ bottom: 15 })
-
-        Text('武汉科技大学青年志愿者服务队合作伙伴')
-          .fontSize(17)
-          .fontColor(Color.White)
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
-      .position({ x: 0, y: '85%' })
+        .objectFit(ImageFit.Fill)
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .width('100%')
     .height('100%')
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   // ═══════════════════════ 页面过渡动画 ═══════════════════════

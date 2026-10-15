@@ -29,18 +29,31 @@ export interface StudentApiContent {
   stuNum?: string;
   studentNumber?: string;
   studentId?: string;
+  studentName?: string;
+  student_name?: string;
+  userName?: string;
   stuName?: string;
   name?: string;
   nickName?: string;
   college?: string;
+  department?: string;
+  academy?: string;
+  school?: string;
   major?: string;
   classes?: string;
   clazz?: string;
+  className?: string;
+  class?: string;
+  class_name?: string;
+  data?: StudentApiContent;
+  value?: StudentApiContent;
+  content?: StudentApiContent;
+  studentInfo?: StudentApiContent;
 }
 
 export interface StudentApiResponse {
-  code: number;
-  msg: string;
+  code: number | string;
+  msg?: string;
   data?: StudentApiContent;
   /** 部分接口版本使用 dataObject/value/message 包装学生信息。 */
   dataObject?: StudentApiContent;
@@ -51,4 +64,5 @@ export interface StudentApiResponse {
   college?: string;
   major?: string;
   clazz?: string;
+  studentInfo?: StudentApiContent;
 }

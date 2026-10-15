@@ -1,4 +1,4 @@
-﻿/**
+/**
  * MainPage.ets — 主页（4-Tab 底部导航）
  *
  * 迁移来源：MainMvpActivity.java + activity_main.xml
@@ -9,6 +9,8 @@ import { RouterUtil } from '../../utils/RouterUtil';
 import { common } from '@kit.AbilityKit';
 import { CoursePage } from '../course/CoursePage';
 import { MinePage } from '../mine/MinePage';
+import { VolunteerPage } from '../volunteer/VolunteerPage';
+import { CampusPage } from '../campus/CampusPage';
 import { ApiService } from '../../net/ApiService';
 import { promptAction } from '@kit.ArkUI';
 import router from '@ohos.router';
@@ -42,19 +44,21 @@ interface CardItem {
 const hotFuncList: CardItem[] = [
   { title: "倒计时", desc: "鸽子模拟器 咕咕咕", bgColor: "#E3F2FD", titleColor: "#3949ab", icon: $r('app.media.ic_countdown'), route: "pages/countdown/CountdownPage" },
   { title: "图书馆", desc: "检索借阅与图书", bgColor: "#FFE5E5", titleColor: "#e53935", icon: $r('app.media.ic_library_normal'), route: "pages/library/LibraryPage" },
-  { title: "培养方案", desc: "掌握修读情况", bgColor: "#FFF3E0", titleColor: "#f57c00", icon: $r('app.media.ic_credit'), route: "pages/common/WebPage", url: "" },
-  { title: "教室查询", desc: "空教室与课程", bgColor: "#F3E5F5", titleColor: "#7b1fa2", icon: $r('app.media.ic_emptyroom'), route: "pages/common/WebPage", url: "" },
+  { title: "培养方案", desc: "掌握修读情况", bgColor: "#FFF3E0", titleColor: "#f57c00", icon: $r('app.media.ic_credit'), route: "pages/campus/TrainingPlanPage" },
+  { title: "教室查询", desc: "空教室与课程", bgColor: "#F3E5F5", titleColor: "#7b1fa2", icon: $r('app.media.ic_emptyroom'), route: "pages/campus/ClassroomQueryPage" },
   { title: "双创学分", desc: "创新创业学分", bgColor: "#E0F7FA", titleColor: "#009688", icon: $r('app.media.ic_double_create_credit'), route: "pages/common/WebPage", url: "" },
-  { title: "AI问答", desc: "智能问答助手", bgColor: "#E8EAF6", titleColor: "#5c6bc0", icon: $r('app.media.ic_ai_chat'), route: "pages/common/WebPage", url: "" },
-  { title: "主修进度", desc: "学分完成情况", bgColor: "#F5E5DC", titleColor: "#8d6e63", icon: $r('app.media.ic_graduation_audit'), route: "pages/common/WebPage", url: "" }
+  { title: "AI问答", desc: "智能问答助手", bgColor: "#E8EAF6", titleColor: "#5c6bc0", icon: $r('app.media.ic_ai_chat'), route: "pages/ai/AIAssistantPage" },
+  { title: "主修进度", desc: "学分完成情况", bgColor: "#F5E5DC", titleColor: "#8d6e63", icon: $r('app.media.ic_graduation_audit'), route: "pages/campus/MajorProgressPage" }
 ]
 
 //小工具模块数组
 const toolList: CardItem[] = [
-  { title: "校车时刻", desc: "发车时间查询", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_school_bus'), route: "pages/common/WebPage", url: "" },
-  { title: "学校校历", desc: "了解假期安排", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_schoolcalendar'), route: "pages/common/WebPage", url: "" },
+  { title: "校车时刻", desc: "发车时间查询", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_school_bus'), route: "pages/campus/SchoolBusPage" },
+  { title: "学校校历", desc: "了解假期安排", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_schoolcalendar'), route: "pages/campus/SchoolCalendarPage" },
   { title: "物理实验", desc: "导入实验课表", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_physical'), route: "pages/common/WebPage", url: "" },
-  { title: "校园黄页", desc: "号码通讯录", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_yellow_page'), route: "pages/common/WebPage", url: "" }
+  { title: "校园黄页", desc: "号码通讯录", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_yellow_page'), route: "pages/common/WebPage", url: "" },
+  { title: "饮水机", desc: "扫码取水与结算", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.water_dispenser'), route: "pages/common/WebPage", url: "" },
+  { title: "查电费", desc: "寝室剩余电量", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.electricity_bill'), route: "pages/common/WebPage", url: "" }
 ]
 
 //校园墙单独通栏对象
@@ -64,9 +68,15 @@ const campusWallItem: CardItem = {
   bgColor: "#FFE5EC",
   titleColor: "#c2185b",
   icon: $r('app.media.ic_campus_wall'),
-  route: "pages/common/WebPage",
-  url: ""
+  route: "pages/campus/CampusWallPage"
 }
+
+const campusCommunityList: CardItem[] = [
+  campusWallItem,
+  { title: '失物招领', desc: '找回丢失物品', bgColor: '#E7F8E9', titleColor: '#27865D', icon: $r('app.media.campus_found'), route: 'pages/campus/CampusLostPage' },
+  { title: '竞赛组队', desc: '找队友找队伍', bgColor: '#E4F3FF', titleColor: '#2478B5', icon: $r('app.media.campus_match'), route: 'pages/campus/CampusMatchPage' },
+  { title: '求助', desc: '提问并采纳答案', bgColor: '#FFF0D9', titleColor: '#B56A12', icon: $r('app.media.campus_help'), route: 'pages/campus/CampusHelpPage' }
+]
 
 
 // ═══════════════════════════════════════════════ 主页组件 ═══════════════════════════════════════════════
@@ -77,6 +87,8 @@ struct MainPage {
   // ── @State 响应式变量 ──
   /** 当前选中 Tab 索引 */
   @State private currentTab: number = 2;
+  @State private catSleep: boolean = false;
+  @State private catGirl: boolean = false;
   /** 底部导航栏是否隐藏 */
   @State private barHidden: boolean = false;
   // ── 非 @State 内部变量 ──
@@ -88,8 +100,14 @@ struct MainPage {
   aboutToAppear(): void {
     console.info(TAG, 'aboutToAppear');
     this.loadDefaultTab();
+    this.updateCatState();
     console.info(TAG, `[module-debug] toolList.length=${toolList.length}`);
     console.info(TAG, `[module-debug] campusWallItem.title=${campusWallItem.title}, desc=${campusWallItem.desc}, route=${campusWallItem.route}`);
+  }
+
+  private updateCatState(): void {
+    const hour = new Date().getHours();
+    this.catSleep = hour >= 22 || hour < 6 || (hour >= 12 && hour < 14);
   }
 
   private async loadDefaultTab(): Promise<void> {
@@ -100,6 +118,8 @@ struct MainPage {
   /** onPageShow — 页面显示，校验登录态 */
   onPageShow(): void {
     console.info(TAG, 'onPageShow');
+    this.updateCatState();
+    this.refreshCatEasterEgg();
     this.verifyLoginState();
   }
 
@@ -114,10 +134,25 @@ struct MainPage {
   private async verifyLoginState(): Promise<void> {
     try {
       const s = AppStorage.getInstance();
-      const token = await s.getToken();
-      const isLogin = await s.getIsLogin();
+      let token = await s.getToken();
+      let isLogin = await s.getIsLogin();
       if (!token || token.trim().length === 0 || !isLogin) {
-        console.warn(TAG, 'token invalid → redirect to login');
+        const sid = await s.getStudentId();
+        const pwd = await s.getPassword();
+        if (sid && pwd) {
+          const graduate = await s.getIsGraduate();
+          const refreshed = graduate
+            ? await ApiService.refreshGraduateToken(s, sid, pwd)
+            : await ApiService.refreshUndergradToken(s, sid, pwd);
+          if (refreshed) {
+            token = await s.getToken();
+            isLogin = true;
+            await s.setIsLogin(true);
+          }
+        }
+      }
+      if (!token || token.trim().length === 0 || !isLogin) {
+        console.warn(TAG, 'token invalid and silent login failed → redirect to login');
         RouterUtil.toLogin();
         return;
       }
@@ -198,13 +233,20 @@ struct MainPage {
   // ═══════════════════════════════════════════════ Tab 切换 & 双击退出═══════════════════════════════════════════════
 
   private onTabChange(index: number): void {
+    if (index !== this.currentTab) this.refreshCatEasterEgg();
     this.currentTab = index;
     console.info(TAG, `tab → ${index} ${TAB_LABELS[index] ?? ''}`);
   }
 
   private switchToTab(tab: TabIndex): void {
     if (tab === this.currentTab) return;
+    this.refreshCatEasterEgg();
     this.currentTab = tab;
+  }
+
+  private refreshCatEasterEgg(): void {
+    // 每次刷新独立抽样：命中 1% 显示猫娘，否则显示普通校园猫。
+    this.catGirl = Math.random() < 0.01;
   }
 
   private handleExit(): boolean {
@@ -240,7 +282,7 @@ struct MainPage {
   // ═══════════════════════════════════════════════ UI 布局 ═══════════════════════════════════════════════
 
   build() {
-    Column() {
+    Stack({ alignContent: Alignment.BottomEnd }) {
       Tabs({
         barPosition: BarPosition.End,
         index: this.currentTab,
@@ -254,13 +296,7 @@ struct MainPage {
 
         // ── Tab 1：志愿者 ──
         TabContent() {
-          Stack() {
-            Column().width('100%').height('100%').backgroundColor('#FFFFFF')
-            Column() {
-              Text('志愿者').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ top: '25%' })
-              Text('志愿者服务模块开发中...').fontSize(14).fontColor('#BBBBBB').margin({ top: 8 })
-            }.width('100%').height('100%').alignItems(HorizontalAlign.Center)
-          }.width('100%').height('100%')
+          VolunteerPage()
         }
         .tabBar(this.TabBarBuilder(TabIndex.VOLUNTEER))
 
@@ -272,13 +308,7 @@ struct MainPage {
 
         // ── Tab 3：校园 ──
         TabContent() {
-          Stack() {
-            Column().width('100%').height('100%').backgroundColor('#FFFFFF')
-            Column() {
-              Text('校园').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ top: '25%' })
-              Text('校园服务模块开发中...').fontSize(14).fontColor('#BBBBBB').margin({ top: 8 })
-            }.width('100%').height('100%').alignItems(HorizontalAlign.Center)
-          }.width('100%').height('100%')
+          CampusPage()
         }
         .tabBar(this.TabBarBuilder(TabIndex.CAMPUS))
 
@@ -299,6 +329,15 @@ struct MainPage {
       .onChange((index: number) => {
         this.currentTab = index;
       })
+      if (this.currentTab === TabIndex.HOME) {
+        Image(this.catGirl
+          ? (this.catSleep ? $r('app.media.campus_cat_girl_sleep') : $r('app.media.campus_cat_girl'))
+          : (this.catSleep ? $r('app.media.campus_cat_sleep') : $r('app.media.campus_cat')))
+          .width(108).height(108).objectFit(ImageFit.Contain)
+          .margin({ right: 8, bottom: 62 })
+          .zIndex(10)
+          .onClick(() => { this.refreshCatEasterEgg(); router.pushUrl({ url: 'pages/campus/CampusCatPage' }); });
+      }
     }
     .width('100%')
     .height('100%')
@@ -362,6 +401,12 @@ struct MainPage {
   private HomePage() {
     Scroll() {
       Column() {
+        Row() {
+          Text('主页').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333333')
+          Text('HOME').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#666666').margin({ left: 12 })
+        }
+        .width('100%').padding({ left: 16, top: 10, bottom: 18 })
+
         // ── Banner ──
         Swiper() {
           Row() {
@@ -474,20 +519,23 @@ struct MainPage {
           .margin({ top: 16 })
 
           // ── 校园社区标题 ──
-          Text('校园社区')
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#333333')
-            .width('100%')
-            .textAlign(TextAlign.Start)
-            .margin({ left: 16, right: 16, top: 24 })
+          Row() {
+            Text('校园社区').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333333').layoutWeight(1)
+            Row() {
+              Image($r('app.media.info')).width(42).height(42).backgroundColor('#EEEEEE').borderRadius(21)
+                .onClick(() => this.showCommunityRules())
+              Image($r('app.media.notifications')).width(42).height(42).backgroundColor('#EEEEEE').borderRadius(21).margin({ left: 10 })
+                .onClick(() => router.pushUrl({ url: 'pages/campus/CommunityNotificationsPage' }))
+            }
+          }.width('100%').padding({ left: 16, right: 16 }).margin({ top: 24 })
 
-          // ── 校园墙 ──
-          Column() {
-            this.CardItem(campusWallItem)
+          Grid() {
+            ForEach(campusCommunityList, (item: CardItem) => {
+              GridItem() { this.CardItem(item) }
+            }, (item: CardItem) => item.title)
           }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 12 })
+          .columnsTemplate('1fr 1fr').columnsGap(12).rowsGap(12)
+          .width('100%').padding({ left: 16, right: 16 }).margin({ top: 12 })
 
           Column() {
             // ── 小工具标题 ──
@@ -526,6 +574,14 @@ struct MainPage {
       }.width('100%').backgroundColor('#F5F6F8')
     }
     .padding({ bottom: 100 })
+  }
+
+  private showCommunityRules(): void {
+    promptAction.showDialog({
+      title: '校园社区规则',
+      message: '1. 遵守法律法规：不发布违法、诈骗、色情、侵权或泄露隐私的内容。\n\n2. 友善交流：禁止人身攻击、歧视、骚扰、引战、刷屏和恶意举报。\n\n3. 请按板块发布真实、准确的信息：不发布广告或重复内容。\n\n4. 谨慎公开联系方式；线下认领、组队和求助时请核实身份，注意人身与财产安全。\n\n5. 违规内容可能被删除，严重违规将限制使用。',
+      buttons: [{ text: '知道了', color: '#55D600' }]
+    });
   }
 
     /** 热门功能：通栏成绩卡片 */
@@ -629,20 +685,14 @@ struct MainPage {
     @Builder
     private CardItem(item: CardItem) {
       Row() {
-        Image(item.icon)
-          .width(32)
-          .height(32)
-          .objectFit(ImageFit.Contain)
-          .rotate({ angle: item.rotated ? -45 : 0 })
-
         Column() {
           Text(item.title)
-            .fontSize(15)
+            .fontSize(18)
             .fontWeight(FontWeight.Bold)
             .fontColor(item.titleColor)
           Text(item.desc)
-            .fontSize(12)
-            .fontColor('#757575')
+            .fontSize(11)
+            .fontColor(item.titleColor)
             .margin({ top: 3 })
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -650,8 +700,14 @@ struct MainPage {
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
         .margin({ left: 10 })
+        Image(item.icon)
+          .width(54)
+          .height(54)
+          .objectFit(ImageFit.Contain)
+          .rotate({ angle: item.rotated ? -45 : 0 })
       }
       .width('100%')
+      .height(100)
       .padding({ left: 12, right: 12, top: 14, bottom: 14 })
       .backgroundColor(item.bgColor)
       .borderRadius(12)
@@ -667,4 +723,8 @@ struct MainPage {
       })
     }
   }
+
+
+
+
 

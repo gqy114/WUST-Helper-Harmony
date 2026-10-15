@@ -11,14 +11,22 @@
  * 文件路径：entry/src/main/ets/pages/mine/MinePage.ets
  */
 import { promptAction, router } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
+import { systemShare } from '@kit.ShareKit';
+import uniformTypeDescriptor from '@ohos.data.uniformTypeDescriptor';
 import { RouterUtil } from '../../utils/RouterUtil';
 import { AppStorage } from '../../store/AppStorage';
 import { StorageUtil } from '../../utils/StorageUtil';
 import { UserApi } from '../../net/UserApi';
+import { ApiService } from '../../net/ApiService';
 import { UserStore } from '../../store/UserStore';
 import { UserInfo } from '../../model/UserInfoModel';
+import { HttpRequest } from '../../net/HttpRequest';
 
 const TAG = 'MinePage';
+interface UpdateItem { title?: string; context?: string; }
+interface UpdateResponse { data?: UpdateItem[]; }
+interface UpdateHeaders extends Record<string, string> { Accept: string; }
 
 interface MineFeatureItem {
   title: string;
@@ -83,7 +91,9 @@ struct AboutDialog {
 @Entry
 @Component
 struct MinePage {
+  private readonly shareText: string = '武科大助手 by 武科大领航工作室，随时随地开启校园之旅\nhttp://wusthelper.happylandmc.cc/';
   @State private userInfo: UserInfo = { studentId: '', userName: '' };
+  @State private avatarUrl: string = '';
   @State private isLoggedIn: boolean = false;
   @State private loading: boolean = true;
   @State private errorMsg: string = '';
@@ -98,6 +108,7 @@ struct MinePage {
   private async verifyAndLoad(): Promise<void> {
     try {
       const s = AppStorage.getInstance();
+      this.avatarUrl = await s.getAvatarUrl();
       const token = await s.getToken();
       const loginFlag = await s.getIsLogin();
       if (!token || !loginFlag) {
@@ -111,15 +122,48 @@ struct MinePage {
       this.loading = false;
       // 后台拉取 API 更新用户信息
       this.fetchUserInfo(token);
+      this.refreshAvatar();
     } catch {
       console.error(TAG, 'verify error');
       this.loading = false;
     }
   }
 
+  private async refreshAvatar(): Promise<void> {
+    const storage = AppStorage.getInstance();
+    try {
+      await ApiService.loginAppAuthFromSavedCredentials(storage);
+      this.avatarUrl = await storage.getAvatarUrl();
+    } catch {
+      console.warn(TAG, 'refresh avatar failed');
+    }
+  }
+
+  private async checkUpdate(): Promise<void> {
+    const urls: string[] = [
+      'https://www.lyzyy.love:8081/operationLog/list/publishedButIos',
+      'https://www.lyzyy.love:8081/mywustBasic/operationLog/list/publishedButIos',
+      'https://lyzyy.love:8081/operationLog/list/publishedButIos'
+    ];
+    const token = await AppStorage.getInstance().getToken();
+    const headers: UpdateHeaders = { Accept: 'application/json' };
+    if (token) { headers['Authorization'] = `Wuster ${token}`; }
+    for (const url of urls) {
+      try {
+        const result = await HttpRequest.get<UpdateResponse>(url, headers);
+        const items = result.data.data || [];
+        if (items.length > 0) {
+          promptAction.showDialog({ title: items[0].title || '发现更新', message: items[0].context || '请前往官网下载最新版本。', buttons: [{ text: '知道了', color: '#1EC98D' }] });
+        } else { promptAction.showToast({ message: '当前已是最新版本', duration: 1500 }); }
+        return;
+      } catch { continue; }
+    }
+    promptAction.showToast({ message: '检查更新失败，请稍后重试', duration: 1500 });
+  }
+
   private async fetchUserInfo(token: string): Promise<void> {
     try {
-      const resp = await UserApi.getUserInfo(token);
+      const resp = await UserApi.getUserInfo(token, await AppStorage.getInstance().getStudentId());
       if (resp.code === 200 || resp.code === 0 || resp.code === 10000) {
         const data = resp.data;
         if (data) {
@@ -151,6 +195,20 @@ struct MinePage {
   }
 
   /** 清除缓存 */
+  private async shareApp(): Promise<void> {
+    try {
+      const data = new systemShare.SharedData({
+        utd: uniformTypeDescriptor.UniformDataType.TEXT,
+        content: this.shareText
+      });
+      const controller = new systemShare.ShareController(data);
+      await controller.show(getContext(this) as common.UIAbilityContext, {});
+    } catch (error) {
+      console.error(TAG, `share app failed: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '暂时无法打开分享面板', duration: 1500 });
+    }
+  }
+
   private clearCache(): void {
     promptAction.showToast({ message: '缓存已清除', duration: 2000 });
   }
@@ -181,8 +239,14 @@ struct MinePage {
         Scroll() {
           Column() {
             Row() {
+              Text('我的').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333333')
+              Text('MINE').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#666666').margin({ left: 12 })
+            }
+            .width('100%').padding({ left: 16, top: 10, bottom: 18 })
+
+            Row() {
               Stack({ alignContent: Alignment.BottomEnd }) {
-                Image($r('app.media.ic_default_avatar'))
+                Image(this.avatarUrl || $r('app.media.ic_default_avatar'))
                   .width(64)
                   .height(64)
                   .borderRadius(32)
@@ -195,7 +259,10 @@ struct MinePage {
                   .backgroundColor(Color.White)
               }
               .onClick(() => {
-                router.pushUrl({ url: 'pages/profile/InfoSettingsPage' });
+                router.pushUrl({
+                  url: 'pages/profile/InfoSettingsPage',
+                  params: { name: this.userInfo.userName || this.userInfo.realName || '', studentId: this.userInfo.studentId }
+                });
               })
 
               Column() {
@@ -212,7 +279,10 @@ struct MinePage {
               .layoutWeight(1)
               .margin({ left: 12 })
               .onClick(() => {
-                router.pushUrl({ url: 'pages/profile/InfoSettingsPage' });
+                router.pushUrl({
+                  url: 'pages/profile/InfoSettingsPage',
+                  params: { name: this.userInfo.userName || this.userInfo.realName || '', studentId: this.userInfo.studentId }
+                });
               })
 
               Text('注销')
@@ -272,6 +342,18 @@ struct MinePage {
                   .onClick(() => {
                     if (item.title === '关于APP') {
                       router.pushUrl({ url: 'pages/profile/AboutPage' });
+                    } else if (item.title === '提交反馈') {
+                      router.pushUrl({
+                        url: 'pages/common/WebPage',
+                        params: {
+                          title: '提交反馈',
+                          url: 'https://support.qq.com/products/776359'
+                        }
+                      });
+                    } else if (item.title === 'QQ用户群') {
+                      router.pushUrl({ url: 'pages/common/WebPage', params: { title: 'QQ用户群', url: 'https://qm.qq.com/' } });
+                    } else if (item.title === '检查更新') {
+                      this.checkUpdate();
                     } else {
                       promptAction.showToast({ message: `${item.title} 功能待实现`, duration: 2000 });
                     }
@@ -286,26 +368,44 @@ struct MinePage {
             .margin({ top: 16 })
 
             Row() {
+              Image($r('app.media.ic_setting_mine'))
+                .width(24)
+                .height(24)
+                .objectFit(ImageFit.Contain)
+
               Text('设置')
                 .fontSize(15)
                 .fontWeight(FontWeight.Bold)
                 .fontColor('#333333')
+                .margin({ left: 12 })
                 .layoutWeight(1)
 
-              Image($r('app.media.ic_setting_mine'))
-                .width(18)
-                .height(18)
-                .objectFit(ImageFit.Contain)
+              Text('›')
+                .fontSize(30)
+                .fontColor('#888888')
             }
             .width('100%')
             .height(52)
-            .padding({ left: 16, right: 16 })
+            .padding({ left: 16, right: 12 })
             .backgroundColor(Color.White)
             .borderRadius(12)
             .margin({ top: 16 })
             .alignItems(VerticalAlign.Center)
             .onClick(() => {
               router.pushUrl({ url: 'pages/profile/SettingsPage' });
+            })
+
+            Row() {
+              Image($r('app.media.share')).width(24).height(24).objectFit(ImageFit.Contain)
+              Text('分享 APP').fontSize(15).fontWeight(FontWeight.Bold).fontColor('#333333')
+                .margin({ left: 12 }).layoutWeight(1)
+              Text('›').fontSize(30).fontColor('#888888')
+            }
+            .width('100%').height(52).padding({ left: 16, right: 12 })
+            .backgroundColor(Color.White).borderRadius(12).margin({ top: 12 })
+            .alignItems(VerticalAlign.Center)
+            .onClick(() => {
+              this.shareApp();
             })
 
             Text('领航工作室出品')

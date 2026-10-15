@@ -19,6 +19,7 @@ export class HttpRequest {
     options?: {
       headers?: Record<string, string>;
       body?: Record<string, string>;
+      rawBody?: string;
       expectDataType?: http.HttpDataType;
       /** form表单，true代表application/x‑www‑form‑urlencoded */
       isForm?: boolean;
@@ -32,7 +33,10 @@ export class HttpRequest {
       };
 
       let extraData: string | undefined;
-      if (options?.body) {
+      if (options?.rawBody !== undefined) {
+        header['Content-Type'] = 'application/json';
+        extraData = options.rawBody;
+      } else if (options?.body) {
         if (options.isForm) {
           // form‑urlencoded表单格式，用于登录
           header['Content-Type'] = 'application/x-www-form-urlencoded';
@@ -50,13 +54,21 @@ export class HttpRequest {
         header,
         extraData,
         expectDataType: options?.expectDataType ?? http.HttpDataType.STRING,
-        connectTimeout:10000,
-        readTimeout:10000
+        // 教务登录接口偶尔需要较长时间完成统一认证，10 秒会被鸿蒙网络层直接中止。
+        connectTimeout:30000,
+        readTimeout:30000
       });
-      const data = JSON.parse(response.result as string) as T;
+      console.info(TAG, `${method} ${url} responseCode=${response.responseCode}`);
+      let data: T;
+      try {
+        data = JSON.parse(response.result as string) as T;
+      } catch {
+        // 教务取数接口在解析链第一步返回 HTML 页面串，不是 JSON。
+        data = response.result as T;
+      }
       return { response, data };
     } catch (err) {
-      console.error(TAG, "网络请求异常：", JSON.stringify(err));
+      console.error(TAG, `网络请求异常：${JSON.stringify(err)}`);
       throw err; //抛出给上层处理弹窗
     } finally {
       httpRequest.destroy();
@@ -94,5 +106,9 @@ export class HttpRequest {
     extraHeaders?: Record<string, string>,
   ): Promise<RequestResult<T>> {
     return HttpRequest.request<T>(url, 'GET', { headers: extraHeaders });
+  }
+
+  static async postRawJson<T>(url: string, jsonBody: string, extraHeaders?: Record<string, string>): Promise<RequestResult<T>> {
+    return HttpRequest.request<T>(url, 'POST', { headers: extraHeaders, expectDataType: http.HttpDataType.STRING, rawBody: jsonBody });
   }
 }

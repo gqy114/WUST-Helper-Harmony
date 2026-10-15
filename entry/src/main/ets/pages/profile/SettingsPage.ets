@@ -71,7 +71,7 @@ struct SettingsPage {
           this.switchItem('@我的通知', this.atNotify, (value: boolean) => { this.atNotify = value; this.saveBool('atNotify', value); })
           this.switchItem('回复我的通知', this.replyNotify, (value: boolean) => { this.replyNotify = value; this.saveBool('replyNotify', value); })
           this.groupTitle('课表')
-          this.navItem('课表二维码', () => promptAction.showToast({ message: '开发中', duration: 1500 }))
+          this.navItem('课表二维码', () => router.pushUrl({ url: 'pages/course/CourseSharePage' }))
           this.navItem('课表档案管理', () => router.pushUrl({ url: 'pages/course/CourseArchivePage' }))
           this.groupTitle('其他')
           Row() {
