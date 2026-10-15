@@ -12,6 +12,7 @@
     "pages/course/BackgroundSetting",
     "pages/course/ScheduleSetting",
     "pages/profile/SettingsPage",
+    "pages/profile/BottomNavCustomizePage",
     "pages/profile/InfoSettingsPage",
     "pages/profile/AboutPage",
     "pages/common/WebPage",

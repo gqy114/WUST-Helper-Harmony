@@ -92,7 +92,7 @@ struct SettingsPage {
       Scroll() {
         Column() {
           this.groupTitle('界面')
-          this.navItem('底部导航自定义', () => promptAction.showToast({ message: '开发中', duration: 1500 }))
+          this.navItem('底部导航自定义', () => router.pushUrl({ url: 'pages/profile/BottomNavCustomizePage' }))
           this.switchItem('显示校园猫入口', this.showCampusCat, (value: boolean) => { this.showCampusCat = value; this.saveBool('showCampusCat', value); })
           this.navItem('重置小组件', () => promptAction.showToast({ message: '开发中', duration: 1500 }))
           this.groupTitle('校园社区')

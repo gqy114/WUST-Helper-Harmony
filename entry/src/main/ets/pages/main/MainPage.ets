@@ -90,6 +90,8 @@ struct MainPage {
   @State private catSleep: boolean = false;
   @State private catGirl: boolean = false;
   @State private showCampusCat: boolean = true;
+  @State private showVolunteerTab: boolean = true;
+  @State private showCampusTab: boolean = true;
   /** 底部导航栏是否隐藏 */
   @State private barHidden: boolean = false;
   // ── 非 @State 内部变量 ──
@@ -102,6 +104,7 @@ struct MainPage {
     console.info(TAG, 'aboutToAppear');
     this.loadDefaultTab();
     this.loadCatVisibility();
+    this.loadNavigationVisibility();
     this.updateCatState();
     console.info(TAG, `[module-debug] toolList.length=${toolList.length}`);
     console.info(TAG, `[module-debug] campusWallItem.title=${campusWallItem.title}, desc=${campusWallItem.desc}, route=${campusWallItem.route}`);
@@ -122,12 +125,21 @@ struct MainPage {
     console.info(TAG, 'onPageShow');
     this.updateCatState();
     this.loadCatVisibility();
+    this.loadNavigationVisibility();
     this.refreshCatEasterEgg();
     this.verifyLoginState();
   }
 
   private async loadCatVisibility(): Promise<void> {
     this.showCampusCat = await AppStorage.getInstance().getSettingBool('showCampusCat', true);
+  }
+
+  private async loadNavigationVisibility(): Promise<void> {
+    const s = AppStorage.getInstance();
+    this.showVolunteerTab = await s.getSettingBool('navVolunteer', true);
+    this.showCampusTab = await s.getSettingBool('navCampus', true);
+    if (!this.showVolunteerTab && this.currentTab === TabIndex.VOLUNTEER) this.currentTab = TabIndex.HOME;
+    if (!this.showCampusTab && this.currentTab === TabIndex.CAMPUS) this.currentTab = TabIndex.HOME;
   }
 
   /** onBackPress — 双击退出 */
@@ -302,10 +314,9 @@ struct MainPage {
         .tabBar(this.TabBarBuilder(TabIndex.HOME))
 
         // ── Tab 1：志愿者 ──
-        TabContent() {
-          VolunteerPage()
+        if (this.showVolunteerTab) {
+          TabContent() { VolunteerPage() }.tabBar(this.TabBarBuilder(TabIndex.VOLUNTEER))
         }
-        .tabBar(this.TabBarBuilder(TabIndex.VOLUNTEER))
 
         // ── Tab 2：课表 ──
         TabContent() {
@@ -314,10 +325,9 @@ struct MainPage {
         .tabBar(this.TabBarBuilder(TabIndex.COURSE))
 
         // ── Tab 3：校园 ──
-        TabContent() {
-          CampusPage()
+        if (this.showCampusTab) {
+          TabContent() { CampusPage() }.tabBar(this.TabBarBuilder(TabIndex.CAMPUS))
         }
-        .tabBar(this.TabBarBuilder(TabIndex.CAMPUS))
 
         // ── Tab 4：个人中心 ──
         TabContent() {
