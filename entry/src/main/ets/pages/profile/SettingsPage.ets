@@ -1,4 +1,6 @@
 import { router, promptAction } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
+import { fileIo } from '@kit.CoreFileKit';
 import { AppStorage as PreferencesStorage } from '../../store/AppStorage';
 
 @Entry
@@ -50,8 +52,34 @@ struct SettingsPage {
   }
 
   private clearCache(): void {
-    this.cacheSize = '0 MB';
-    promptAction.showToast({ message: '缓存已清理', duration: 1500 });
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      const cacheDir = context.cacheDir;
+      this.deleteCacheEntries(cacheDir);
+      this.cacheSize = '0 MB';
+      promptAction.showToast({ message: '图片缓存已清理', duration: 1500 });
+    } catch (err) {
+      console.error('SettingsPage', `clear cache failed: ${JSON.stringify(err)}`);
+      promptAction.showToast({ message: '清理缓存失败，请稍后重试', duration: 1500 });
+    }
+  }
+
+  private deleteCacheEntries(path: string): void {
+    const entries = fileIo.listFileSync(path);
+    for (const entry of entries) {
+      const fullPath = `${path}/${entry}`;
+      try {
+        const stat = fileIo.statSync(fullPath);
+        if (stat.isDirectory()) {
+          this.deleteCacheEntries(fullPath);
+          fileIo.rmdirSync(fullPath);
+        } else {
+          fileIo.unlinkSync(fullPath);
+        }
+      } catch (err) {
+        console.warn('SettingsPage', `skip cache entry ${fullPath}`);
+      }
+    }
   }
 
   build() {
