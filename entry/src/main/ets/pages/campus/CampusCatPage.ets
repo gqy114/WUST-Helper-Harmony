@@ -6,16 +6,22 @@ import { CampusWallApi, CampusWallPost, decodeHtmlEntities } from '../../net/Cam
 struct CampusCatPage {
   @State private posts: CampusWallPost[] = [];
   @State private loading: boolean = true;
+  @State private searching: boolean = false;
+  @State private query: string = "";
   aboutToAppear(): void { this.load(); }
   private async load(): Promise<void> { this.loading = true; try { this.posts = await CampusWallApi.list(); } catch { promptAction.showToast({ message: '校园猫加载失败', duration: 1500 }); } this.loading = false; }
+  private matches(post: CampusWallPost): boolean { const q = this.query.trim().toLowerCase(); if (!q) return true; return `${post.title || ""}${post.content || ""}${post.displayName || ""}${post.realName || ""}${post.college || ""}`.toLowerCase().includes(q); }
   private timeLabel(value: string): string { if (value.length === 0) return ''; const stamp = Date.parse(value); if (isNaN(stamp)) return value; const hours = Math.max(0, Math.floor((Date.now() - stamp) / 3600000)); return hours < 1 ? '刚刚' : `${hours}小时前`; }
   build() {
     Column() {
-      Row() { Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back()); Text('校园猫').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 }); Blank().layoutWeight(1); Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }); Image($r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover); }.width('100%').height(96).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
+      Row() { Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back()); Text('校园猫').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 }); Blank().layoutWeight(1); Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }).onClick(() => { this.searching = true; }); Image($r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover); }.width('100%').height(96).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
+      if (this.searching) {
+        Row() { Text('⌕').fontSize(30).fontColor('#555555'); TextInput({ placeholder: '搜索当前板块', text: this.query }).layoutWeight(1).fontSize(20).onChange((value: string) => { this.query = value; }); Text('×').fontSize(32).fontColor('#777777').onClick(() => { this.query = ''; this.searching = false; }); }.width('92%').height(58).padding({ left: 16, right: 14 }).backgroundColor(Color.White).borderRadius(30).margin({ bottom: 12 });
+      }
       Scroll() { Column() {
         if (this.loading) { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
         else if (this.posts.length === 0) { Text('暂无校园猫信息').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
-        else { ForEach(this.posts, (post: CampusWallPost) => Column() {
+        else { ForEach(this.posts.filter((post: CampusWallPost) => this.matches(post)), (post: CampusWallPost) => Column() {
           Row() { if (post.avatarUrl) { Image(post.avatarUrl).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.displayName || post.realName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); Text(post.college || post.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 }); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Column() { Text('日常').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#B66D16').backgroundColor('#FFF4DE').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); Text((post.replyCount || 0) > 0 ? `${post.replyCount} 个回答` : '校园猫动态').fontSize(15).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ top: 6 }); }.alignItems(HorizontalAlign.End); }.width('100%');
           if (post.title) { Text(decodeHtmlEntities(post.title)).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#222222').width('100%').margin({ top: 16 }); }
           Text(decodeHtmlEntities(post.content || '')).fontSize(18).fontColor('#333333').width('100%').maxLines(4).textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 12 }); Text(this.timeLabel(post.createdAt || '')).fontSize(16).fontColor('#AAAAAA').margin({ top: 16 });

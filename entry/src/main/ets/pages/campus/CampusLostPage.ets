@@ -6,6 +6,8 @@ import { CampusWallApi, CampusWallPost, decodeHtmlEntities } from '../../net/Cam
 struct CampusLostPage {
   @State private posts: CampusWallPost[] = [];
   @State private loading: boolean = true;
+  @State private searching: boolean = false;
+  @State private query: string = "";
 
   aboutToAppear(): void { this.load(); }
   private async load(): Promise<void> {
@@ -14,6 +16,7 @@ struct CampusLostPage {
     catch { promptAction.showToast({ message: '失物信息加载失败', duration: 1500 }); }
     this.loading = false;
   }
+  private matches(post: CampusWallPost): boolean { const q = this.query.trim().toLowerCase(); if (!q) return true; return `${post.title || ""}${post.content || ""}${post.displayName || ""}${post.realName || ""}${post.college || ""}`.toLowerCase().includes(q); }
   private async toggleLike(post: CampusWallPost): Promise<void> {
     if (!post.id) return;
     try {
@@ -28,12 +31,15 @@ struct CampusLostPage {
       Row() {
         Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back());
         Text('失物招领').fontSize(26).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 });
-        Blank().layoutWeight(1); Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }); Image($r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover);
+        Blank().layoutWeight(1); Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }).onClick(() => { this.searching = true; }); Image($r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover);
       }.width('100%').height(96).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
+      if (this.searching) {
+        Row() { Text('⌕').fontSize(30).fontColor('#555555'); TextInput({ placeholder: '搜索当前板块', text: this.query }).layoutWeight(1).fontSize(20).onChange((value: string) => { this.query = value; }); Text('×').fontSize(32).fontColor('#777777').onClick(() => { this.query = ''; this.searching = false; }); }.width('92%').height(58).padding({ left: 16, right: 14 }).backgroundColor(Color.White).borderRadius(30).margin({ bottom: 12 });
+      }
       Scroll() { Column() {
         if (this.loading) { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
         else if (this.posts.length === 0) { Text('暂无失物信息').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
-        else { ForEach(this.posts, (post: CampusWallPost) => {
+        else { ForEach(this.posts.filter((post: CampusWallPost) => this.matches(post)), (post: CampusWallPost) => {
           Column() {
             Row() {
               if (post.avatarUrl) { Image(post.avatarUrl).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); }
