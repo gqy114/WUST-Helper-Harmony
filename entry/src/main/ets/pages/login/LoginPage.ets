@@ -725,11 +725,13 @@ private async fetchUserInfo(_sid: string): Promise<void> {
           // ── 输入区 ──
           Column() {
             TextInput({ placeholder: '学号' })
+              .enableAutoFill(true)
               .fontSize(16).height(48).backgroundColor('#f5f5f5').borderRadius(8)
               .onChange((v: string) => { this.studentId = v; })
 
             Row() {
               TextInput({ placeholder: '教务处密码' })
+                .enableAutoFill(true)
                 .fontSize(16).height(48)
                 .type(this.isPasswordVisible ? InputType.Normal : InputType.Password)
                 .backgroundColor('#f5f5f5').borderRadius(8).padding({ left: 16 }).placeholderColor('#bbb')
