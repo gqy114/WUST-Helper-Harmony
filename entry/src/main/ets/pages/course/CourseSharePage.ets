@@ -23,7 +23,7 @@ struct CourseSharePage {
 
   private async createInvite(): Promise<void> {
     try {
-      const result = await DynamicScheduleApi.createInvite('2026-2027-1', this.allowExtra);
+      const result = await DynamicScheduleApi.createInvite('2025-2026-1', this.allowExtra);
       this.inviteToken = result.token;
       this.expiresIn = result.expiresIn || 300;
       this.updateDynamicQr();
