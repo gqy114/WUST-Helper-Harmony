@@ -13,6 +13,15 @@ struct CampusHelpPage {
   private matchScore(post: CampusWallPost): number { const q = this.query.trim().toLowerCase(); if (!q) return 1; const text = `${post.title || ""}${post.content || ""}${post.displayName || ""}${post.realName || ""}${post.college || ""}`.toLowerCase(); let score = 0; for (let i = 0; i < q.length; i++) { if (text.includes(q.charAt(i))) score++; } return score; }
   private timeLabel(value: string): string { if (value.length === 0) return ''; const stamp = Date.parse(value); if (isNaN(stamp)) return value; const hours = Math.max(0, Math.floor((Date.now() - stamp) / 3600000)); return hours < 1 ? '刚刚' : `${hours}小时前`; }
   private isResolved(post: CampusWallPost): boolean { const status = (post.status || '').toLowerCase(); return post.resolved === true || post.isResolved === true || status === 'resolved' || status === 'solved' || status === '已解决'; }
+  private sortedPosts(): CampusWallPost[] {
+    return this.posts.filter((post: CampusWallPost) => this.matchScore(post) > 0).sort((a: CampusWallPost, b: CampusWallPost) => {
+      const statusOrder: number = (this.isResolved(a) ? 1 : 0) - (this.isResolved(b) ? 1 : 0);
+      if (statusOrder !== 0) return statusOrder;
+      const aTime: number = Date.parse(a.createdAt || '') || 0;
+      const bTime: number = Date.parse(b.createdAt || '') || 0;
+      return bTime - aTime;
+    });
+  }
   @Builder private highlighted(value: string, size: number, color: string, bold: boolean) {
     Text() { ForEach(value.split(''), (ch: string) => { Span(ch).fontColor(this.query.trim().length > 0 && this.query.toLowerCase().includes(ch.toLowerCase()) ? '#18B889' : color); }) }
       .fontSize(size).fontWeight(bold ? FontWeight.Bold : FontWeight.Normal).width('100%');
@@ -26,7 +35,7 @@ struct CampusHelpPage {
       Scroll() { Column() {
         if (this.loading) { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
         else if (this.posts.length === 0) { Text('暂无求助信息').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
-        else { ForEach(this.posts.filter((post: CampusWallPost) => this.matchScore(post) > 0).sort((a: CampusWallPost, b: CampusWallPost) => this.matchScore(b) - this.matchScore(a)), (post: CampusWallPost) => Column() {
+        else { ForEach(this.sortedPosts(), (post: CampusWallPost) => Column() {
           Row() { if (post.avatarUrl) { Image(post.avatarUrl).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.displayName || post.realName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); Text(post.college || post.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 }); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Column() { Text(this.isResolved(post) ? '已解决' : '待解决').fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.isResolved(post) ? '#3C8B62' : '#B66D16').backgroundColor(this.isResolved(post) ? '#E8F7ED' : '#FFF4DE').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); Text(this.isResolved(post) ? '问题已解决' : ((post.replyCount || 0) > 0 ? `${post.replyCount} 个回答` : '等待回答')).fontSize(15).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ top: 6 }); }.alignItems(HorizontalAlign.End); }.width('100%');
           if (post.title) { this.highlighted(decodeHtmlEntities(post.title), 22, '#222222', true); }
           this.highlighted(decodeHtmlEntities(post.content || ''), 18, '#333333', false); Text(this.timeLabel(post.createdAt || '')).fontSize(16).fontColor('#AAAAAA');
