@@ -43,7 +43,7 @@ struct CampusLostPage {
         Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back());
         Text('失物招领').fontSize(26).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 });
         Blank().layoutWeight(1); Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }).onClick(() => { this.pendingFilter = this.activeFilter; this.filterOpen = true; }); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }).onClick(() => { this.searching = true; }); Image(this.avatarUrl || $r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover);
-      }.width('100%').height(96).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
+      }.width('100%').height(96).alignItems(VerticalAlign.Center).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
       if (this.filterOpen) {
         Column() {
           Text('选择类型').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').margin({ bottom: 8 });

@@ -56,7 +56,7 @@ struct CampusMatchPage {
           .onClick(() => router.back());
         Text('竞赛组队').fontSize(26).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 });
         Blank().layoutWeight(1); Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }).onClick(() => { this.pendingCollegeFilter = this.activeCollegeFilter; this.pendingTeamFilter = this.activeTeamFilter; this.filterOpen = true; }); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }).onClick(() => { this.searching = true; }); Image(this.avatarUrl || $r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover);
-      }.width('100%').height(96).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
+      }.width('100%').height(96).alignItems(VerticalAlign.Center).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
       if (this.filterOpen) {
         Column() {
           Row() { Text('学院').fontSize(16).fontColor('#777777').width(52); ForEach(['同学院', '不同学院', '全部'], (item: string) => { Text(item).fontSize(16).fontColor(this.pendingCollegeFilter === item ? '#20C894' : '#777777').backgroundColor(this.pendingCollegeFilter === item ? '#E7F8F2' : '#F5F5F5').borderRadius(18).padding({ left: 10, right: 10, top: 8, bottom: 8 }).margin({ right: 8 }).onClick(() => { this.pendingCollegeFilter = item; }); }) }.width('100%');
