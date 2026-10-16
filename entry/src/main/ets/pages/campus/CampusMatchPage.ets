@@ -1,6 +1,7 @@
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi, CampusWallPost, decodeHtmlEntities } from '../../net/CampusWallApi';
+import { AppStorage } from '../../store/AppStorage';
 
 @Entry @Component
 struct CampusMatchPage {
@@ -8,11 +9,18 @@ struct CampusMatchPage {
   @State private loading: boolean = true;
   @State private searching: boolean = false;
   @State private query: string = "";
+  @State private filterOpen: boolean = false;
+  @State private pendingCollegeFilter: string = "全部";
+  @State private pendingTeamFilter: string = "全部";
+  @State private activeCollegeFilter: string = "全部";
+  @State private activeTeamFilter: string = "全部";
+  @State private selfCollege: string = "";
 
   aboutToAppear(): void { this.load(); }
 
   private async load(): Promise<void> {
     this.loading = true;
+    try { this.selfCollege = await AppStorage.getInstance().getCollege(); } catch {}
     try { this.posts = await CampusWallApi.list(1, 'team'); }
     catch { promptAction.showToast({ message: '组队信息加载失败', duration: 1500 }); }
     this.loading = false;
@@ -27,6 +35,12 @@ struct CampusMatchPage {
       this.posts = this.posts.slice();
     } catch { promptAction.showToast({ message: '操作失败，请稍后重试', duration: 1200 }); }
   }
+  private filterMatch(post: CampusWallPost): boolean {
+    const teamOk: boolean = this.activeTeamFilter === '全部' || this.teamLabel(post) === this.activeTeamFilter;
+    const same: boolean = this.selfCollege.length > 0 && (post.college || '').includes(this.selfCollege);
+    const collegeOk: boolean = this.activeCollegeFilter === '全部' || (this.activeCollegeFilter === '同学院' ? same : !same);
+    return teamOk && collegeOk;
+  }
   private teamLabel(post: CampusWallPost): string { const value = (post.noticeType || post.type || post.category || '').toLowerCase(); return value.indexOf('队伍') >= 0 || value.indexOf('team') >= 0 || value.indexOf('join') >= 0 ? '找队伍' : '找队友'; }
 
   @Builder private highlighted(value: string, size: number, color: string, bold: boolean) {
@@ -39,8 +53,15 @@ struct CampusMatchPage {
         Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center)
           .onClick(() => router.back());
         Text('竞赛组队').fontSize(26).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 });
-        Blank().layoutWeight(1); Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }).onClick(() => { this.searching = true; }); Image($r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover);
+        Blank().layoutWeight(1); Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }).onClick(() => { this.pendingCollegeFilter = this.activeCollegeFilter; this.pendingTeamFilter = this.activeTeamFilter; this.filterOpen = true; }); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }).onClick(() => { this.searching = true; }); Image($r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover);
       }.width('100%').height(96).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
+      if (this.filterOpen) {
+        Column() {
+          Row() { Text('学院').fontSize(16).fontColor('#777777').width(52); ForEach(['同学院', '不同学院', '全部'], (item: string) => { Text(item).fontSize(16).fontColor(this.pendingCollegeFilter === item ? '#20C894' : '#777777').backgroundColor(this.pendingCollegeFilter === item ? '#E7F8F2' : '#F5F5F5').borderRadius(18).padding({ left: 10, right: 10, top: 8, bottom: 8 }).margin({ right: 8 }).onClick(() => { this.pendingCollegeFilter = item; }); }) }.width('100%');
+          Row() { Text('类型').fontSize(16).fontColor('#777777').width(52); ForEach(['找队友', '找队伍', '全部'], (item: string) => { Text(item).fontSize(16).fontColor(this.pendingTeamFilter === item ? '#20C894' : '#777777').backgroundColor(this.pendingTeamFilter === item ? '#E7F8F2' : '#F5F5F5').borderRadius(18).padding({ left: 10, right: 10, top: 8, bottom: 8 }).margin({ right: 8 }).onClick(() => { this.pendingTeamFilter = item; }); }) }.width('100%').margin({ top: 8 });
+          Row() { Text('取消').fontSize(17).fontColor('#999999').layoutWeight(1).onClick(() => { this.filterOpen = false; }); Text('确定').fontSize(17).fontColor('#20C894').textAlign(TextAlign.End).onClick(() => { this.activeCollegeFilter = this.pendingCollegeFilter; this.activeTeamFilter = this.pendingTeamFilter; this.filterOpen = false; }); }.width('100%').margin({ top: 12 });
+        }.width('92%').padding(16).backgroundColor(Color.White).borderRadius(16).margin({ bottom: 12 }).animation({ duration: 260, curve: Curve.EaseInOut });
+      }
       if (this.searching) {
         Row() { Text('⌕').fontSize(30).fontColor('#555555'); TextInput({ placeholder: '搜索当前板块', text: this.query }).layoutWeight(1).fontSize(20).onChange((value: string) => { this.query = value; }); Text('×').fontSize(32).fontColor('#777777').onClick(() => { this.query = ''; this.searching = false; }); }.width('92%').height(58).padding({ left: 16, right: 14 }).backgroundColor(Color.White).borderRadius(30).margin({ bottom: 12 });
       }
@@ -51,7 +72,7 @@ struct CampusMatchPage {
           } else if (this.posts.length === 0) {
             Text('暂无组队信息').fontSize(18).fontColor('#999999').margin({ top: 36 });
           } else {
-            ForEach(this.posts.filter((post: CampusWallPost) => this.matchScore(post) > 0).sort((a: CampusWallPost, b: CampusWallPost) => this.matchScore(b) - this.matchScore(a)), (post: CampusWallPost) => {
+            ForEach(this.posts.filter((post: CampusWallPost) => this.filterMatch(post) && this.matchScore(post) > 0).sort((a: CampusWallPost, b: CampusWallPost) => this.matchScore(b) - this.matchScore(a)), (post: CampusWallPost) => {
               Column() {
                 Row() {
                   if (post.avatarUrl) { Image(post.avatarUrl).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); }
