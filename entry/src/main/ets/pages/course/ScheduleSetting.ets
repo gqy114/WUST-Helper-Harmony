@@ -131,6 +131,10 @@ struct ScheduleSetting {
     };
   }
 
+  private isPhysicalExperiment(course: CourseData): boolean {
+    return course.courseName.indexOf('物理实验') >= 0 || course.courseName.toLowerCase().indexOf('physics') >= 0;
+  }
+
   private async importCurrentWeekToCalendar(): Promise<void> {
     if (this.importing) {
       return;
@@ -145,6 +149,9 @@ struct ScheduleSetting {
       let count = 0;
       for (let i = 0; i < this.courseList.length; i++) {
         const course = this.courseList[i];
+        if (this.isPhysicalExperiment(course)) {
+          continue;
+        }
         if (!isCourseInWeek(course, this.currentWeek)) {
           continue;
         }
@@ -192,6 +199,9 @@ struct ScheduleSetting {
       for (let week = 1; week <= totalWeeks; week++) {
         for (let i = 0; i < this.courseList.length; i++) {
           const course = this.courseList[i];
+          if (this.isPhysicalExperiment(course)) {
+            continue;
+          }
           if (!isCourseInWeek(course, week)) {
             continue;
           }

@@ -29,15 +29,18 @@ export struct PhysicalExperimentPage {
 
   private importCourses(): void {
     const imported: CourseData[] = [];
+    const batchStarts: number[] = [3, 5, 7, 9];
+    const batchEnds: number[] = [4, 6, 8, 12];
     for (let i = 0; i < this.courses.length; i++) {
       const item = this.courses[i];
+      const batch = i < 4 ? i : 3;
       imported.push({
         courseName: item.courseName || item.name || '物理实验',
         teacher: '',
         location: item.classroom || '',
         dayOfWeek: item.weekDay || 1,
-        startPeriod: item.startSection || 1,
-        endPeriod: item.endSection || item.startSection || 1,
+        startPeriod: batchStarts[batch],
+        endPeriod: batchEnds[batch],
         weekRanges: item.startWeek && item.endWeek ? `${item.startWeek}-${item.endWeek}` : '1-16'
       });
     }
