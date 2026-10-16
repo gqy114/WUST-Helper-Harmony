@@ -49,7 +49,7 @@ struct CampusLostPage {
           Text('选择类型').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').margin({ bottom: 8 });
           Row() { ForEach(['失物招领', '寻物启事', '全部'], (item: string) => { Text(item).fontSize(18).fontColor(this.pendingFilter === item ? '#20C894' : '#777777').backgroundColor(this.pendingFilter === item ? '#E7F8F2' : '#F5F5F5').borderRadius(20).padding({ left: 18, right: 18, top: 9, bottom: 9 }).margin({ right: 10 }).onClick(() => { this.pendingFilter = item; }); }) }.width('100%');
           Row() { Text('取消').fontSize(17).fontColor('#999999').layoutWeight(1).textAlign(TextAlign.Start).onClick(() => { this.filterOpen = false; }); Text('确定').fontSize(17).fontColor('#20C894').textAlign(TextAlign.End).onClick(() => { this.activeFilter = this.pendingFilter; this.filterOpen = false; }); }.width('100%').margin({ top: 12 });
-        }.width('92%').padding(16).backgroundColor(Color.White).borderRadius(16).margin({ bottom: 12 }).animation({ duration: 260, curve: Curve.EaseInOut });
+        }.width('92%').padding(16).backgroundColor(Color.White).borderRadius(16).margin({ bottom: 12 }).transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: 0, y: -120 }))).animation({ duration: 260, curve: Curve.EaseInOut });
       }
       if (this.searching) {
         Row() { Text('⌕').fontSize(30).fontColor('#555555'); TextInput({ placeholder: '搜索当前板块', text: this.query }).layoutWeight(1).fontSize(20).onChange((value: string) => { this.query = value; }); Text('×').fontSize(32).fontColor('#777777').onClick(() => { this.query = ''; this.searching = false; }); }.width('92%').height(58).padding({ left: 16, right: 14 }).backgroundColor(Color.White).borderRadius(30).margin({ bottom: 12 });
