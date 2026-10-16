@@ -1,6 +1,5 @@
 /** 教室查询入口页 */
 import router from '@ohos.router';
-import { promptAction } from '@kit.ArkUI';
 
 @Entry
 @Component
@@ -35,7 +34,7 @@ struct ClassroomQueryPage {
           })
           Column() {
             this.QueryCard('课程查询', '去蹭喜欢老师の课吧～', $r('app.media.new_note'), () => {
-              promptAction.showToast({ message: '课程查询即将开放', duration: 1500 })
+              router.pushUrl({ url: 'pages/campus/CourseSearchPage' })
             })
           }.margin({ top: 44 })
           Blank().layoutWeight(1)
