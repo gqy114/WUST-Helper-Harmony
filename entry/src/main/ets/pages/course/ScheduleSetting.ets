@@ -351,6 +351,11 @@ struct ScheduleSetting {
             }
           }
           .width('100%').height(64).padding({ left: 16, right: 16 }).backgroundColor('#FFFFFF')
+
+          Text('Tips：物理实验不在课表页导入，如有需要，请在物理实验小工具中进行导入')
+            .fontSize(13).fontColor('#999999').width('100%')
+            .textAlign(TextAlign.Center).padding({ top: 8, bottom: 12 })
+            .backgroundColor('#FFFFFF')
         }
         .width('100%')
       }
