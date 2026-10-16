@@ -12,7 +12,7 @@ struct CampusHelpPage {
   private isResolved(post: CampusWallPost): boolean { const status = (post.status || '').toLowerCase(); return post.resolved === true || post.isResolved === true || status === 'resolved' || status === 'solved' || status === '已解决'; }
   build() {
     Column() {
-      Row() { Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back()); Text('求助').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 }); Blank().layoutWeight(1); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }); Image($r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover); }.width('100%').height(96).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
+      Row() { Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back()); Text('求助').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 }); Blank().layoutWeight(1); Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }); Image($r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover); }.width('100%').height(96).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
       Scroll() { Column() {
         if (this.loading) { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
         else if (this.posts.length === 0) { Text('暂无求助信息').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
@@ -26,5 +26,6 @@ struct CampusHelpPage {
     }.width('100%').height('100%').backgroundColor('#F5F6F8');
   }
 }
+
 
 

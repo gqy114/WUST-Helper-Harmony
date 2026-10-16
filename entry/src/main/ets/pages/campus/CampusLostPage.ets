@@ -28,7 +28,7 @@ struct CampusLostPage {
       Row() {
         Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back());
         Text('失物招领').fontSize(26).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 });
-        Blank().layoutWeight(1); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }); Image($r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover);
+        Blank().layoutWeight(1); Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }); Image($r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover);
       }.width('100%').height(96).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
       Scroll() { Column() {
         if (this.loading) { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
@@ -51,6 +51,7 @@ struct CampusLostPage {
     }.width('100%').height('100%').backgroundColor('#F5F6F7');
   }
 }
+
 
 
 
