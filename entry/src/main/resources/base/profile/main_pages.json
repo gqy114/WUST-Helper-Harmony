@@ -32,7 +32,8 @@
     "pages/campus/CampusPostDetailPage",
     "pages/campus/SchoolCalendarPage",
     "pages/campus/TrainingPlanPage",
-    "pages/ai/AIAssistantPage"
+    "pages/ai/AIAssistantPage",
+    "pages/main/WaterDispenserPage"
   ]
 }
 
