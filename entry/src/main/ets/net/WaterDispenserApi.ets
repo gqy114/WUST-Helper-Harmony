@@ -11,6 +11,9 @@ export class WaterDispenserApi {
     const result = await HttpRequest.get<string>(BASE + path, headers);
     return result.data;
   }
+  static async captcha(seed: string): Promise<string> { const result = await HttpRequest.get<string>(`${BASE}/api/v1/captcha/?s=${encodeURIComponent(seed)}&r=${Date.now()}`); return result.data; }
+  static async sendCode(phone: string, authCode: string, seed: string): Promise<string> { const result = await HttpRequest.postJson<string>(`${BASE}/api/v1/acc/login/code`, { un: phone, authCode, s: seed }, { Accept: 'application/json', ApplicationType: '1,1', VersionCode: '31006', 'User-Agent': 'Android_ilife798_3.1.6_minimal' }); return result.data; }
+  static async login(phone: string, smsCode: string): Promise<string> { const result = await HttpRequest.postJson<string>(`${BASE}/api/v1/acc/login`, { un: phone, authCode: smsCode }, { Accept: 'application/json', ApplicationType: '1,1', VersionCode: '31006', 'User-Agent': 'Android_ilife798_3.1.6_minimal' }); return result.data; }
   static async useQr(id: string): Promise<string> { return WaterDispenserApi.request(`/api/v1/qr/use?id=${encodeURIComponent(id)}`); }
   static async home(deviceId: string): Promise<string> { return WaterDispenserApi.request(`/api/v1/ui/app/dev/home/1?did=${encodeURIComponent(deviceId)}&apply=0`); }
   static async wallet(): Promise<string> { return WaterDispenserApi.request('/api/v1/acc/wallet/owner?all=true'); }
