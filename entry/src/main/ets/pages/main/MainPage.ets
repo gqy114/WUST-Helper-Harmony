@@ -556,13 +556,11 @@ struct MainPage {
 
           Column() {
             // ── 小工具标题 ──
-            Text('小工具')
-              .fontSize(20)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#333333')
-              .width('100%')
-              .textAlign(TextAlign.Start)
-              .margin({ top: 24 })
+            Row() {
+              Text('小工具').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333333').layoutWeight(1)
+              Image($r('app.media.edit_tools')).width(42).height(42).padding(8).backgroundColor('#EEEEEE').borderRadius(21)
+                .onClick(() => router.pushUrl({ url: 'pages/main/EditToolsPage' }))
+            }.width('100%').margin({ top: 24 })
 
             // ── 小工具网格 ──
             Grid() {
