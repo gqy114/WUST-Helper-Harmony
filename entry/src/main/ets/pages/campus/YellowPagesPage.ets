@@ -1,4 +1,5 @@
 import { router } from '@kit.ArkUI';
+import { Want } from '@kit.AbilityKit';
 
 interface YellowPageEntry {
   name: string;
@@ -60,6 +61,21 @@ export struct YellowPagesPage {
     this.groups = next;
   }
 
+  private dial(phone: string): void {
+    const want: Want = {
+      action: 'ohos.want.action.dial',
+      uri: `tel:${phone}`
+    };
+    try {
+      const context = getContext(this);
+      context.startAbility(want).catch(() => {
+        console.warn('YellowPagesPage', `无法打开拨号界面: ${phone}`);
+      });
+    } catch {
+      console.warn('YellowPagesPage', `拨号调用失败: ${phone}`);
+    }
+  }
+
   build() {
     Column() {
       Row() {
@@ -84,6 +100,7 @@ export struct YellowPagesPage {
                       Text(entry.name).fontSize(18).fontColor('#444444').layoutWeight(1)
                       Text(entry.phone).fontSize(17).fontColor(group.color)
                     }.width('100%').height(48).padding({ left: 82, right: 18 })
+                      .onClick(() => this.dial(entry.phone))
                   })
                 }.width('100%').backgroundColor('#FAFAFA').transition(TransitionEffect.OPACITY)
               }
