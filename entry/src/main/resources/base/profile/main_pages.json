@@ -20,6 +20,7 @@
     "pages/campus/grade/ChartStatisticsPage",
     "pages/countdown/CountdownPage",
     "pages/campus/ClassroomQueryPage",
+    "pages/campus/ClassroomResultPage",
     "pages/campus/SchoolBusPage",
     "pages/campus/MajorProgressPage",
     "pages/campus/CampusWallPage",
