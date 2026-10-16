@@ -24,8 +24,8 @@ export interface CampusWallPost {
 export function decodeHtmlEntities(value: string): string {
   let result = value;
   for (let index = 0; index < 3; index++) {
-    const decoded = result.replace(/&#(\d+);/g, (_match: string, code: string) => String.fromCharCode(Number(code)))
-      .replace(/&#x([0-9a-fA-F]+);/g, (_match: string, code: string) => String.fromCharCode(parseInt(code, 16)))
+    const decoded = result.replace(/&#(\d+);/g, (_match: string, code: string) => String.fromCodePoint(Number(code)))
+      .replace(/&#x([0-9a-fA-F]+);/g, (_match: string, code: string) => String.fromCodePoint(parseInt(code, 16)))
       .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
     if (decoded === result) break;
     result = decoded;
