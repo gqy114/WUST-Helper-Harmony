@@ -1,13 +1,47 @@
+/** 教室查询入口页 */
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
-@Entry @Component
+
+@Entry
+@Component
 struct ClassroomQueryPage {
-  @State private startWeek: string = ''; @State private endWeek: string = ''; @State private weekday: string = ''; @State private startPeriod: number = 1; @State private endPeriod: number = 1; @State private building: string = ''; @State private room: string = ''; @State private picker: string = ''; @State private pendingWeekday: string = ''; @State private pendingStart: number = 1; @State private pendingEnd: number = 1;
-  @Builder private field(value: string, placeholder: string, onChange: (value: string) => void) { TextInput({ placeholder, text: value }).width('92%').height(74).fontSize(22).fontColor('#555555').backgroundColor(Color.White).borderRadius(38).padding({ left: 28, right: 20 }).onChange(onChange); }
-  private openPicker(type: string): void { this.picker = type; this.pendingWeekday = this.weekday || '周一'; this.pendingStart = this.startPeriod; this.pendingEnd = this.endPeriod; }
-  private confirmPicker(): void { if (this.picker === 'period' && this.pendingEnd < this.pendingStart) { promptAction.showToast({ message: '请选择正确范围', duration: 1500 }); return; } if (this.picker === 'weekday') this.weekday = this.pendingWeekday; else { this.startPeriod = this.pendingStart; this.endPeriod = this.pendingEnd; } this.picker = ''; }
-  build() { Column() {
-    Row() { Text('‹').fontSize(48).fontColor(Color.White).width(48).onClick(() => router.back()); Text('空教室查询').fontSize(29).fontWeight(FontWeight.Bold).fontColor(Color.White).margin({ left: 18 }); }.width('100%').height(96).padding({ left: 28 }).alignItems(VerticalAlign.Center).backgroundColor('#20C894');
-    Scroll() { Column() { Text('留空代表不限，输入一个时间段和教室条件即可查询').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#777777').width('92%').margin({ top: 34, bottom: 24 }); this.field(this.startWeek, '开始周次（如 1）', (v: string) => { this.startWeek = v; }); this.field(this.endWeek, '结束周次（留空则等于开始周次）', (v: string) => { this.endWeek = v; }); Text(this.weekday || '请选择星期').width('92%').height(74).fontSize(22).fontColor(this.weekday ? '#555555' : '#BBBBBB').backgroundColor(Color.White).borderRadius(38).padding({ left: 28 }).onClick(() => this.openPicker('weekday')); Text(this.weekday ? `第${this.startPeriod}节 - 第${this.endPeriod}节` : '节次范围').width('92%').height(74).fontSize(22).fontColor(this.weekday ? '#555555' : '#BBBBBB').backgroundColor(Color.White).borderRadius(38).padding({ left: 28 }).onClick(() => this.openPicker('period')); this.field(this.building, '教学楼（可输入关键字）', (v: string) => { this.building = v; }); this.field(this.room, '教室编号（可输入关键字，如 101）', (v: string) => { this.room = v; }); Button('查询教室').width('92%').height(72).fontSize(24).fontWeight(FontWeight.Bold).fontColor(Color.White).backgroundColor('#20C894').borderRadius(38).margin({ top: 24 }).onClick(() => router.pushUrl({ url: 'pages/campus/ClassroomResultPage', params: { startWeek: this.startWeek, endWeek: this.endWeek, weekday: this.weekday, startPeriod: String(this.startPeriod), endPeriod: String(this.endPeriod), building: this.building, room: this.room } })); if (this.picker) { Column() { Text(this.picker === 'weekday' ? '选择星期' : '选择节次范围').fontSize(21).fontWeight(FontWeight.Bold); if (this.picker === 'weekday') { ForEach(['周一','周二','周三','周四','周五','周六','周日'], (item: string) => Text(item).fontSize(20).fontColor(this.pendingWeekday === item ? '#20C894' : '#666666').width('100%').padding({ top: 12, bottom: 12 }).onClick(() => { this.pendingWeekday = item; })); } else { Row() { Column() { Text('起始节次').fontSize(16).fontColor('#888888'); ForEach([1,2,3,4,5,6,7,8,9,10,11,12], (item: number) => Text(`第${item}节`).fontSize(18).fontColor(this.pendingStart === item ? '#20C894' : '#666666').padding(8).onClick(() => { this.pendingStart = item; })); }.layoutWeight(1); Column() { Text('终止节次').fontSize(16).fontColor('#888888'); ForEach([1,2,3,4,5,6,7,8,9,10,11,12], (item: number) => Text(`第${item}节`).fontSize(18).fontColor(this.pendingEnd === item ? '#20C894' : '#666666').padding(8).onClick(() => { this.pendingEnd = item; })); }.layoutWeight(1); }.width('100%'); } Row() { Text('取消').fontSize(18).fontColor('#999999').layoutWeight(1).onClick(() => { this.picker = ''; }); Text('确定').fontSize(18).fontColor('#20C894').onClick(() => this.confirmPicker()); }.width('100%').margin({ top: 12 }); }.width('92%').padding(20).backgroundColor(Color.White).borderRadius(18).margin({ top: 18 }); } Blank().height(40); }.width('100%').padding({ bottom: 30 }).alignItems(HorizontalAlign.Center); }.layoutWeight(1).width('100%').backgroundColor('#F5F6F8').scrollBar(BarState.Off);
-  }.width('100%').height('100%').backgroundColor('#F5F6F8'); }
+  @Builder
+  private QueryCard(title: string, subtitle: string, icon: Resource, onClick: () => void) {
+    Row() {
+      Column() {
+        Text(title).fontSize(25).fontWeight(FontWeight.Bold).fontColor('#3A3A3A')
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Clip })
+        Text(subtitle).fontSize(18).fontWeight(FontWeight.Medium).fontColor('#777777').margin({ top: 12 })
+      }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+      Image(icon).width(92).height(92).objectFit(ImageFit.Contain).margin({ right: 18 })
+    }
+    .width('100%').height(178).padding({ left: 28, right: 8 })
+    .backgroundColor(Color.White).borderRadius(20)
+    .shadow({ radius: 8, color: '#22000000', offsetX: 0, offsetY: 2 }).onClick(onClick)
+  }
+
+  build() {
+    Column() {
+      Row() {
+        Image($r('app.media.ic_arrow_left')).width(24).height(24).objectFit(ImageFit.Contain)
+          .fillColor(Color.White).onClick(() => router.back())
+        Text('教室查询').fontSize(20).fontWeight(FontWeight.Bold).fontColor(Color.White).margin({ left: 12 })
+      }.width('100%').height(56).padding({ left: 16 }).alignItems(VerticalAlign.Center).backgroundColor('#23C087')
+
+      Scroll() {
+        Column() {
+          this.QueryCard('空教室查询', '找个教室去办活动咯～', $r('app.media.new_location'), () => {
+            router.pushUrl({ url: 'pages/campus/EmptyClassroomQueryPage' })
+          })
+          Column() {
+            this.QueryCard('课程查询', '去蹭喜欢老师の课吧～', $r('app.media.new_note'), () => {
+              promptAction.showToast({ message: '课程查询即将开放', duration: 1500 })
+            })
+          }.margin({ top: 44 })
+          Blank().layoutWeight(1)
+          Text('领航工作室出品').fontSize(18).fontWeight(FontWeight.Medium).fontColor('#888888').margin({ bottom: 22 })
+        }.width('100%').height('100%').padding({ left: 45, right: 45, top: 110 })
+      }.layoutWeight(1).width('100%').backgroundColor('#FAFAFA').scrollBar(BarState.Off)
+    }.width('100%').height('100%').backgroundColor('#FAFAFA')
+  }
 }
