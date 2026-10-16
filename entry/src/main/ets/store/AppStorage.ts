@@ -258,4 +258,12 @@ export class AppStorage {
   async setSettingNumber(key: string, value: number): Promise<void> {
     return this.putNum(key, value);
   }
+
+  async getSettingString(key: string, defaultValue: string = ''): Promise<string> {
+    return this.getStr(key, defaultValue);
+  }
+
+  async setSettingString(key: string, value: string): Promise<void> {
+    return this.putStr(key, value);
+  }
 }

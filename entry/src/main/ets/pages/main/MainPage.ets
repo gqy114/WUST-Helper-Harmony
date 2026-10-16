@@ -92,6 +92,7 @@ struct MainPage {
   @State private showCampusCat: boolean = true;
   @State private showVolunteerTab: boolean = true;
   @State private showCampusTab: boolean = true;
+  @State private visibleToolTitles: string[] = [];
   /** 底部导航栏是否隐藏 */
   @State private barHidden: boolean = false;
   // ── 非 @State 内部变量 ──
@@ -105,6 +106,7 @@ struct MainPage {
     this.loadDefaultTab();
     this.loadCatVisibility();
     this.loadNavigationVisibility();
+    this.loadToolLayout();
     this.updateCatState();
     console.info(TAG, `[module-debug] toolList.length=${toolList.length}`);
     console.info(TAG, `[module-debug] campusWallItem.title=${campusWallItem.title}, desc=${campusWallItem.desc}, route=${campusWallItem.route}`);
@@ -126,8 +128,20 @@ struct MainPage {
     this.updateCatState();
     this.loadCatVisibility();
     this.loadNavigationVisibility();
+    this.loadToolLayout();
     this.refreshCatEasterEgg();
     this.verifyLoginState();
+  }
+
+  private async loadToolLayout(): Promise<void> {
+    const raw = await AppStorage.getInstance().getSettingString('toolLayout', '');
+    const defaults: string[] = toolList.map((item: CardItem) => item.title);
+    if (raw.length === 0) { this.visibleToolTitles = defaults; return; }
+    try {
+      const saved = JSON.parse(raw) as string[];
+      this.visibleToolTitles = defaults.filter((title: string) => saved.indexOf(title) >= 0)
+        .sort((a: string, b: string) => saved.indexOf(a) - saved.indexOf(b));
+    } catch { this.visibleToolTitles = defaults; }
   }
 
   private async loadCatVisibility(): Promise<void> {
@@ -564,7 +578,8 @@ struct MainPage {
 
             // ── 小工具网格 ──
             Grid() {
-              ForEach(toolList, (item: CardItem) => {
+              ForEach(toolList.filter((item: CardItem) => this.visibleToolTitles.indexOf(item.title) >= 0)
+                .sort((a: CardItem, b: CardItem) => this.visibleToolTitles.indexOf(a.title) - this.visibleToolTitles.indexOf(b.title)), (item: CardItem) => {
                 GridItem() {
                   this.CardItem(item)
                 }

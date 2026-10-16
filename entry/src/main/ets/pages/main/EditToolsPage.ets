@@ -1,4 +1,5 @@
 import router from '@ohos.router';
+import { AppStorage } from '../../store/AppStorage';
 
 interface ToolEntry { title: string; desc: string; icon: Resource; enabled: boolean; }
 
@@ -7,6 +8,7 @@ interface ToolEntry { title: string; desc: string; icon: Resource; enabled: bool
 struct EditToolsPage {
   @State private enabledTools: ToolEntry[] = [];
   @State private disabledTools: ToolEntry[] = [];
+  @State private draggingIndex: number = -1;
   private allTools: ToolEntry[] = [
     { title: '校车时刻', desc: '发车时间查询', icon: $r('app.media.ic_school_bus'), enabled: true },
     { title: '学校校历', desc: '了解假期安排', icon: $r('app.media.ic_schoolcalendar'), enabled: true },
@@ -16,25 +18,66 @@ struct EditToolsPage {
     { title: '查电费', desc: '寝室剩余电量', icon: $r('app.media.electricity_bill'), enabled: true }
   ];
 
-  aboutToAppear(): void { this.enabledTools = this.allTools.filter((item: ToolEntry) => item.enabled); }
+  async aboutToAppear(): Promise<void> {
+    const raw = await AppStorage.getInstance().getSettingString('toolLayout', '');
+    if (raw.length > 0) {
+      try {
+        const order = JSON.parse(raw) as string[];
+        this.allTools.sort((a: ToolEntry, b: ToolEntry) => order.indexOf(a.title) - order.indexOf(b.title));
+      } catch { /* 使用默认顺序 */ }
+    }
+    this.refreshLists();
+  }
 
   @Builder private toolCard(item: ToolEntry) {
     Row() {
       Image(item.icon).width(54).height(54).objectFit(ImageFit.Contain)
       Column() { Text(item.title).fontSize(19).fontWeight(FontWeight.Bold); Text(item.desc).fontSize(14).fontColor('#777777').margin({ top: 4 }); }.alignItems(HorizontalAlign.Start).margin({ left: 16 })
     }.width('100%').height(112).padding({ left: 24 }).backgroundColor(Color.White).borderRadius(16)
-      .onClick(() => this.toggle(item.title))
+      .onClick(() => this.openTool(item.title))
+      .onLongPress(() => { this.draggingIndex = this.allTools.indexOf(item); })
+      .gesture(PanGesture().onActionUpdate((event: GestureEvent) => {
+        if (this.draggingIndex < 0 || Math.abs(event.offsetY) < 36) return;
+        const from = this.draggingIndex;
+        const enabledCount = this.enabledTools.length;
+        const delta = event.offsetY > 0 ? 1 : -1;
+        const to = Math.max(0, Math.min(this.allTools.length - 1, from + delta));
+        if (to !== from) {
+          const moved = this.allTools.splice(from, 1)[0];
+          moved.enabled = to < enabledCount;
+          this.allTools.splice(to, 0, moved);
+          this.draggingIndex = to;
+          this.refreshLists();
+        }
+      }).onActionEnd(() => { this.draggingIndex = -1; this.saveLayout(); }))
+  }
+
+  private refreshLists(): void {
+    this.enabledTools = this.allTools.filter((item: ToolEntry) => item.enabled);
+    this.disabledTools = this.allTools.filter((item: ToolEntry) => !item.enabled);
+  }
+
+  private async saveLayout(): Promise<void> {
+    const enabled = this.allTools.filter((item: ToolEntry) => item.enabled).map((item: ToolEntry) => item.title);
+    await AppStorage.getInstance().setSettingString('toolLayout', JSON.stringify(enabled));
   }
 
   private toggle(title: string): void {
-    const enabled: ToolEntry[] = []; const disabled: ToolEntry[] = [];
     for (let i = 0; i < this.allTools.length; i++) {
-      const item = this.allTools[i];
-      const next: ToolEntry = { title: item.title, desc: item.desc, icon: item.icon, enabled: item.title === title ? !item.enabled : item.enabled };
-      this.allTools[i] = next;
-      (next.enabled ? enabled : disabled).push(next);
+      if (this.allTools[i].title === title) this.allTools[i].enabled = !this.allTools[i].enabled;
     }
-    this.enabledTools = enabled; this.disabledTools = disabled;
+    this.refreshLists();
+    this.saveLayout();
+  }
+
+  private openTool(title: string): void {
+    const routes: Record<string, string> = {
+      '校车时刻': 'pages/campus/SchoolBusPage', '学校校历': 'pages/campus/SchoolCalendarPage',
+      '物理实验': 'pages/course/PhysicalExperimentPage', '校园黄页': 'pages/campus/YellowPagesPage',
+      '饮水机': 'pages/main/WaterDispenserPage', '查电费': 'pages/main/ElectricityPage'
+    };
+    const target = routes[title];
+    if (target !== undefined) router.pushUrl({ url: target });
   }
 
   build() {
