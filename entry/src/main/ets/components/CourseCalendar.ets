@@ -30,6 +30,7 @@ const PERIOD_SLOT_HEIGHT: number = PERIOD_HEIGHT * 2 + 5;
 
 @Component
 export struct CourseCalendar {
+  @Prop backgroundResolver: ((course: CourseData) => Resource) | null = null;
   /** 当前周的课程（已过滤） */
   @Prop courseList: CourseData[] = [];
   /** 当前周次 */
@@ -167,6 +168,7 @@ export struct CourseCalendar {
                 isDimmed: !isCourseInWeek(course, this.currentWeek),   // 直接内联计算
                 fontSize: this.courseFontSize,
                 italic: this.courseItalic,
+                bgImage: this.backgroundResolver ? this.backgroundResolver(course) : null,
                 onItemTap: () => {
                   if (this.onCourseClick !== undefined && this.onCourseClick !== null) {
                     this.onCourseClick(course);

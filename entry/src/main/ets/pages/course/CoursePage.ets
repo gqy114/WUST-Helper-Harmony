@@ -32,54 +32,6 @@ const mockCourseList: CourseData[] = [
   { courseName: '形势与政策', teacher: '郑老师', location: '教4-101', dayOfWeek: 3, startPeriod: 9, endPeriod: 11, weekRanges: '5,6,7,8', color: '#00D4BB' }
 ]
 
-/** 课程详情弹窗 */
-@CustomDialog
-struct CourseDetailDialog {
-  controller?: CustomDialogController;
-  private course?: CourseData;
-  onClose?: () => void;
-
-  build() {
-    Column() {
-      Text(this.course && this.course.courseName ? this.course.courseName : '').fontSize(18).fontWeight(FontWeight.Bold)
-        .fontColor('#333333').margin({ top: 16 })
-
-      Divider().margin({ top: 12, bottom: 12 })
-
-      Row() { Text('授课教师').width(80).fontSize(14).fontColor('#999999')
-        Text(this.course && this.course.teacher ? this.course.teacher : '').fontSize(14).fontColor('#333333').layoutWeight(1) }
-      .width('100%').height(32).padding({ left: 16, right: 16 })
-
-      Row() { Text('上课地点').width(80).fontSize(14).fontColor('#999999')
-        Text(this.course && this.course.location ? this.course.location : '').fontSize(14).fontColor('#333333').layoutWeight(1) }
-      .width('100%').height(32).padding({ left: 16, right: 16 })
-
-      Row() { Text('星期').width(80).fontSize(14).fontColor('#999999')
-        Text( this.course && this.course.dayOfWeek ? `星期${this.course.dayOfWeek}` : ''
-        ).fontSize(14).fontColor('#333333').layoutWeight(1) }
-      .width('100%').height(32).padding({ left: 16, right: 16 })
-
-      Row() { Text('节次').width(80).fontSize(14).fontColor('#999999')
-        Text(this.course ? `第 ${this.course.startPeriod}-${this.course.endPeriod} 节` :
-          '').fontSize(14).fontColor('#333333').layoutWeight(1) }
-      .width('100%').height(32).padding({ left: 16, right: 16 })
-
-      Row() { Text('教学周').width(80).fontSize(14).fontColor('#999999')
-        Text(this.course && this.course.weekRanges ? this.course.weekRanges : '').fontSize(14).fontColor('#333333').layoutWeight(1) }
-      .width('100%').height(32).padding({ left: 16, right: 16 })
-
-      Text('关闭').fontSize(16).fontColor('#1ec98d').margin({ top: 12, bottom: 12 })
-        .onClick(() => {
-          if (this.onClose !== undefined && this.onClose !== null) {
-            this.onClose();
-          }
-        })
-    }
-    .width('80%').backgroundColor(Color.White).borderRadius(12).padding(16)
-    .alignItems(HorizontalAlign.Start)
-  }
-}
-
 @Entry
 @Component
 export struct CoursePage {
@@ -553,7 +505,57 @@ export struct CoursePage {
   /** 课程点击弹详情 */
   private onCourseTap(course: CourseData): void {
     this.tappedCourse = course;
-    this.showCourseDialog = true;
+    animateTo({ duration: 260, curve: Curve.EaseOut }, () => {
+      this.showCourseDialog = true;
+    });
+  }
+
+  @Builder
+  private courseDetailOverlay(course: CourseData) {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%').height('100%')
+        .backgroundColor('#99000000')
+        .onClick(() => {
+          animateTo({ duration: 220, curve: Curve.EaseIn }, () => {
+            this.showCourseDialog = false;
+          });
+        })
+
+      Stack({ alignContent: Alignment.BottomStart }) {
+        Image(this.courseBackground(course))
+          .width('100%').height('100%')
+          .objectFit(ImageFit.Cover)
+          .borderRadius(14).opacity(0.96)
+        Column() {
+          Text(isCourseInWeek(course, this.currentWeek) ? '本周' : '非本周')
+            .fontSize(18).fontWeight(FontWeight.Bold).fontColor('#17324D')
+            .margin({ bottom: 22 })
+          Text(course.courseName)
+            .fontSize(26).fontWeight(FontWeight.Bold).fontColor('#17324D')
+            .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ bottom: 18 })
+          Text(course.location)
+            .fontSize(20).fontWeight(FontWeight.Medium).fontColor('#17324D')
+            .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ bottom: 18 })
+          Text(course.teacher)
+            .fontSize(20).fontWeight(FontWeight.Medium).fontColor('#17324D')
+            .margin({ bottom: 18 })
+          Text(`教学班 ${course.dayOfWeek} · 第${course.startPeriod}-${course.endPeriod}节`)
+            .fontSize(18).fontColor('#17324D').maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ bottom: 18 })
+          Text(`第${course.weekRanges}周`).fontSize(18).fontColor('#17324D')
+        }
+        .alignItems(HorizontalAlign.Start)
+        .width('62%').padding({ left: 24, right: 12, bottom: 36 })
+      }
+      .width('76%').height('66%').borderRadius(14).clip(true)
+      .backgroundColor('#FFFFFF').onClick(() => {})
+      .transition(TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.86, y: 0.86 })))
+    }
+    .width('100%').height('100%').transition(TransitionEffect.OPACITY)
   }
 
   private onMoreMenuItemClick(index: number): void {
@@ -645,6 +647,13 @@ export struct CoursePage {
     return first
       ? `${now.getFullYear()}-${now.getFullYear() + 1}-1`
       : `${now.getFullYear() - 1}-${now.getFullYear()}-2`;
+  }
+
+  private courseBackground(course: CourseData): Resource {
+    if (!isCourseInWeek(course, this.currentWeek)) return $r('app.media.not_this_week_course');
+    if ((course.courseName || '').includes('物理实验')) return $r('app.media.physics_experiment');
+    if ((course.courseName || '').includes('体育')) return $r('app.media.pe_course');
+    return $r('app.media.normal_course');
   }
 
   build() {
@@ -820,18 +829,17 @@ export struct CoursePage {
           sundayFirst: this.sundayFirst,
           courseFontSize: this.scheduleSettings.fontSize,
           courseItalic: this.scheduleSettings.italic,
+          backgroundResolver: (course: CourseData) => this.courseBackground(course),
         })
           .layoutWeight(1)
-      }
-      if (this.showCourseDialog && this.tappedCourse) {
-        CourseDetailDialog({
-          course: this.tappedCourse,
-          onClose: () => { this.showCourseDialog = false; }
-        })
       }
       }
       .width('100%').height('100%')
       .backgroundColor(this.scheduleSettings.bgImage ? '#00F5F5F5' : '#F5F5F5')
+
+      if (this.showCourseDialog && this.tappedCourse) {
+        this.courseDetailOverlay(this.tappedCourse as CourseData)
+      }
 
       if (this.showMoreMenu) {
         Stack({ alignContent: Alignment.TopEnd }) {

@@ -10,10 +10,12 @@ export struct CourseItem {
   @Prop isDimmed: boolean = false;
   @Prop fontSize: number = 11;
   @Prop italic: boolean = false;
+  @Prop bgImage: Resource | null = null;
   private onItemTap?: () => void;
 
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
+      if (this.bgImage) { Image(this.bgImage).width('100%').height('100%').objectFit(ImageFit.Cover).borderRadius(8).opacity(this.isDimmed ? 0.55 : 1); }
       Column() {
         Text(this.courseName)
           .fontSize(this.fontSize)
