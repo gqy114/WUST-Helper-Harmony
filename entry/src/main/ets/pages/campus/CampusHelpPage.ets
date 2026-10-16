@@ -1,6 +1,7 @@
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi, CampusWallPost, decodeHtmlEntities } from '../../net/CampusWallApi';
+import { AppStorage } from '../../store/AppStorage';
 
 @Entry @Component
 struct CampusHelpPage {
@@ -8,13 +9,26 @@ struct CampusHelpPage {
   @State private loading: boolean = true;
   @State private searching: boolean = false;
   @State private query: string = "";
+  @State private filterOpen: boolean = false;
+  @State private pendingCollegeFilter: string = "全部";
+  @State private pendingStatusFilter: string = "全部";
+  @State private activeCollegeFilter: string = "全部";
+  @State private activeStatusFilter: string = "全部";
+  @State private selfCollege: string = "";
   aboutToAppear(): void { this.load(); }
-  private async load(): Promise<void> { this.loading = true; try { this.posts = await CampusWallApi.list(1, 'help'); } catch { promptAction.showToast({ message: '求助信息加载失败', duration: 1500 }); } this.loading = false; }
+  private async load(): Promise<void> { this.loading = true; try { this.selfCollege = await AppStorage.getInstance().getCollege(); } catch {} try { this.posts = await CampusWallApi.list(1, 'help'); } catch { promptAction.showToast({ message: '求助信息加载失败', duration: 1500 }); } this.loading = false; }
   private matchScore(post: CampusWallPost): number { const q = this.query.trim().toLowerCase(); if (!q) return 1; const text = `${post.title || ""}${post.content || ""}${post.displayName || ""}${post.realName || ""}${post.college || ""}`.toLowerCase(); let score = 0; for (let i = 0; i < q.length; i++) { if (text.includes(q.charAt(i))) score++; } return score; }
   private timeLabel(value: string): string { if (value.length === 0) return ''; const stamp = Date.parse(value); if (isNaN(stamp)) return value; const hours = Math.max(0, Math.floor((Date.now() - stamp) / 3600000)); return hours < 1 ? '刚刚' : `${hours}小时前`; }
+  private filterMatch(post: CampusWallPost): boolean {
+    const same: boolean = this.selfCollege.length > 0 && (post.college || '').includes(this.selfCollege);
+    const collegeOk: boolean = this.activeCollegeFilter === '全部' || (this.activeCollegeFilter === '同学院' ? same : !same);
+    const resolved: boolean = this.isResolved(post);
+    const statusOk: boolean = this.activeStatusFilter === '全部' || (this.activeStatusFilter === '已解决' ? resolved : !resolved);
+    return collegeOk && statusOk;
+  }
   private isResolved(post: CampusWallPost): boolean { const status = (post.status || '').toLowerCase(); return post.resolved === true || post.isResolved === true || status === 'resolved' || status === 'solved' || status === '已解决'; }
   private sortedPosts(): CampusWallPost[] {
-    return this.posts.filter((post: CampusWallPost) => this.matchScore(post) > 0).sort((a: CampusWallPost, b: CampusWallPost) => {
+    return this.posts.filter((post: CampusWallPost) => this.filterMatch(post) && this.matchScore(post) > 0).sort((a: CampusWallPost, b: CampusWallPost) => {
       const statusOrder: number = (this.isResolved(a) ? 1 : 0) - (this.isResolved(b) ? 1 : 0);
       if (statusOrder !== 0) return statusOrder;
       const aTime: number = Date.parse(a.createdAt || '') || 0;
@@ -28,7 +42,14 @@ struct CampusHelpPage {
   }
   build() {
     Column() {
-      Row() { Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back()); Text('求助').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 }); Blank().layoutWeight(1); Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }).onClick(() => { this.searching = true; }); Image($r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover); }.width('100%').height(96).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
+      Row() { Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back()); Text('求助').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 }); Blank().layoutWeight(1); Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }).onClick(() => { this.pendingCollegeFilter = this.activeCollegeFilter; this.pendingStatusFilter = this.activeStatusFilter; this.filterOpen = true; }); Text('⌕').fontSize(34).fontColor('#333333').margin({ right: 18 }).onClick(() => { this.searching = true; }); Image($r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover); }.width('100%').height(96).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
+      if (this.filterOpen) {
+        Column() {
+          Row() { Text('学院').fontSize(16).fontColor('#777777').width(52); ForEach(['同学院', '不同学院', '全部'], (item: string) => { Text(item).fontSize(16).fontColor(this.pendingCollegeFilter === item ? '#20C894' : '#777777').backgroundColor(this.pendingCollegeFilter === item ? '#E7F8F2' : '#F5F5F5').borderRadius(18).padding({ left: 10, right: 10, top: 8, bottom: 8 }).margin({ right: 8 }).onClick(() => { this.pendingCollegeFilter = item; }); }) }.width('100%');
+          Row() { Text('状态').fontSize(16).fontColor('#777777').width(52); ForEach(['待解决', '已解决', '全部'], (item: string) => { Text(item).fontSize(16).fontColor(this.pendingStatusFilter === item ? '#20C894' : '#777777').backgroundColor(this.pendingStatusFilter === item ? '#E7F8F2' : '#F5F5F5').borderRadius(18).padding({ left: 10, right: 10, top: 8, bottom: 8 }).margin({ right: 8 }).onClick(() => { this.pendingStatusFilter = item; }); }) }.width('100%').margin({ top: 8 });
+          Row() { Text('取消').fontSize(17).fontColor('#999999').layoutWeight(1).onClick(() => { this.filterOpen = false; }); Text('确定').fontSize(17).fontColor('#20C894').textAlign(TextAlign.End).onClick(() => { this.activeCollegeFilter = this.pendingCollegeFilter; this.activeStatusFilter = this.pendingStatusFilter; this.filterOpen = false; }); }.width('100%').margin({ top: 12 });
+        }.width('92%').padding(16).backgroundColor(Color.White).borderRadius(16).margin({ bottom: 12 }).animation({ duration: 260, curve: Curve.EaseInOut });
+      }
       if (this.searching) {
         Row() { Text('⌕').fontSize(30).fontColor('#555555'); TextInput({ placeholder: '搜索当前板块', text: this.query }).layoutWeight(1).fontSize(20).onChange((value: string) => { this.query = value; }); Text('×').fontSize(32).fontColor('#777777').onClick(() => { this.query = ''; this.searching = false; }); }.width('92%').height(58).padding({ left: 16, right: 14 }).backgroundColor(Color.White).borderRadius(30).margin({ bottom: 12 });
       }
