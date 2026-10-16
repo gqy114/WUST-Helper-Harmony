@@ -57,7 +57,7 @@ const toolList: CardItem[] = [
   { title: "学校校历", desc: "了解假期安排", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_schoolcalendar'), route: "pages/campus/SchoolCalendarPage" },
   { title: "物理实验", desc: "导入实验课表", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_physical'), route: "pages/common/WebPage", url: "" },
   { title: "校园黄页", desc: "号码通讯录", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_yellow_page'), route: "pages/common/WebPage", url: "" },
-  { title: "饮水机", desc: "扫码取水与结算", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.water_dispenser'), route: "pages/common/WebPage", url: "" },
+  { title: "饮水机", desc: "扫码取水与结算", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.water_dispenser'), route: "pages/main/WaterDispenserPage" },
   { title: "查电费", desc: "寝室剩余电量", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.electricity_bill'), route: "pages/common/WebPage", url: "" }
 ]
 
