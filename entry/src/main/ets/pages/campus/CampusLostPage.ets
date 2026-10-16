@@ -16,7 +16,7 @@ struct CampusLostPage {
     catch { promptAction.showToast({ message: '失物信息加载失败', duration: 1500 }); }
     this.loading = false;
   }
-  private matches(post: CampusWallPost): boolean { const q = this.query.trim().toLowerCase(); if (!q) return true; return `${post.title || ""}${post.content || ""}${post.displayName || ""}${post.realName || ""}${post.college || ""}`.toLowerCase().includes(q); }
+  private matchScore(post: CampusWallPost): number { const q = this.query.trim().toLowerCase(); if (!q) return 1; const text = `${post.title || ""}${post.content || ""}${post.displayName || ""}${post.realName || ""}${post.college || ""}`.toLowerCase(); let score = 0; for (let i = 0; i < q.length; i++) { if (text.includes(q.charAt(i))) score++; } return score; }
   private async toggleLike(post: CampusWallPost): Promise<void> {
     if (!post.id) return;
     try {
@@ -26,6 +26,10 @@ struct CampusLostPage {
     } catch { promptAction.showToast({ message: '操作失败，请稍后重试', duration: 1200 }); }
   }
   private noticeLabel(post: CampusWallPost): string { const value = (post.noticeType || post.type || post.category || '').toLowerCase(); return value.indexOf('found') >= 0 || value.indexOf('招领') >= 0 || value.indexOf('拾') >= 0 ? '失物招领' : '寻物启事'; }
+  @Builder private highlighted(value: string, size: number, color: string, bold: boolean) {
+    Text() { ForEach(value.split(''), (ch: string) => { Span(ch).fontColor(this.query.trim().length > 0 && this.query.toLowerCase().includes(ch.toLowerCase()) ? '#18B889' : color); }) }
+      .fontSize(size).fontWeight(bold ? FontWeight.Bold : FontWeight.Normal).width('100%');
+  }
   build() {
     Column() {
       Row() {
@@ -39,15 +43,15 @@ struct CampusLostPage {
       Scroll() { Column() {
         if (this.loading) { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
         else if (this.posts.length === 0) { Text('暂无失物信息').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
-        else { ForEach(this.posts.filter((post: CampusWallPost) => this.matches(post)), (post: CampusWallPost) => {
+        else { ForEach(this.posts.filter((post: CampusWallPost) => this.matchScore(post) > 0).sort((a: CampusWallPost, b: CampusWallPost) => this.matchScore(b) - this.matchScore(a)), (post: CampusWallPost) => {
           Column() {
             Row() {
               if (post.avatarUrl) { Image(post.avatarUrl).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); }
               Column() { Text(post.displayName || post.realName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); Text(post.college || post.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 }); }.alignItems(HorizontalAlign.Start).layoutWeight(1);
               Text(this.noticeLabel(post)).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#B44F70').backgroundColor('#FFF0F2').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 });
             }.width('100%');
-            if (post.title) { Text(decodeHtmlEntities(post.title)).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#222222').width('100%').margin({ top: 16 }); }
-            Text(decodeHtmlEntities(post.content || '')).fontSize(18).fontColor('#333333').width('100%').maxLines(5).textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 12 });
+            if (post.title) { this.highlighted(decodeHtmlEntities(post.title), 22, '#222222', true); }
+            this.highlighted(decodeHtmlEntities(post.content || ''), 18, '#333333', false);
             if (post.images && post.images.length > 0) { Image(post.images[0]).width('100%').height(190).objectFit(ImageFit.Cover).borderRadius(10).margin({ top: 12 }); }
             Row() { Text('刚刚').fontSize(16).fontColor('#AAAAAA').layoutWeight(1); Text(`评论 ${post.replyCount || 0}`).fontSize(16).fontColor('#999999').margin({ left: 20 }); }.margin({ top: 18 });
           }.width('100%').padding({ left: 34, right: 34, top: 22, bottom: 24 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' });

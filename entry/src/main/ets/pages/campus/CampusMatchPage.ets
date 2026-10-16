@@ -18,7 +18,7 @@ struct CampusMatchPage {
     this.loading = false;
   }
 
-  private matches(post: CampusWallPost): boolean { const q = this.query.trim().toLowerCase(); if (!q) return true; return `${post.title || ""}${post.content || ""}${post.displayName || ""}${post.realName || ""}${post.college || ""}`.toLowerCase().includes(q); }
+  private matchScore(post: CampusWallPost): number { const q = this.query.trim().toLowerCase(); if (!q) return 1; const text = `${post.title || ""}${post.content || ""}${post.displayName || ""}${post.realName || ""}${post.college || ""}`.toLowerCase(); let score = 0; for (let i = 0; i < q.length; i++) { if (text.includes(q.charAt(i))) score++; } return score; }
   private async toggleLike(post: CampusWallPost): Promise<void> {
     if (!post.id) return;
     try {
@@ -29,6 +29,10 @@ struct CampusMatchPage {
   }
   private teamLabel(post: CampusWallPost): string { const value = (post.noticeType || post.type || post.category || '').toLowerCase(); return value.indexOf('队伍') >= 0 || value.indexOf('team') >= 0 || value.indexOf('join') >= 0 ? '找队伍' : '找队友'; }
 
+  @Builder private highlighted(value: string, size: number, color: string, bold: boolean) {
+    Text() { ForEach(value.split(''), (ch: string) => { Span(ch).fontColor(this.query.trim().length > 0 && this.query.toLowerCase().includes(ch.toLowerCase()) ? '#18B889' : color); }) }
+      .fontSize(size).fontWeight(bold ? FontWeight.Bold : FontWeight.Normal).width('100%');
+  }
   build() {
     Column() {
       Row() {
@@ -47,7 +51,7 @@ struct CampusMatchPage {
           } else if (this.posts.length === 0) {
             Text('暂无组队信息').fontSize(18).fontColor('#999999').margin({ top: 36 });
           } else {
-            ForEach(this.posts.filter((post: CampusWallPost) => this.matches(post)), (post: CampusWallPost) => {
+            ForEach(this.posts.filter((post: CampusWallPost) => this.matchScore(post) > 0).sort((a: CampusWallPost, b: CampusWallPost) => this.matchScore(b) - this.matchScore(a)), (post: CampusWallPost) => {
               Column() {
                 Row() {
                   if (post.avatarUrl) { Image(post.avatarUrl).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); }
@@ -57,8 +61,8 @@ struct CampusMatchPage {
                   }.alignItems(HorizontalAlign.Start).layoutWeight(1);
                   Column() { Text(this.teamLabel(post)).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#2D6E9F').backgroundColor('#E7F4FF').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); Text((post.replyCount || 0) > 0 ? `${post.replyCount} 条回复` : '等待回应').fontSize(15).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ top: 6 }); }.alignItems(HorizontalAlign.End);
                 }.width('100%');
-                if (post.title) { Text(decodeHtmlEntities(post.title)).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#222222').width('100%').margin({ top: 16 }); }
-                Text(decodeHtmlEntities(post.content || '')).fontSize(18).fontColor('#333333').width('100%').maxLines(6).textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 12 });
+                if (post.title) { this.highlighted(decodeHtmlEntities(post.title), 22, '#222222', true); }
+                this.highlighted(decodeHtmlEntities(post.content || ''), 18, '#333333', false);
                 Text('刚刚').fontSize(16).fontColor('#AAAAAA').margin({ top: 18 });
               }.width('100%').padding({ left: 34, right: 34, top: 22, bottom: 24 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' });
             }, (post: CampusWallPost) => `${post.id || post.createdAt || post.content}`);
