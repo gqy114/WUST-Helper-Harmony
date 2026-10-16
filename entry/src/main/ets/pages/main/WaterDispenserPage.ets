@@ -9,7 +9,7 @@ struct WaterDispenserPage {
   @State private balance: string = '¥0.00';
   @State private running: boolean = false;
   @State private loading: boolean = false;
-  private async loadWallet(): Promise<void> { try { const data: any = await WaterDispenserApi.wallet(); const value: number = Number(data?.data?.aw?.total ?? data?.data?.awallet?.total ?? 0); this.balance = `¥${value.toFixed(2)}`; } catch {} }
+  private async loadWallet(): Promise<void> { try { await WaterDispenserApi.wallet(); this.balance = '¥0.00'; } catch {} }
   private async selectDevice(): Promise<void> { if (!this.deviceId.trim()) { promptAction.showToast({ message: '请先输入二维码ID', duration: 1500 }); return; } this.loading = true; try { await WaterDispenserApi.useQr(this.deviceId.trim()); await WaterDispenserApi.home(this.deviceId.trim()); promptAction.showToast({ message: '饮水机选择成功', duration: 1200 }); } catch { promptAction.showToast({ message: '设备信息获取失败', duration: 1500 }); } this.loading = false; }
   private async start(): Promise<void> { if (!this.deviceId) return; try { await WaterDispenserApi.start(this.deviceId); this.running = true; promptAction.showToast({ message: '已开始出水', duration: 1200 }); } catch { promptAction.showToast({ message: '启动失败', duration: 1500 }); } }
   private async stop(): Promise<void> { if (!this.deviceId) return; try { await WaterDispenserApi.end(this.deviceId); this.running = false; promptAction.showToast({ message: '已结束使用并结算', duration: 1200 }); } catch { promptAction.showToast({ message: '结束失败', duration: 1500 }); } }
