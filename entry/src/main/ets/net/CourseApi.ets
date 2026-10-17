@@ -5,6 +5,7 @@ import { CourseData } from '../model/CourseModel';
 /** 本科生课表查询 —— 一步式生效接口 */
 const UG_COURSE_TABLE_URL = 'https://lyzyy.love:8081/UnderGraduate/Support/getCoursesPage';
 const UG_COURSE_TABLE_BACKUP_URL = 'https://www.lyzyy.love:8081/UnderGraduate/Support/getCoursesPage';
+const UG_COURSE_TABLE_LEGACY_URL = 'https://lyzyy.love/UnderGraduate/Support/getCoursesPage';
 
 /** 学期起始日接口（用于计算真实当前周）。 */
 const UG_TERM_STARTDATE_URL = 'https://lyzyy.love:8081/UnderGraduate/Support/getData';
@@ -116,9 +117,26 @@ export class CourseApi {
       try {
         result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_URL}?term=${encodeURIComponent(semester)}`, headers);
       } catch {
-        result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_BACKUP_URL}?term=${encodeURIComponent(semester)}`, headers);
+        try {
+          result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_BACKUP_URL}?term=${encodeURIComponent(semester)}`, headers);
+        } catch {
+          result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_LEGACY_URL}?term=${encodeURIComponent(semester)}`, headers);
+        }
       }
-      const resp = result.data;
+      let resp = result.data;
+      if (resp && (resp.code === 401 || resp.code === 403)) {
+        const legacyHeaders: CourseHeaders = {
+          Authorization: `Wuster ${token.trim()}`,
+          Platform: 'android',
+          Accept: 'application/json',
+        };
+        try {
+          const legacyResult = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_LEGACY_URL}?term=${encodeURIComponent(semester)}`, legacyHeaders);
+          resp = legacyResult.data;
+        } catch {
+          console.warn('CourseApi', 'legacy course authorization retry failed');
+        }
+      }
 
       if (resp && (resp.code === 10000 || resp.code === 200 || resp.code === 0) && resp.data) {
         const list: CourseData[] = [];
