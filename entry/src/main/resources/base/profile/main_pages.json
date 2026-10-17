@@ -37,7 +37,8 @@
     "pages/campus/TrainingPlanPage",
     "pages/ai/AIAssistantPage",
     "pages/main/WaterDispenserPage",
-    "pages/main/EditToolsPage"
+    "pages/main/EditToolsPage",
+    "pages/course/PhysicalExperimentPage"
   ]
 }
 
