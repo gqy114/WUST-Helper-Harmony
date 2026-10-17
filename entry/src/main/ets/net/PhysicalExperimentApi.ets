@@ -11,7 +11,12 @@ export interface PhysicalExperimentCourse {
   endSection?: number;
   startWeek?: number;
   endWeek?: number;
-  [key: string]: Object | undefined;
+}
+
+interface PhysicalExperimentResponse {
+  code: number;
+  msg?: string;
+  data?: PhysicalExperimentCourse[];
 }
 
 /**
@@ -25,7 +30,7 @@ export class PhysicalExperimentApi {
     const storage = AppStorage.getInstance();
     const token = await storage.getToken();
     const cookie = CookieManager.getCookie('www.lyzyy.love') || token;
-    const result = await HttpRequest.get<{ code: number; msg?: string; data?: PhysicalExperimentCourse[] }>(
+    const result = await HttpRequest.get<PhysicalExperimentResponse>(
       `${PhysicalExperimentApi.URL}?term=${encodeURIComponent(term)}`,
       { Cookie: cookie, Accept: 'application/json', Platform: 'android' },
     );
