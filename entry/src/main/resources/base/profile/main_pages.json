@@ -36,7 +36,8 @@
     "pages/campus/YellowPagesPage",
     "pages/campus/TrainingPlanPage",
     "pages/ai/AIAssistantPage",
-    "pages/main/WaterDispenserPage"
+    "pages/main/WaterDispenserPage",
+    "pages/main/EditToolsPage"
   ]
 }
 
