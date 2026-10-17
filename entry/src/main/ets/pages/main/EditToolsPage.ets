@@ -31,9 +31,13 @@ struct EditToolsPage {
 
   @Builder private toolCard(item: ToolEntry) {
     Row() {
-      Image(item.icon).width(item.title === '饮水机' || item.title === '查电费' ? 66 : 54).height(item.title === '饮水机' || item.title === '查电费' ? 66 : 54).objectFit(ImageFit.Contain)
-      Column() { Text(item.title).fontSize(19).fontWeight(FontWeight.Bold); Text(item.desc).fontSize(14).fontColor('#777777').margin({ top: 4 }); }.alignItems(HorizontalAlign.Start).margin({ left: 16 })
-    }.width('100%').height(112).padding({ left: 24 }).backgroundColor(Color.White).borderRadius(16)
+      Column() {
+        Text(item.title).fontSize(18).fontWeight(FontWeight.Bold).maxLines(1)
+        Text(item.desc).fontSize(11).fontColor('#777777').maxLines(1).margin({ top: 4 })
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+      Image(item.icon).width(54).height(54).objectFit(ImageFit.Contain)
+        .scale({ x: item.title === '饮水机' || item.title === '查电费' ? 1.22 : 1, y: item.title === '饮水机' || item.title === '查电费' ? 1.22 : 1 })
+    }.width('100%').height(100).padding({ left: 12, right: 12 }).backgroundColor(Color.White).borderRadius(12)
       .onClick(() => this.openTool(item.title))
       .gesture(PanGesture().onActionUpdate((event: GestureEvent) => {
         if (this.draggingIndex < 0 || Math.abs(event.offsetY) < 36) return;
