@@ -36,7 +36,9 @@ struct ClassroomQueryPage {
             this.QueryCard('课程查询', '去蹭喜欢老师の课吧～', $r('app.media.new_note'), () => {
               router.pushUrl({ url: 'pages/campus/CourseSearchPage' })
             })
-          }.margin({ top: 44 })
+          }.width('100%').margin({ top: 44 }).onClick(() => {
+            router.pushUrl({ url: 'pages/campus/CourseSearchPage' })
+          })
           Blank().layoutWeight(1)
           Text('领航工作室出品').fontSize(18).fontWeight(FontWeight.Medium).fontColor('#888888').margin({ bottom: 22 })
         }.width('100%').height('100%').padding({ left: 45, right: 45, top: 110 })
