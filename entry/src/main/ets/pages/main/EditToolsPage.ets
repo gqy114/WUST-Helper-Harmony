@@ -35,7 +35,6 @@ struct EditToolsPage {
       Column() { Text(item.title).fontSize(19).fontWeight(FontWeight.Bold); Text(item.desc).fontSize(14).fontColor('#777777').margin({ top: 4 }); }.alignItems(HorizontalAlign.Start).margin({ left: 16 })
     }.width('100%').height(112).padding({ left: 24 }).backgroundColor(Color.White).borderRadius(16)
       .onClick(() => this.openTool(item.title))
-      .onLongPress(() => { this.draggingIndex = this.allTools.indexOf(item); })
       .gesture(PanGesture().onActionUpdate((event: GestureEvent) => {
         if (this.draggingIndex < 0 || Math.abs(event.offsetY) < 36) return;
         const from = this.draggingIndex;
