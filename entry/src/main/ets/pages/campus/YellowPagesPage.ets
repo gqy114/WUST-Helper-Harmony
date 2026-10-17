@@ -1,5 +1,6 @@
 import { router } from '@kit.ArkUI';
 import { Want } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
 
 interface YellowPageEntry {
   name: string;
@@ -67,7 +68,7 @@ export struct YellowPagesPage {
       uri: `tel:${phone}`
     };
     try {
-      const context = getContext(this);
+      const context = getContext(this) as common.UIAbilityContext;
       context.startAbility(want).catch(() => {
         console.warn('YellowPagesPage', `无法打开拨号界面: ${phone}`);
       });
