@@ -98,6 +98,7 @@ struct MinePage {
   @State private loading: boolean = true;
   @State private errorMsg: string = '';
   @State private showLogoutDialog: boolean = false;
+  @State private logoutAnim: boolean = false;
 
   private store: UserStore = UserStore.getInstance();
 
@@ -228,8 +229,41 @@ struct MinePage {
     await StorageUtil.clearLoginInfo();
   }
 
+  @Builder
+  private logoutOverlay() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column().width('100%').height('100%').backgroundColor('#66000000').opacity(this.logoutAnim ? 1 : 0)
+        .onClick(() => this.closeLogoutDialog())
+      Column() {
+        Text('提示').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ top: 24 })
+        Text('是否确定退出登录？').fontSize(16).fontColor('#666666').margin({ top: 18, bottom: 20 })
+        Divider().color('#EEEEEE')
+        Row() {
+          Text('取消').fontSize(17).fontColor('#666666').layoutWeight(1).height(52).textAlign(TextAlign.Center)
+            .onClick(() => this.closeLogoutDialog())
+          Text('确定').fontSize(17).fontColor('#F44336').layoutWeight(1).height(52).textAlign(TextAlign.Center)
+            .onClick(() => { this.closeLogoutDialog(); this.doLogout(); })
+        }.width('100%')
+      }
+      .width('76%').backgroundColor(Color.White).borderRadius(18).alignItems(HorizontalAlign.Center)
+      .scale({ x: this.logoutAnim ? 1 : 0.86, y: this.logoutAnim ? 1 : 0.86 })
+      .opacity(this.logoutAnim ? 1 : 0)
+      .onClick(() => {})
+    }.width('100%').height('100%')
+  }
+
+  private openLogoutDialog(): void {
+    animateTo({ duration: 240, curve: Curve.EaseOut }, () => { this.showLogoutDialog = true; this.logoutAnim = true; });
+  }
+
+  private closeLogoutDialog(): void {
+    animateTo({ duration: 180, curve: Curve.EaseIn }, () => { this.logoutAnim = false; });
+    setTimeout(() => { this.showLogoutDialog = false; }, 190);
+  }
+
   build() {
-    Column() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column() {
       if (this.loading) {
         Column() {
           LoadingProgress().width(40).height(40).color('#1ec98d')
@@ -292,7 +326,7 @@ struct MinePage {
                 .backgroundColor('#D9534F')
                 .borderRadius(16)
                 .onClick(() => {
-                  this.showLogoutDialog = true;
+                  this.openLogoutDialog();
                 })
             }
             .width('100%')
@@ -420,19 +454,11 @@ struct MinePage {
         }
         .width('100%')
       }
-      if (this.showLogoutDialog) {
-        LogoutConfirmDialog({
-          onConfirm: () => {
-            this.showLogoutDialog = false;
-            this.doLogout();
-          },
-          onCancel: () => {
-            this.showLogoutDialog = false;
-          }
-        })
-      }
+      if (this.showLogoutDialog) { this.logoutOverlay() }
     }
     .width('100%').height('100%').backgroundColor('#F5F5F5')
+  }
+
   }
 
   private retry(): void {
