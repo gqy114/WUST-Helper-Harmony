@@ -93,7 +93,7 @@ struct EditToolsPage {
         Divider().margin({ top: 26, bottom: 22 })
         Text('未启用').fontSize(24).fontWeight(FontWeight.Bold).fontColor('#666666').width('100%').margin({ bottom: 14 })
         Grid() { ForEach(this.disabledTools, (item: ToolEntry) => GridItem() { this.toolCard(item) }); }.columnsTemplate('1fr 1fr').columnsGap(12).rowsGap(12).width('100%')
-      }.width('100%').padding(18) }.layoutWeight(1).scrollBar(BarState.Off)
-    }.width('100%').height('100%').backgroundColor('#F5F6F8')
+      }.width('100%').padding({ left: 18, right: 18, top: 12, bottom: 18 }).alignItems(HorizontalAlign.Start) }.layoutWeight(1).width('100%').scrollBar(BarState.Off)
+    }.width('100%').height('100%').alignItems(HorizontalAlign.Start).backgroundColor('#F5F6F8')
   }
 }
