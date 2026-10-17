@@ -27,6 +27,7 @@ class TokenHolder {
 @Component
 struct LaunchPage {
   private navigationScheduled: boolean = false;
+  private navigationStarted: boolean = false;
 
   aboutToAppear(): void {
     // 竖屏锁定 → 在 module.json5 abilities[].orientation = "portrait"
@@ -53,6 +54,9 @@ struct LaunchPage {
   // ═══════════════════════ 导航逻辑 ═══════════════════════
 
   private async handleNavigation(): Promise<void> {
+    // 自动计时和用户点击可能同时触发，只允许导航一次。
+    if (this.navigationStarted) return;
+    this.navigationStarted = true;
     try {
       const storage = AppStorage.getInstance();
       let isLogin = await storage.getIsLogin();
@@ -150,10 +154,18 @@ struct LaunchPage {
         .width('100%')
         .height('100%')
         .objectFit(ImageFit.Fill)
+        .onClick(() => {
+          // 点击海报任意位置立即跳过启动页。
+          this.handleNavigation();
+        })
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .width('100%')
     .height('100%')
+    .onClick(() => {
+      // 将点击处理挂在根容器，避免图片在安全区域或不同渲染设备上无法命中。
+      this.handleNavigation();
+    })
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
