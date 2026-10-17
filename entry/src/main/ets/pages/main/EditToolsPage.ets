@@ -36,7 +36,6 @@ struct EditToolsPage {
         Text(item.desc).fontSize(11).fontColor('#777777').maxLines(1).margin({ top: 4 })
       }.layoutWeight(1).alignItems(HorizontalAlign.Start)
       Image(item.icon).width(54).height(54).objectFit(ImageFit.Contain)
-        .scale({ x: item.title === '饮水机' || item.title === '查电费' ? 1.22 : 1, y: item.title === '饮水机' || item.title === '查电费' ? 1.22 : 1 })
     }.width('100%').height(100).padding({ left: 12, right: 12 }).backgroundColor(Color.White).borderRadius(12)
       .onClick(() => this.openTool(item.title))
       .gesture(PanGesture().onActionUpdate((event: GestureEvent) => {
@@ -97,3 +96,4 @@ struct EditToolsPage {
     }.width('100%').height('100%').alignItems(HorizontalAlign.Start).backgroundColor('#F5F6F8')
   }
 }
+

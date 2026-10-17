@@ -700,8 +700,7 @@ struct MainPage {
           .width(54)
           .height(54)
           .objectFit(ImageFit.Contain)
-          .margin({ left: 2 })
-          .scale({ x: item.title === '饮水机' || item.title === '查电费' ? 1.22 : 1, y: item.title === '饮水机' || item.title === '查电费' ? 1.22 : 1 })
+          .margin({ left: 2 })
       }
       .width('100%')
       .height(100)
@@ -734,8 +733,7 @@ struct MainPage {
         Image(item.icon)
           .width(54)
           .height(54)
-          .objectFit(ImageFit.Contain)
-          .scale({ x: item.title === '饮水机' || item.title === '查电费' ? 1.22 : 1, y: item.title === '饮水机' || item.title === '查电费' ? 1.22 : 1 })
+          .objectFit(ImageFit.Contain)
           .rotate({ angle: item.rotated ? -45 : 0 })
       }
       .width('100%')
@@ -755,6 +753,7 @@ struct MainPage {
       })
     }
   }
+
 
 
 
