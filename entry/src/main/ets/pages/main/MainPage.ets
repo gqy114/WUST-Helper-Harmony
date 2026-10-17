@@ -553,9 +553,9 @@ struct MainPage {
           Row() {
             Text('校园社区').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333333').layoutWeight(1)
             Row() {
-              Image($r('app.media.info')).width(42).height(42).backgroundColor('#EEEEEE').borderRadius(21)
+              Image($r('app.media.info')).width(42).height(42).padding(8).backgroundColor('#EEEEEE').borderRadius(21)
                 .onClick(() => this.showCommunityRules())
-              Image($r('app.media.notifications')).width(42).height(42).backgroundColor('#EEEEEE').borderRadius(21).margin({ left: 10 })
+              Image($r('app.media.notifications')).width(42).height(42).padding(8).backgroundColor('#EEEEEE').borderRadius(21).margin({ left: 10 })
                 .onClick(() => router.pushUrl({ url: 'pages/campus/CommunityNotificationsPage' }))
             }
           }.width('100%').padding({ left: 16, right: 16 }).margin({ top: 24 })
