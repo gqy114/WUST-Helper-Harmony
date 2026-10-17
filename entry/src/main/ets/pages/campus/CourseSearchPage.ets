@@ -17,7 +17,7 @@ struct CourseSearchPage {
   @State private searching: boolean = false;
 
   private field(value: string, placeholder: string, onChange: (value: string) => void): void {
-    TextInput({ placeholder, text: value }).width('92%').height(74).fontSize(22).fontColor('#555555')
+    TextInput({ placeholder, text: value }).width('92%').height(74).fontSize(22).fontWeight(FontWeight.Normal).fontColor('#555555').placeholderColor('#BBBBBB')
       .backgroundColor(Color.White).borderRadius(38).padding({ left: 28, right: 20 }).onChange(onChange)
   }
 
@@ -57,8 +57,8 @@ struct CourseSearchPage {
           this.field(this.courseName, '课程名', (v: string) => { this.courseName = v; });
           this.field(this.teacher, '教师（可选）', (v: string) => { this.teacher = v; });
           this.field(this.classroom, '教室（可选）', (v: string) => { this.classroom = v; });
-          Text(this.weekday || '请选择星期（可选）').width('92%').height(74).fontSize(22).fontColor(this.weekday ? '#555555' : '#BBBBBB').backgroundColor(Color.White).borderRadius(38).padding({ left: 28 }).onClick(() => { this.picker = 'weekday'; });
-          Text(this.section ? `第${this.section}节（可选）` : '节次（可选）').width('92%').height(74).fontSize(22).fontColor(this.section ? '#555555' : '#BBBBBB').backgroundColor(Color.White).borderRadius(38).padding({ left: 28 }).onClick(() => { this.picker = 'section'; });
+          Text(this.weekday || '请选择星期（可选）').width('92%').height(74).fontSize(22).fontWeight(FontWeight.Normal).fontColor(this.weekday ? '#555555' : '#BBBBBB').backgroundColor(Color.White).borderRadius(38).padding({ left: 28 }).onClick(() => { this.picker = 'weekday'; });
+          Text(this.section ? `第${this.section}节（可选）` : '节次（可选）').width('92%').height(74).fontSize(22).fontWeight(FontWeight.Normal).fontColor(this.section ? '#555555' : '#BBBBBB').backgroundColor(Color.White).borderRadius(38).padding({ left: 28 }).onClick(() => { this.picker = 'section'; });
           Button(this.searching ? '搜索中...' : '开始搜索').width('92%').height(72).fontSize(24).fontWeight(FontWeight.Bold).fontColor(Color.White).backgroundColor('#20C894').borderRadius(38).margin({ top: 24 }).onClick(() => this.search());
           ForEach(this.results, (item: CourseData) => Row() { Text(item.courseName).fontSize(18).fontWeight(FontWeight.Bold).layoutWeight(1); Text(`${item.teacher} · ${item.location}`).fontSize(14).fontColor('#777777'); }.width('92%').padding(16).backgroundColor(Color.White).borderRadius(12).margin({ top: 10 }));
           if (this.picker.length > 0) {
