@@ -65,8 +65,8 @@ export class HttpRequest {
         extraData,
         expectDataType: options?.expectDataType ?? http.HttpDataType.STRING,
         // 教务登录接口偶尔需要较长时间完成统一认证，10 秒会被鸿蒙网络层直接中止。
-        connectTimeout:30000,
-        readTimeout:30000
+        connectTimeout: 12000,
+        readTimeout: 20000
       });
       console.info(TAG, `${method} ${url} responseCode=${response.responseCode}`);
       let data: T;
@@ -127,3 +127,6 @@ export class HttpRequest {
     return HttpRequest.request<T>(url, 'POST', { headers: extraHeaders, expectDataType: http.HttpDataType.STRING, rawBody: jsonBody });
   }
 }
+
+
+

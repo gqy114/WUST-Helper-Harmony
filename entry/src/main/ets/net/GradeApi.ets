@@ -1,4 +1,4 @@
-﻿
+
 /**
  * GradeApi — 成绩网络接口
  *
@@ -12,7 +12,7 @@ import { BaseResponse } from '../model/BaseResponse';
 import { GradeBean } from '../model/GradeModel';
 
 /** 本科生成绩查询 —— 对应 WustApi.GRADE_API */
-const GRADE_API_URL = 'https://www.lyzyy.love/UnderGraduate/Support/GetScorePage';
+const GRADE_API_URL = 'https://lyzyy.love/UnderGraduate/Support/GetScorePage';
 
 /** 研究生成绩查询 —— 对应 WustApi.GRADUATE_GRADE_API */
 const GRADUATE_GRADE_URL = 'https://wusthelper.wustlinghang.cn/mobileapi/v2/yjs/get-grade';
@@ -118,6 +118,7 @@ function normalizeGrade(raw: RawGrade): GradeBean {
     rebuildTag: raw.rebuildTag ?? 0,
   };
 }
+
 
 
 
