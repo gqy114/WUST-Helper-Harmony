@@ -97,10 +97,12 @@ export struct YellowPagesPage {
                 Column() {
                   ForEach(group.entries, (entry: YellowPageEntry) => {
                     Row() {
-                      Image($r('app.media.calling')).width(22).height(22).margin({ right: 12 })
-                      Text(entry.name).fontSize(18).fontColor('#444444').layoutWeight(1)
-                      Text(entry.phone).fontSize(17).fontColor(group.color)
-                    }.width('100%').height(48).padding({ left: 82, right: 18 })
+                      Image($r('app.media.calling')).width(48).height(48).margin({ right: 22 })
+                      Column() {
+                        Text(entry.name).fontSize(20).fontWeight(FontWeight.Bold).fontColor('#222222').width('100%')
+                        Text(entry.phone).fontSize(17).fontWeight(FontWeight.Medium).fontColor('#222222').width('100%').margin({ top: 8 })
+                      }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+                    }.width('100%').height(100).padding({ left: 34, right: 18 })
                       .onClick(() => this.dial(entry.phone))
                   })
                 }.width('100%').backgroundColor('#FAFAFA').transition(TransitionEffect.OPACITY)
