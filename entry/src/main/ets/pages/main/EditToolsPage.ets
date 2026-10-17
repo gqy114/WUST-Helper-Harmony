@@ -31,7 +31,7 @@ struct EditToolsPage {
 
   @Builder private toolCard(item: ToolEntry) {
     Row() {
-      Image(item.icon).width(54).height(54).objectFit(ImageFit.Contain)
+      Image(item.icon).width(item.title === '饮水机' || item.title === '查电费' ? 66 : 54).height(item.title === '饮水机' || item.title === '查电费' ? 66 : 54).objectFit(ImageFit.Contain)
       Column() { Text(item.title).fontSize(19).fontWeight(FontWeight.Bold); Text(item.desc).fontSize(14).fontColor('#777777').margin({ top: 4 }); }.alignItems(HorizontalAlign.Start).margin({ left: 16 })
     }.width('100%').height(112).padding({ left: 24 }).backgroundColor(Color.White).borderRadius(16)
       .onClick(() => this.openTool(item.title))
