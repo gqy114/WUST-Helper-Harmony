@@ -20,9 +20,9 @@ struct ClassroomQueryPage {
   @Builder
   private field(value: string, placeholder: string, onChange: (value: string) => void) {
     TextInput({ placeholder: placeholder, text: value })
-      .width('92%').height(74).fontSize(24).fontWeight(FontWeight.Normal)
+      .width('92%').height(58).fontSize(18).fontWeight(FontWeight.Normal)
       .fontColor('#666666').placeholderColor('#999999').backgroundColor(Color.White)
-      .borderRadius(38).padding({ left: 28, right: 20 }).onChange(onChange);
+      .borderRadius(29).padding({ left: 28, right: 20 }).onChange(onChange);
   }
 
   private openPicker(type: string): void {
@@ -45,6 +45,38 @@ struct ClassroomQueryPage {
       this.periodSelected = true;
     }
     this.picker = '';
+  }
+
+  private submitQuery(): void {
+    if (this.startWeek.trim().length === 0) {
+      promptAction.showToast({ message: '请输入开始周次', duration: 1500 });
+      return;
+    }
+    if (!/^\d+$/.test(this.startWeek.trim()) || Number(this.startWeek.trim()) < 1) {
+      promptAction.showToast({ message: '开始周次格式不正确', duration: 1500 });
+      return;
+    }
+    if (this.weekday.length === 0) {
+      promptAction.showToast({ message: '请选择星期', duration: 1500 });
+      return;
+    }
+    if (!this.periodSelected) {
+      promptAction.showToast({ message: '请选择节次范围', duration: 1500 });
+      return;
+    }
+    if (this.endWeek.trim().length > 0 && (!/^\d+$/.test(this.endWeek.trim()) || Number(this.endWeek.trim()) < Number(this.startWeek.trim()))) {
+      promptAction.showToast({ message: '结束周次范围不正确', duration: 1500 });
+      return;
+    }
+    router.pushUrl({ url: 'pages/campus/ClassroomResultPage', params: {
+      startWeek: this.startWeek.trim(),
+      endWeek: this.endWeek.trim().length > 0 ? this.endWeek.trim() : this.startWeek.trim(),
+      weekday: this.weekday,
+      startPeriod: String(this.startPeriod),
+      endPeriod: String(this.endPeriod),
+      building: this.building.trim(),
+      room: this.room.trim()
+    } });
   }
 
   @Builder
@@ -85,19 +117,19 @@ struct ClassroomQueryPage {
     Stack({ alignContent: Alignment.Center }) {
       Column() {
         Row() {
-          Text('‹').fontSize(48).fontColor(Color.White).width(48).onClick(() => router.back());
-          Text('空教室查询').fontSize(29).fontWeight(FontWeight.Bold).fontColor(Color.White).margin({ left: 18 });
-        }.width('100%').height(96).padding({ left: 28 }).alignItems(VerticalAlign.Center).backgroundColor('#20C894');
+          Text('‹').fontSize(32).fontColor(Color.White).width(48).onClick(() => router.back());
+          Text('空教室查询').fontSize(20).fontWeight(FontWeight.Bold).fontColor(Color.White).margin({ left: 12 });
+        }.width('100%').height(56).padding({ left: 16 }).alignItems(VerticalAlign.Center).backgroundColor('#20C894');
         Scroll() {
           Column() {
-            Text('留空代表不限，输入一个时间段和教室条件即可查询').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#777777').width('92%').margin({ top: 34, bottom: 24 });
+            Text('留空代表不限，输入一个时间段和教室条件即可查询').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#777777').width('92%').margin({ top: 34, bottom: 24 });
             this.field(this.startWeek, '开始周次（如 1）', (v: string) => { this.startWeek = v; });
             this.field(this.endWeek, '结束周次（留空则等于开始周次）', (v: string) => { this.endWeek = v; });
-            Text(this.weekday || '请选择星期').width('92%').height(74).fontSize(24).fontWeight(FontWeight.Normal).fontColor(this.weekday ? '#666666' : '#AAAAAA').backgroundColor(Color.White).borderRadius(38).padding({ left: 28 }).onClick(() => this.openPicker('weekday'));
-            Text(this.periodSelected ? `第${this.startPeriod}节 - 第${this.endPeriod}节` : '节次范围').width('92%').height(74).fontSize(24).fontWeight(FontWeight.Normal).fontColor(this.periodSelected ? '#666666' : '#AAAAAA').backgroundColor(Color.White).borderRadius(38).padding({ left: 28 }).onClick(() => this.openPicker('period'));
+            Text(this.weekday || '请选择星期').width('92%').height(58).fontSize(18).fontWeight(FontWeight.Normal).fontColor(this.weekday ? '#666666' : '#AAAAAA').backgroundColor(Color.White).borderRadius(29).padding({ left: 28 }).onClick(() => this.openPicker('weekday'));
+            Text(this.periodSelected ? `第${this.startPeriod}节 - 第${this.endPeriod}节` : '节次范围').width('92%').height(58).fontSize(18).fontWeight(FontWeight.Normal).fontColor(this.periodSelected ? '#666666' : '#AAAAAA').backgroundColor(Color.White).borderRadius(29).padding({ left: 28 }).onClick(() => this.openPicker('period'));
             this.field(this.building, '教学楼（可输入关键字）', (v: string) => { this.building = v; });
             this.field(this.room, '教室编号（可输入关键字，如 101）', (v: string) => { this.room = v; });
-            Button('查询教室').width('92%').height(72).fontSize(24).fontWeight(FontWeight.Bold).fontColor(Color.White).backgroundColor('#20C894').borderRadius(38).margin({ top: 24 }).onClick(() => router.pushUrl({ url: 'pages/campus/ClassroomResultPage', params: { startWeek: this.startWeek, endWeek: this.endWeek, weekday: this.weekday, startPeriod: String(this.startPeriod), endPeriod: String(this.endPeriod), building: this.building, room: this.room } }));
+            Button('查询教室').width('92%').height(60).fontSize(20).fontWeight(FontWeight.Bold).fontColor(Color.White).backgroundColor('#20C894').borderRadius(29).margin({ top: 24 }).onClick(() => this.submitQuery());
             Blank().height(40);
           }.width('100%').padding({ bottom: 30 }).alignItems(HorizontalAlign.Center);
         }.layoutWeight(1).width('100%').backgroundColor('#F5F6F8').scrollBar(BarState.Off);
