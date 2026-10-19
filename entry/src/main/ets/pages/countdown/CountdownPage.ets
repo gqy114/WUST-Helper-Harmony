@@ -1,10 +1,13 @@
 import { promptAction, router } from '@kit.ArkUI';
+import { CountdownApi, CountdownItem } from '../../net/CountdownApi';
 
 @Entry
 @Component
 struct CountdownPage {
   @State private currentDate: string = '';
   @State private eventCount: number = 0;
+  @State private events: CountdownItem[] = [];
+  @State private loading: boolean = false;
   @State private showAddDialog: boolean = false;
   @State private dialogOpacity: number = 0;
   @State private dialogScale: number = 0.85;
@@ -24,6 +27,14 @@ struct CountdownPage {
 
   aboutToAppear(): void {
     this.updateDate();
+    this.loadCountdowns();
+  }
+
+  private async loadCountdowns(): Promise<void> {
+    this.loading = true;
+    try { this.events = await CountdownApi.list(); this.eventCount = this.events.length; }
+    catch (error) { promptAction.showToast({ message: '倒计时获取失败', duration: 1500 }); }
+    finally { this.loading = false; }
   }
 
   private updateDate(): void {
@@ -61,9 +72,12 @@ struct CountdownPage {
       this.showInvalidTimeWarning();
       return;
     }
-    this.eventCount++;
-    this.closeAddDialog();
-    promptAction.showToast({ message: '已添加倒计时', duration: 1500 });
+    CountdownApi.add(this.courseName.trim(), this.remark.trim(), this.examTime).then(() => {
+      this.closeAddDialog();
+      this.courseName = ''; this.remark = ''; this.examTime = ''; this.examTimestamp = 0;
+      this.loadCountdowns();
+      promptAction.showToast({ message: '已添加倒计时', duration: 1500 });
+    }).catch(() => promptAction.showToast({ message: '倒计时添加失败', duration: 1500 }));
   }
 
   private initializePickerWithCurrentTime(): void {
@@ -185,7 +199,7 @@ struct CountdownPage {
             .width('100%')
             .margin({ left: 50, top: 12 })
 
-          Text('正在进行  ♡ ' + this.eventCount.toString())
+          Text('正在进行： ' + this.eventCount.toString())
             .fontSize(20)
             .fontWeight(FontWeight.Bold)
             .fontColor('#FFFFFF')
@@ -203,19 +217,22 @@ struct CountdownPage {
         .backgroundColor('#20C78A')
 
         Stack({ alignContent: Alignment.Center }) {
-          Column() {
-            Text('✈')
-              .fontSize(72)
-              .fontColor('#83D39B')
-              .margin({ bottom: 14 })
-            Text('没有内容')
-              .fontSize(25)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#20C78A')
+          if (this.loading) {
+            LoadingProgress().width(44).height(44)
+          } else if (this.events.length === 0) {
+            Column() {
+              Image($r('app.media.empty')).width(92).height(92).objectFit(ImageFit.Contain).margin({ bottom: 14 })
+              Text('没有内容').fontSize(25).fontWeight(FontWeight.Bold).fontColor('#20C78A')
+            }
+          } else {
+            Scroll() { Column() {
+              ForEach(this.events, (item: CountdownItem) => Column() {
+                Text(item.name).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#333333').width('100%');
+                Text(item.time).fontSize(16).fontColor('#20C78A').margin({ top: 8 });
+                if (item.comment.length > 0) { Text(item.comment).fontSize(14).fontColor('#888888').margin({ top: 6 }); }
+              }.width('92%').padding(18).backgroundColor(Color.White).borderRadius(16).margin({ bottom: 12 }), (item: CountdownItem) => item.uuid);
+            }.width('100%').alignItems(HorizontalAlign.Center) }.width('100%').height('100%').scrollBar(BarState.Off)
           }
-          .width('100%')
-          .height('100%')
-          .justifyContent(FlexAlign.Center)
         }
         .layoutWeight(1)
         .width('100%')
