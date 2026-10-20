@@ -35,7 +35,7 @@ export struct PhysicalExperimentPage {
       const item = this.courses[i];
       const batch = i < 4 ? i : 3;
       imported.push({
-        courseName: item.courseName || item.name || '物理实验',
+        courseName: item.courseName || item.name || item.className || item.course || '物理实验',
         teacher: '',
         location: item.classroom || '',
         dayOfWeek: item.weekDay || 1,
@@ -73,7 +73,7 @@ export struct PhysicalExperimentPage {
           Text(`共${this.courses.length}门实验课程`).fontSize(18).fontWeight(FontWeight.Bold).margin({ bottom: 12 })
           ForEach(this.courses, (item: PhysicalExperimentCourse) => {
             Row() {
-              Text(item.courseName || item.name || '物理实验').fontSize(16).fontColor('#333333').layoutWeight(1)
+              Text(item.courseName || item.name || item.className || item.course || '物理实验').fontSize(16).fontColor('#333333').layoutWeight(1)
               Text(item.classroom || '待定').fontSize(14).fontColor('#888888')
             }.width('100%').padding(16).backgroundColor(Color.White).borderRadius(10).margin({ bottom: 10 })
           })
@@ -83,3 +83,4 @@ export struct PhysicalExperimentPage {
     }.width('100%').height('100%').backgroundColor('#F5F6F7')
   }
 }
+

@@ -4,6 +4,8 @@ import { AppStorage } from '../store/AppStorage';
 export interface PhysicalExperimentCourse {
   name?: string;
   courseName?: string;
+  className?: string;
+  course?: string;
   classroom?: string;
   weekDay?: number;
   startSection?: number;
@@ -37,7 +39,7 @@ export class PhysicalExperimentApi {
     }
     const courses: PhysicalExperimentCourse[] = result.data.data ?? [];
     return courses.filter((item) => {
-      const text = `${item.name ?? ''}${item.courseName ?? ''}`.toLowerCase();
+      const text = `${item.name ?? ''}${item.courseName ?? ''}${item.className ?? ''}${item.course ?? ''}`.toLowerCase();
       return text.includes('实验') || text.includes('physics');
     });
   }
