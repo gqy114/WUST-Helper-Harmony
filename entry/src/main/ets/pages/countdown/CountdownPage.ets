@@ -32,7 +32,13 @@ struct CountdownPage {
 
   private async loadCountdowns(): Promise<void> {
     this.loading = true;
-    try { this.events = await CountdownApi.list(); this.eventCount = this.events.length; }
+    try {
+      const custom: CountdownItem[] = await CountdownApi.list();
+      let exams: CountdownItem[] = [];
+      try { const storage = (await import('../../store/AppStorage')).AppStorage.getInstance(); exams = await CountdownApi.listExams(await storage.getSemester()); } catch { console.warn('CountdownPage', '考试列表获取失败'); }
+      this.events = custom.concat(exams);
+      this.eventCount = this.events.length;
+    }
     catch (error) { promptAction.showToast({ message: '倒计时获取失败', duration: 1500 }); }
     finally { this.loading = false; }
   }
