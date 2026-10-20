@@ -15,9 +15,10 @@ export interface PhysicalExperimentCourse {
 }
 
 interface PhysicalExperimentResponse {
-  code: number;
+  code?: number;
   msg?: string;
   data?: PhysicalExperimentCourse[];
+  list?: PhysicalExperimentCourse[];
 }
 
 /**
@@ -37,7 +38,7 @@ export class PhysicalExperimentApi {
     if (result.data.code !== undefined && result.data.code !== 0 && result.data.code !== 200 && result.data.code !== 10000) {
       throw new Error(result.data.msg ?? '物理实验课表获取失败');
     }
-    const courses: PhysicalExperimentCourse[] = result.data.data ?? [];
+    const courses: PhysicalExperimentCourse[] = result.data.data ?? result.data.list ?? [];
     return courses.filter((item) => {
       const text = `${item.name ?? ''}${item.courseName ?? ''}${item.className ?? ''}${item.course ?? ''}`.toLowerCase();
       return text.includes('实验') || text.includes('physics');
