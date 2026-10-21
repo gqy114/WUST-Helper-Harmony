@@ -76,7 +76,7 @@ const campusCommunityList: CardItem[] = [
   { title: '失物招领', desc: '找回丢失物品', bgColor: '#E7F8E9', titleColor: '#27865D', icon: $r('app.media.campus_found'), route: 'pages/campus/CampusLostPage' },
   { title: '竞赛组队', desc: '找队友找队伍', bgColor: '#E4F3FF', titleColor: '#2478B5', icon: $r('app.media.campus_match'), route: 'pages/campus/CampusMatchPage' },
   { title: '求助', desc: '提问并采纳答案', bgColor: '#FFF0D9', titleColor: '#B56A12', icon: $r('app.media.campus_help'), route: 'pages/campus/CampusHelpPage' },
-  { title: '二手书', desc: '闲置书籍买卖', bgColor: '#FFF8D8', titleColor: '#857A25', icon: $r('app.media.second_hand_book'), route: 'pages/campus/CampusWallPage' }
+  { title: '二手书', desc: '闲置书籍买卖', bgColor: '#FFF8D8', titleColor: '#857A25', icon: $r('app.media.second_hand_book'), route: 'pages/campus/SecondHandBookPage' }
 ]
 
 
@@ -702,7 +702,8 @@ struct MainPage {
           .width(54)
           .height(54)
           .objectFit(ImageFit.Contain)
-          .margin({ left: 2 })
+          .margin({ left: 2 })
+
       }
       .width('100%')
       .height(100)
@@ -735,7 +736,8 @@ struct MainPage {
         Image(item.icon)
           .width(54)
           .height(54)
-          .objectFit(ImageFit.Contain)
+          .objectFit(ImageFit.Contain)
+
           .rotate({ angle: item.rotated ? -45 : 0 })
       }
       .width('100%')

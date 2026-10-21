@@ -38,13 +38,7 @@
     "pages/ai/AIAssistantPage",
     "pages/main/WaterDispenserPage",
     "pages/main/EditToolsPage",
-    "pages/course/PhysicalExperimentPage"
+    "pages/course/PhysicalExperimentPage",
+    "pages/campus/SecondHandBookPage"
   ]
 }
-
-
-
-
-
-
-
