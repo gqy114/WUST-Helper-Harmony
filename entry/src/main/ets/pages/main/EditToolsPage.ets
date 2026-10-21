@@ -37,8 +37,11 @@ struct EditToolsPage {
       }.layoutWeight(1).alignItems(HorizontalAlign.Start)
       Image(item.icon).width(54).height(54).objectFit(ImageFit.Contain)
     }.width('100%').height(100).padding({ left: 12, right: 12 }).backgroundColor(Color.White).borderRadius(12)
-      .onClick(() => this.openTool(item.title))
-      .gesture(PanGesture().onActionUpdate((event: GestureEvent) => {
+      .onClick(() => { if (this.draggingIndex < 0) this.openTool(item.title); })
+      .gesture(LongPressGesture().onAction(() => {
+        this.draggingIndex = this.allTools.findIndex((tool: ToolEntry) => tool.title === item.title);
+      }))
+      .parallelGesture(PanGesture().onActionUpdate((event: GestureEvent) => {
         if (this.draggingIndex < 0 || Math.abs(event.offsetY) < 36) return;
         const from = this.draggingIndex;
         const enabledCount = this.enabledTools.length;
@@ -51,7 +54,7 @@ struct EditToolsPage {
           this.draggingIndex = to;
           this.refreshLists();
         }
-      }).onActionEnd(() => { this.draggingIndex = -1; this.saveLayout(); }))
+      }).onActionEnd(() => { if (this.draggingIndex >= 0) { this.saveLayout(); this.draggingIndex = -1; } }))
   }
 
   private refreshLists(): void {
