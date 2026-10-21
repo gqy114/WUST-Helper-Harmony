@@ -1,5 +1,6 @@
 import { HttpRequest } from './HttpRequest';
 import { AppStorage } from '../store/AppStorage';
+export interface CampusWallReply { id?: number; displayName?: string; realName?: string; avatarUrl?: string; college?: string; major?: string; content?: string; createdAt?: string; }
 export interface CampusWallPost {
   id?: number;
   title?: string;
@@ -20,9 +21,11 @@ export interface CampusWallPost {
   type?: string;
   category?: string;
   noticeType?: string;
+  replies?: CampusWallReply[];
+  reactions?: Record<string, number>;
 }
 export function decodeHtmlEntities(value: string): string {
-  let result = value;
+  let result = value.replace(/<br\s*\/?>/gi, '\n');
   for (let index = 0; index < 3; index++) {
     const decoded = result.replace(/&#(\d+);/g, (_match: string, code: string) => String.fromCodePoint(Number(code)))
       .replace(/&#x([0-9a-fA-F]+);/g, (_match: string, code: string) => String.fromCodePoint(parseInt(code, 16)))
@@ -38,6 +41,24 @@ interface ReactionData { added?: boolean; }
 interface ReactionResponse { data?: ReactionData; }
 interface WallHeaders extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
 export class CampusWallApi {
+  private static normalizePost(post: CampusWallPost): CampusWallPost {
+    let images: string[] = [];
+    const rawImages: string[] | string = post.images as string[] | string;
+    if (Array.isArray(rawImages)) images = rawImages;
+    else if (typeof rawImages === 'string') {
+      try {
+        const parsed = JSON.parse(rawImages) as string[];
+        images = Array.isArray(parsed) ? parsed : [rawImages];
+      } catch { images = rawImages.trim() ? [rawImages] : []; }
+    }
+    const fullImages: string[] = images.map((url: string) => url.startsWith('http') ? url : `https://lyzyy.love${url.startsWith('/') ? '' : '/'}${url}`);
+    return { id: post.id, title: post.title, content: post.content, tag: post.tag,
+      displayName: post.displayName, realName: post.realName, avatarUrl: post.avatarUrl,
+      college: post.college, major: post.major, createdAt: post.createdAt,
+      likeCount: post.likeCount, replyCount: post.replyCount, images: fullImages,
+      status: post.status, resolved: post.resolved, isResolved: post.isResolved,
+      type: post.type, category: post.category, noticeType: post.noticeType, replies: post.replies || [], reactions: post.reactions || {} };
+  }
   private static async headers(): Promise<WallHeaders> {
     const token = await AppStorage.getInstance().getAppAuthAccessToken();
     return { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' };
@@ -49,7 +70,7 @@ export class CampusWallApi {
       const response = await HttpRequest.get<WallResponse>(`https://lyzyy.love:8081/api/v1/campus-wall/posts?page=${page}&tag=${encodeURIComponent(currentTag)}`, headers);
       const data = response.data.data;
       const items: CampusWallPost[] = Array.isArray(data) ? data : (data?.posts || data?.list || []);
-      if (items.length > 0 || aliases.length === 1) return items;
+      if (items.length > 0 || aliases.length === 1) return items.map((post: CampusWallPost) => CampusWallApi.normalizePost(post));
     }
     return [];
   }
