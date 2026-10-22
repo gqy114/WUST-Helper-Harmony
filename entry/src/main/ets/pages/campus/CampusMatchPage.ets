@@ -46,8 +46,7 @@ struct CampusMatchPage {
   private teamLabel(post: CampusWallPost): string { const value = (post.noticeType || post.type || post.category || '').toLowerCase(); return value.indexOf('队伍') >= 0 || value.indexOf('team') >= 0 || value.indexOf('join') >= 0 ? '找队伍' : '找队友'; }
 
   @Builder private highlighted(value: string, size: number, color: string, bold: boolean) {
-    Text() { ForEach(value.split(''), (ch: string) => { Span(ch).fontColor(this.query.trim().length > 0 && this.query.toLowerCase().includes(ch.toLowerCase()) ? '#18B889' : color); }) }
-      .fontSize(size).fontWeight(bold ? FontWeight.Bold : FontWeight.Normal).width('100%');
+    Text(value).fontSize(size).fontWeight(bold ? FontWeight.Bold : FontWeight.Normal).fontColor(color).width('100%');
   }
   build() {
     Column() {
@@ -87,7 +86,7 @@ struct CampusMatchPage {
                 if (post.title) { this.highlighted(decodeHtmlEntities(post.title), 22, '#222222', true); }
                 this.highlighted(decodeHtmlEntities(post.content || ''), 18, '#333333', false);
                 Text('刚刚').fontSize(16).fontColor('#AAAAAA').margin({ top: 18 });
-              }.width('100%').padding({ left: 34, right: 34, top: 22, bottom: 24 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' });
+              }.width('100%').padding({ left: 34, right: 34, top: 22, bottom: 24 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => router.pushUrl({ url: 'pages/campus/CampusPostDetailPage', params: { id: String(post.id || 0) } }));
             }, (post: CampusWallPost) => `${post.id || post.createdAt || post.content}`);
           }
         }.width('100%').backgroundColor('#F5F6F7');

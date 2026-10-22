@@ -37,6 +37,7 @@ export function decodeHtmlEntities(value: string): string {
 }
 interface WallData { posts?: CampusWallPost[]; list?: CampusWallPost[]; }
 interface WallResponse { code?: number; data?: WallData | CampusWallPost[]; }
+interface WallDetailResponse { code?: number; data?: CampusWallPost; }
 interface ReactionData { added?: boolean; }
 interface ReactionResponse { data?: ReactionData; }
 interface WallHeaders extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
@@ -76,8 +77,8 @@ export class CampusWallApi {
   }
 
   static async detail(id: number): Promise<CampusWallPost> {
-    const response = await HttpRequest.get<CampusWallPost>(`https://lyzyy.love:8081/api/v1/campus-wall/posts/${id}`, await CampusWallApi.headers());
-    return response.data;
+    const response = await HttpRequest.get<WallDetailResponse>(`https://lyzyy.love:8081/api/v1/campus-wall/posts/${id}`, await CampusWallApi.headers());
+    return CampusWallApi.normalizePost(response.data.data || {});
   }
 
   static async toggleReaction(id: number, type: string = 'like'): Promise<boolean> {
