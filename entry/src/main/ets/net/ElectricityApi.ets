@@ -1,0 +1,19 @@
+import { HttpRequest } from './HttpRequest';
+import { AppStorage } from '../store/AppStorage';
+import { ApiService } from './ApiService';
+export interface YKTLocationItem { id: string; name: string; }
+export interface YKTLocationPage { type: string; end: boolean; items: YKTLocationItem[]; }
+export interface YKTLocationResponse { code: number; message: string; data?: YKTLocationPage; }
+export interface YKTElectricity { roomId: string; remaining: string; unit: string; }
+export interface YKTElectricityResponse { code: number; message: string; data?: YKTElectricity; }
+export class ElectricityApi {
+  private static async get<T>(path: string, retry: boolean = true): Promise<T> {
+    const storage = AppStorage.getInstance(); const token = await storage.getAppAuthAccessToken();
+    const result = await HttpRequest.get<T>(`https://lyzyy.love:8081/api/v1/ykt/${path}`, { Authorization: `Bearer ${token}`, Accept: 'application/json' });
+    const body = result.data as T & { code?: number };
+    if ((body.code === 401) && retry) { await storage.setAppAuthAccessToken(''); await ApiService.loginAppAuthFromSavedCredentials(storage); return this.get<T>(path, false); }
+    return body as T;
+  }
+  static async locations(parentId: string = ''): Promise<YKTLocationPage> { const suffix = parentId ? `?parentId=${encodeURIComponent(parentId)}` : ''; const response = await this.get<YKTLocationResponse>(`locations${suffix}`); if (response.code !== 200 || !response.data) throw new Error(response.message || 'locations failed'); return response.data; }
+  static async electricity(roomId: string): Promise<YKTElectricity> { const response = await this.get<YKTElectricityResponse>(`electricity?roomId=${encodeURIComponent(roomId)}`); if (response.code !== 200 || !response.data) throw new Error(response.message || 'electricity failed'); return response.data; }
+}

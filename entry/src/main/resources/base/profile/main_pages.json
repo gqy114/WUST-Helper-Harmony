@@ -19,6 +19,7 @@
     "pages/campus/grade/ScholarshipCalculatorPage",
     "pages/campus/grade/ChartStatisticsPage",
     "pages/countdown/CountdownPage",
+    "pages/main/ElectricityPage",
     "pages/campus/ClassroomQueryPage",
     "pages/campus/EmptyClassroomQueryPage",
     "pages/campus/ClassroomResultPage",
@@ -36,7 +37,7 @@
     "pages/campus/YellowPagesPage",
     "pages/campus/TrainingPlanPage",
     "pages/ai/AIAssistantPage",
-    "pages/main/WaterDispenserPage",
+    "pages/main/WaterDispenserPage",\n    "pages/main/ElectricityPage",
     "pages/main/EditToolsPage",
     "pages/course/PhysicalExperimentPage",
     "pages/campus/SecondHandBookPage"
