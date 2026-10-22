@@ -40,6 +40,7 @@ interface WallResponse { code?: number; data?: WallData | CampusWallPost[]; }
 interface WallDetailResponse { code?: number; data?: CampusWallPost; }
 interface ReactionData { added?: boolean; }
 interface ReactionResponse { data?: ReactionData; }
+interface PublishResponse { code?: number; message?: string; }
 interface WallHeaders extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
 export class CampusWallApi {
   private static normalizePost(post: CampusWallPost): CampusWallPost {
@@ -95,7 +96,7 @@ export class CampusWallApi {
   }
 
   static async publish(title: string, content: string, tag: string = 'wall'): Promise<void> {
-    const response = await HttpRequest.postJson<{ code?: number; message?: string }>(
+    const response = await HttpRequest.postJson<PublishResponse>(
       'https://lyzyy.love:8081/api/v1/campus-wall/posts',
       { title, content, tag, extra: '{}', images: '[]' }, await CampusWallApi.headers());
     const code = response.data.code;
