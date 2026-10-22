@@ -13,6 +13,7 @@ struct CourseSharePage {
   @State private inviteToken: string = '';
   @State private expiresIn: number = 0;
   @State private qrUrl: string = '';
+  @State private semester: string = '';
   private timer?: number;
 
   aboutToAppear(): void {
@@ -23,7 +24,8 @@ struct CourseSharePage {
 
   private async createInvite(): Promise<void> {
     try {
-      const result = await DynamicScheduleApi.createInvite('2025-2026-1', this.allowExtra);
+      if (!this.semester) { promptAction.showToast({ message: '未获取到当前学期，请先刷新课表', duration: 1800 }); return; }
+      const result = await DynamicScheduleApi.createInvite(this.semester, this.allowExtra);
       this.inviteToken = result.token;
       this.expiresIn = result.expiresIn || 300;
       this.updateDynamicQr();
@@ -38,11 +40,13 @@ struct CourseSharePage {
     const storage = AppStorage.getInstance();
     this.nickname = (await storage.getRealName()) || (await storage.getUserName()) || '我的';
     this.avatarUrl = await storage.getAvatarUrl();
+    this.semester = await storage.getSemester();
+    if (!this.semester) this.semester = await storage.getSelectSemester();
     this.updateStaticQr();
   }
 
   private updateStaticQr(): void {
-    const payload = `wusthelper://schedule?student=${encodeURIComponent(this.nickname)}&semester=2026-2027-1`;
+    const payload = `wusthelper://schedule?student=${encodeURIComponent(this.nickname)}&semester=${encodeURIComponent(this.semester)}`;
     this.qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=540x540&data=${encodeURIComponent(payload)}`;
   }
 
