@@ -37,7 +37,8 @@
     "pages/campus/YellowPagesPage",
     "pages/campus/TrainingPlanPage",
     "pages/ai/AIAssistantPage",
-    "pages/main/WaterDispenserPage",\n    "pages/main/ElectricityPage",
+    "pages/main/WaterDispenserPage",
+    "pages/main/ElectricityPage",
     "pages/main/EditToolsPage",
     "pages/course/PhysicalExperimentPage",
     "pages/campus/SecondHandBookPage"
