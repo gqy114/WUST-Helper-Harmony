@@ -16,6 +16,6 @@ export class ElectricityApi {
     if (envelope.code === 401 && retry) { await storage.setAppAuthAccessToken(''); await ApiService.loginAppAuthFromSavedCredentials(storage); return ElectricityApi.get<T>(path, false); }
     return body;
   }
-  static async locations(parentId: string = ''): Promise<YKTLocationPage> { const suffix = parentId ? `?parentId=${encodeURIComponent(parentId)}` : ''; const response = await this.get<YKTLocationResponse>(`locations${suffix}`); if (response.code !== 200 || !response.data) throw new Error(response.message || 'locations failed'); return response.data; }
-  static async electricity(roomId: string): Promise<YKTElectricity> { const response = await this.get<YKTElectricityResponse>(`electricity?roomId=${encodeURIComponent(roomId)}`); if (response.code !== 200 || !response.data) throw new Error(response.message || 'electricity failed'); return response.data; }
+  static async locations(parentId: string = ''): Promise<YKTLocationPage> { const suffix = parentId ? `?parentId=${encodeURIComponent(parentId)}` : ''; const response = await ElectricityApi.get<YKTLocationResponse>(`locations${suffix}`); if (response.code !== 200 || !response.data) throw new Error(response.message || 'locations failed'); return response.data; }
+  static async electricity(roomId: string): Promise<YKTElectricity> { const response = await ElectricityApi.get<YKTElectricityResponse>(`electricity?roomId=${encodeURIComponent(roomId)}`); if (response.code !== 200 || !response.data) throw new Error(response.message || 'electricity failed'); return response.data; }
 }
