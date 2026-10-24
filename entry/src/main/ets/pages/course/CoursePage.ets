@@ -522,7 +522,7 @@ export struct CoursePage {
           });
         })
 
-      Stack({ alignContent: Alignment.CenterStart }) {
+      Stack({ alignContent: Alignment.Start }) {
         Image(this.courseBackground(course))
           .width('100%').height('100%')
           .objectFit(ImageFit.Cover)
