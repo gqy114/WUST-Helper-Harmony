@@ -8,6 +8,7 @@ interface AuditCourse { status?: string; }
 interface AuditCategory { earnedCredit?: string; requiredCredit?: string; }
 interface GraduationAudit { reminder?: string; courseDetails?: AuditCourse[]; creditCategories?: AuditCategory[]; generalEducationCategories?: AuditCategory[]; summary?: AuditSummary; }
 interface AuditResponse { code?: number; message?: string; data?: GraduationAudit; }
+interface TrainingPlanHeaders extends Record<string, string> { Accept: string; Authorization: string; Cookie: string; }
 
 export class TrainingPlanApi {
   private static number(value: string | undefined): number { const parsed = Number(value || '0'); return isNaN(parsed) ? 0 : parsed; }
@@ -17,14 +18,16 @@ export class TrainingPlanApi {
     if (await storage.getIsGraduate()) return TrainingPlanApi.fetchGraduateSummary(storage);
     const token = await storage.getAppAuthAccessToken();
     const cookie = CookieManager.getCookie('www.lyzyy.love');
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    if (cookie) headers['Cookie'] = cookie;
+    const headers: TrainingPlanHeaders = {
+      Accept: 'application/json',
+      Authorization: token ? `Bearer ${token}` : '',
+      Cookie: cookie || ''
+    };
     const response = await HttpRequest.get<AuditResponse>('https://lyzyy.love/UnderGraduate/Support/GetGraduationAudit', headers);
     if (response.data.code !== 200 && response.data.code !== 0) throw new Error(response.data.message || '培养方案加载失败');
     const audit = response.data.data;
     if (!audit || (!audit.summary && (audit.courseDetails || []).length === 0)) throw new Error('培养方案数据为空');
-    const summary = audit.summary || {};
+    const summary: AuditSummary = audit.summary || {};
     const courses = audit.courseDetails || [];
     const categories = (audit.creditCategories || []).length + (audit.generalEducationCategories || []).length;
     return {
