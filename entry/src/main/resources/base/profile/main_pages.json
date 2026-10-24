@@ -40,6 +40,7 @@
     "pages/main/WaterDispenserPage",
     "pages/main/EditToolsPage",
     "pages/course/PhysicalExperimentPage",
-    "pages/campus/SecondHandBookPage"
+    "pages/campus/SecondHandBookPage",
+    "pages/campus/SecondHandBookPublishPage"
   ]
 }
