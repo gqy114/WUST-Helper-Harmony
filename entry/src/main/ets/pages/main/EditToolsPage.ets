@@ -9,6 +9,8 @@ struct EditToolsPage {
   @State private enabledTools: ToolEntry[] = [];
   @State private disabledTools: ToolEntry[] = [];
   @State private draggingIndex: number = -1;
+  private dragAnchorX: number = 0;
+  private dragAnchorY: number = 0;
   private allTools: ToolEntry[] = [
     { title: '校车时刻', desc: '发车时间查询', icon: $r('app.media.ic_school_bus'), enabled: true },
     { title: '学校校历', desc: '了解假期安排', icon: $r('app.media.ic_schoolcalendar'), enabled: true },
@@ -19,11 +21,24 @@ struct EditToolsPage {
   ];
 
   async aboutToAppear(): Promise<void> {
-    const raw = await AppStorage.getInstance().getSettingString('toolLayout', '');
+    const storage = AppStorage.getInstance();
+    const raw = await storage.getSettingString('toolLayout', '');
+    const fullRaw = await storage.getSettingString('toolFullLayout', '');
+    if (fullRaw.length > 0) {
+      try {
+        const fullOrder = JSON.parse(fullRaw) as string[];
+        this.allTools.sort((a: ToolEntry, b: ToolEntry) => fullOrder.indexOf(a.title) - fullOrder.indexOf(b.title));
+      } catch { /* 使用默认顺序 */ }
+    }
     if (raw.length > 0) {
       try {
         const order = JSON.parse(raw) as string[];
-        this.allTools.sort((a: ToolEntry, b: ToolEntry) => order.indexOf(a.title) - order.indexOf(b.title));
+        for (let i = 0; i < this.allTools.length; i++) this.allTools[i].enabled = order.indexOf(this.allTools[i].title) >= 0;
+        if (fullRaw.length === 0) this.allTools.sort((a: ToolEntry, b: ToolEntry): number => {
+          const ai = order.indexOf(a.title);
+          const bi = order.indexOf(b.title);
+          return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
+        });
       } catch { /* 使用默认顺序 */ }
     }
     this.refreshLists();
@@ -38,23 +53,35 @@ struct EditToolsPage {
       Image(item.icon).width(54).height(54).objectFit(ImageFit.Contain)
     }.width('100%').height(100).padding({ left: 12, right: 12 }).backgroundColor(Color.White).borderRadius(12)
       .onClick(() => { if (this.draggingIndex < 0) this.openTool(item.title); })
-      .gesture(LongPressGesture().onAction(() => {
-        this.draggingIndex = this.allTools.findIndex((tool: ToolEntry) => tool.title === item.title);
-      }))
-      .parallelGesture(PanGesture().onActionUpdate((event: GestureEvent) => {
-        if (this.draggingIndex < 0 || Math.abs(event.offsetY) < 36) return;
-        const from = this.draggingIndex;
-        const enabledCount = this.enabledTools.length;
-        const delta = event.offsetY > 0 ? 1 : -1;
-        const to = Math.max(0, Math.min(this.allTools.length - 1, from + delta));
-        if (to !== from) {
-          const moved = this.allTools.splice(from, 1)[0];
-          moved.enabled = to < enabledCount;
-          this.allTools.splice(to, 0, moved);
-          this.draggingIndex = to;
-          this.refreshLists();
-        }
-      }).onActionEnd(() => { if (this.draggingIndex >= 0) { this.saveLayout(); this.draggingIndex = -1; } }))
+      .gesture(GestureGroup(GestureMode.Sequence,
+        LongPressGesture().onAction(() => {
+          this.draggingIndex = this.allTools.findIndex((tool: ToolEntry) => tool.title === item.title);
+          this.dragAnchorX = 0;
+          this.dragAnchorY = 0;
+        }),
+        PanGesture().onActionUpdate((event: GestureEvent) => {
+          if (this.draggingIndex < 0) return;
+          const moveX = event.offsetX - this.dragAnchorX;
+          const moveY = event.offsetY - this.dragAnchorY;
+          let delta = 0;
+          if (Math.abs(moveY) >= 56) delta = moveY > 0 ? 2 : -2;
+          else if (Math.abs(moveX) >= 70) delta = moveX > 0 ? 1 : -1;
+          if (delta === 0) return;
+          const from = this.draggingIndex;
+          const enabledCount = this.enabledTools.length;
+          const to = Math.max(0, Math.min(this.allTools.length, from + delta));
+          if (to !== from) {
+            const moved = this.allTools.splice(from, 1)[0];
+            moved.enabled = to < enabledCount;
+            const insertAt = Math.min(to, this.allTools.length);
+            this.allTools.splice(insertAt, 0, moved);
+            this.draggingIndex = insertAt;
+            this.dragAnchorX = event.offsetX;
+            this.dragAnchorY = event.offsetY;
+            this.refreshLists();
+          }
+        }).onActionEnd(() => { if (this.draggingIndex >= 0) { this.saveLayout(); this.draggingIndex = -1; } })
+      ))
   }
 
   private refreshLists(): void {
@@ -64,7 +91,10 @@ struct EditToolsPage {
 
   private async saveLayout(): Promise<void> {
     const enabled = this.allTools.filter((item: ToolEntry) => item.enabled).map((item: ToolEntry) => item.title);
-    await AppStorage.getInstance().setSettingString('toolLayout', JSON.stringify(enabled));
+    const full = this.allTools.map((item: ToolEntry) => item.title);
+    const storage = AppStorage.getInstance();
+    await storage.setSettingString('toolLayout', JSON.stringify(enabled));
+    await storage.setSettingString('toolFullLayout', JSON.stringify(full));
   }
 
   private toggle(title: string): void {
@@ -90,12 +120,12 @@ struct EditToolsPage {
       Row() { Text('‹').fontSize(38).onClick(() => router.back()); Text('编辑小工具').fontSize(24).fontWeight(FontWeight.Bold).margin({ left: 14 }); }.width('100%').height(76).padding({ left: 22 }).backgroundColor('#F5F6F8')
       Scroll() { Column() {
         Text('已启用').fontSize(24).fontWeight(FontWeight.Bold).fontColor('#666666').width('100%').margin({ bottom: 8 })
-        Text('单击可直接打开；点击卡片移入未启用').fontSize(15).fontColor('#AAB1BC').width('100%').margin({ bottom: 14 })
+        Text('单击可直接打开；长按拖动排序或移入未启用').fontSize(15).fontColor('#AAB1BC').width('100%').margin({ bottom: 14 })
         Grid() { ForEach(this.enabledTools, (item: ToolEntry) => GridItem() { this.toolCard(item) }); }.columnsTemplate('1fr 1fr').columnsGap(12).rowsGap(12).width('100%')
         Divider().margin({ top: 26, bottom: 22 })
         Text('未启用').fontSize(24).fontWeight(FontWeight.Bold).fontColor('#666666').width('100%').margin({ bottom: 14 })
         Grid() { ForEach(this.disabledTools, (item: ToolEntry) => GridItem() { this.toolCard(item) }); }.columnsTemplate('1fr 1fr').columnsGap(12).rowsGap(12).width('100%')
-      }.width('100%').padding({ left: 18, right: 18, top: 12, bottom: 18 }).alignItems(HorizontalAlign.Start) }.layoutWeight(1).width('100%').scrollBar(BarState.Off)
+      }.width('100%').padding({ left: 18, right: 18, top: 12, bottom: 18 }).alignItems(HorizontalAlign.Start).justifyContent(FlexAlign.Start) }.layoutWeight(1).width('100%').align(Alignment.TopStart).scrollBar(BarState.Off)
     }.width('100%').height('100%').alignItems(HorizontalAlign.Start).backgroundColor('#F5F6F8')
   }
 }
