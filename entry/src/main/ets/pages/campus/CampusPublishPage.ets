@@ -42,6 +42,7 @@ struct CampusPublishPage {
   private pageTitle(routeLabel: string): string {
     if (this.tag === 'wall') return '校园墙';
     if (this.tag === 'team') return '竞赛组队';
+    if (this.tag === 'help') return '求助';
     if (routeLabel.startsWith('发布')) return routeLabel.substring(2);
     return routeLabel || '校园墙';
   }
@@ -114,6 +115,11 @@ struct CampusPublishPage {
                 Text(this.teamType === 'leader' ? '找队友' : '找队伍').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#2D75A7').backgroundColor('#E7F4FF').borderRadius(20).padding({ left: 18, right: 18, top: 9, bottom: 9 })
                 Text('等待回应').fontSize(15).fontWeight(FontWeight.Medium).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(18).padding({ left: 16, right: 16, top: 7, bottom: 7 }).margin({ top: 6 })
               }.alignItems(HorizontalAlign.End)
+            } else if (this.tag === 'help') {
+              Column() {
+                Text('待解决').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#B06C18').backgroundColor('#FFF3DF').borderRadius(20).padding({ left: 18, right: 18, top: 9, bottom: 9 })
+                Text('等待回答').fontSize(15).fontWeight(FontWeight.Medium).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(18).padding({ left: 16, right: 16, top: 7, bottom: 7 }).margin({ top: 6 })
+              }.alignItems(HorizontalAlign.End)
             }
           }.width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 16 })
 
@@ -127,7 +133,7 @@ struct CampusPublishPage {
             }.width('100%').alignItems(VerticalAlign.Center)
 
             if (this.editorExpanded) {
-              TextArea({ placeholder: this.tag === 'lost' ? '描述物品特征、时间等信息...' : (this.tag === 'team' ? '说明比赛、方向、需求和联系方式...' : '分享校园里的新鲜事...'), text: this.content })
+              TextArea({ placeholder: this.tag === 'lost' ? '描述物品特征、时间等信息...' : (this.tag === 'team' ? '说明比赛、方向、需求和联系方式...' : (this.tag === 'help' ? '描述你需要求助的问题...' : '分享校园里的新鲜事...')), text: this.content })
                 .width('100%').height(270).fontSize(19).fontColor('#333333').placeholderColor('#B4B5B8')
                 .fontWeight(this.bold ? FontWeight.Bold : FontWeight.Normal)
                 .fontStyle(this.italic ? FontStyle.Italic : FontStyle.Normal)
@@ -135,7 +141,7 @@ struct CampusPublishPage {
                 .backgroundColor(Color.Transparent).padding({ left: 58, right: 4, top: 4 })
                 .onChange((value: string) => { this.content = value; })
             } else {
-              Text(this.content || (this.tag === 'lost' ? '描述物品特征、时间等信息...' : (this.tag === 'team' ? '说明比赛、方向、需求和联系方式...' : '分享校园里的新鲜事...'))).fontSize(18).fontColor(this.content ? '#555555' : '#B4B5B8').maxLines(2).width('100%').height(72).padding({ left: 58, top: 8 })
+              Text(this.content || (this.tag === 'lost' ? '描述物品特征、时间等信息...' : (this.tag === 'team' ? '说明比赛、方向、需求和联系方式...' : (this.tag === 'help' ? '描述你需要求助的问题...' : '分享校园里的新鲜事...')))).fontSize(18).fontColor(this.content ? '#555555' : '#B4B5B8').maxLines(2).width('100%').height(72).padding({ left: 58, top: 8 })
             }
 
             if (this.tag === 'lost') {
