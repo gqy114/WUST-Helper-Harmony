@@ -522,7 +522,7 @@ export struct CoursePage {
           });
         })
 
-      Stack({ alignContent: Alignment.BottomStart }) {
+      Stack({ alignContent: Alignment.CenterStart }) {
         Image(this.courseBackground(course))
           .width('100%').height('100%')
           .objectFit(ImageFit.Cover)
@@ -549,7 +549,11 @@ export struct CoursePage {
           Text(`第${course.weekRanges}周`).fontSize(18).fontColor('#17324D')
         }
         .alignItems(HorizontalAlign.Start)
-        .width('62%').padding({ left: 24, right: 12, bottom: 36 })
+        .width('60%')
+        .padding({ left: 20, right: 16, top: 24, bottom: 24 })
+        .margin({ left: 18 })
+        .backgroundColor('#CCFFFFFF')
+        .borderRadius(16)
       }
       .width('76%').height('66%').borderRadius(14).clip(true)
       .backgroundColor('#FFFFFF').onClick(() => {})
