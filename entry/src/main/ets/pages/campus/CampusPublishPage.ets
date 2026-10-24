@@ -1,6 +1,7 @@
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi } from '../../net/CampusWallApi';
+import { CampusCatApi } from '../../net/CampusCatApi';
 import { AppStorage } from '../../store/AppStorage';
 
 interface PublishParams { tag?: string; label?: string; }
@@ -26,6 +27,7 @@ struct CampusPublishPage {
   @State private address: string = '';
   @State private lostFoundType: string = 'found';
   @State private teamType: string = 'leader';
+  @State private catTags: string[] = [];
 
   async aboutToAppear(): Promise<void> {
     const params = router.getParams() as PublishParams;
@@ -75,6 +77,51 @@ struct CampusPublishPage {
     }
   }
 
+  private toggleCatTag(tag: string): void {
+    const selected = this.catTags.indexOf(tag) >= 0;
+    this.catTags = selected ? this.catTags.filter((item: string) => item !== tag) : this.catTags.concat([tag]);
+  }
+
+  private async submitCat(): Promise<void> {
+    if (this.submitting) return;
+    if (!this.title.trim() || !this.content.trim()) {
+      promptAction.showToast({ message: '请填写标题和正文', duration: 1200 });
+      return;
+    }
+    this.submitting = true;
+    try {
+      await CampusCatApi.publish(this.title.trim(), this.content.trim(), this.catTags);
+      promptAction.showToast({ message: '发布成功', duration: 1200 });
+      router.back();
+    } catch {
+      promptAction.showToast({ message: '发布失败，请稍后重试', duration: 1500 });
+    } finally {
+      this.submitting = false;
+    }
+  }
+
+  @Builder
+  private catComposer() {
+    Column() {
+      Column() {
+        Text('发布校园猫帖子').fontSize(27).fontWeight(FontWeight.Bold).fontColor('#444444').margin({ bottom: 24 })
+        TextInput({ placeholder: '标题', text: this.title }).width('100%').height(70).fontSize(20).fontWeight(FontWeight.Bold).placeholderColor('#A9AAAD').backgroundColor('#F6F6F6').borderRadius(16).padding({ left: 18, right: 18 }).onChange((value: string) => { this.title = value; })
+        TextArea({ placeholder: '正文', text: this.content }).width('100%').height(160).fontSize(19).placeholderColor('#A9AAAD').backgroundColor('#F6F6F6').borderRadius(16).padding(18).margin({ top: 14 }).onChange((value: string) => { this.content = value; })
+        Text('类型（可多选）').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#333333').width('100%').margin({ top: 20, bottom: 10 })
+        Flex({ wrap: FlexWrap.Wrap }) {
+          ForEach(['流浪', '领养', '日常', '求助', '晒猫'], (tag: string) => {
+            Text(tag).fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.catTags.indexOf(tag) >= 0 ? Color.White : '#707070').textAlign(TextAlign.Center).width(92).height(48).backgroundColor(this.catTags.indexOf(tag) >= 0 ? '#20C894' : '#ECF8F4').borderRadius(16).margin({ right: 10, bottom: 10 }).onClick(() => this.toggleCatTag(tag))
+          })
+        }.width('100%')
+        Text('+  添加图片（最多 9 张，每张小于 5MB）').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#666666').width('100%').height(64).textAlign(TextAlign.Center).backgroundColor('#ECF8F4').borderRadius(16).margin({ top: 4 }).onClick(() => promptAction.showToast({ message: '图片功能待图片选择图标和上传流程接入', duration: 1500 }))
+        Row() {
+          Button('取消').layoutWeight(1).height(58).fontSize(20).fontWeight(FontWeight.Bold).fontColor(Color.White).backgroundColor('#E26B58').borderRadius(10).margin({ right: 18 }).onClick(() => router.back())
+          Button(this.submitting ? '发布中…' : '发布').layoutWeight(1).height(58).fontSize(20).fontWeight(FontWeight.Bold).fontColor(Color.White).backgroundColor(this.submitting ? '#A4DDBB' : '#55D900').borderRadius(10).onClick(() => this.submitCat())
+        }.width('100%').margin({ top: 24 })
+      }.width('84%').padding({ left: 26, right: 26, top: 28, bottom: 30 }).backgroundColor(Color.White).borderRadius(24)
+    }.width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center).backgroundColor('#66000000')
+  }
+
   @Builder
   private formatButton(text: string, active: boolean, click: () => void) {
     Text(text)
@@ -90,6 +137,9 @@ struct CampusPublishPage {
   }
 
   build() {
+    if (this.tag === 'cat') {
+      this.catComposer()
+    } else {
     Column() {
       Row() {
         Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back())
@@ -178,5 +228,6 @@ struct CampusPublishPage {
         }.width('100%').padding({ left: 20, right: 20, top: 22, bottom: 32 }).alignItems(HorizontalAlign.Start)
       }.layoutWeight(1).width('100%').scrollBar(BarState.Off)
     }.width('100%').height('100%').backgroundColor('#F5F6F8')
+    }
   }
 }
