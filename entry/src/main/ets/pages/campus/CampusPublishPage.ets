@@ -4,6 +4,7 @@ import { CampusWallApi } from '../../net/CampusWallApi';
 import { AppStorage } from '../../store/AppStorage';
 
 interface PublishParams { tag?: string; label?: string; }
+interface LostFoundExtra { type: string; address: string; }
 
 @Entry
 @Component
@@ -21,6 +22,8 @@ struct CampusPublishPage {
   @State private italic: boolean = false;
   @State private underline: boolean = false;
   @State private strike: boolean = false;
+  @State private address: string = '';
+  @State private lostFoundType: string = 'found';
 
   async aboutToAppear(): Promise<void> {
     const params = router.getParams() as PublishParams;
@@ -48,7 +51,14 @@ struct CampusPublishPage {
     }
     this.submitting = true;
     try {
-      await CampusWallApi.publish(this.title.trim(), this.content.trim(), this.tag);
+      let publishTag = this.tag;
+      let extra = '{}';
+      if (this.tag === 'lost') {
+        publishTag = 'lost_found';
+        const lostFoundExtra: LostFoundExtra = { type: this.lostFoundType, address: this.address.trim() };
+        extra = JSON.stringify(lostFoundExtra);
+      }
+      await CampusWallApi.publish(this.title.trim(), this.content.trim(), publishTag, extra);
       promptAction.showToast({ message: '发布成功', duration: 1200 });
       router.back();
     } catch {
@@ -90,6 +100,10 @@ struct CampusPublishPage {
               Text(this.displayName).fontSize(21).fontWeight(FontWeight.Bold).fontColor('#655C86')
               Text(this.college).fontSize(16).fontWeight(FontWeight.Medium).fontColor('#999999').margin({ top: 4 })
             }.alignItems(HorizontalAlign.Start)
+            Blank().layoutWeight(1)
+            if (this.tag === 'lost') {
+              Text(this.lostFoundType === 'found' ? '失物招领' : '寻物启事').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#B54D6B').backgroundColor('#FFF0F3').borderRadius(20).padding({ left: 18, right: 18, top: 9, bottom: 9 })
+            }
           }.width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 16 })
 
           Column() {
@@ -102,7 +116,7 @@ struct CampusPublishPage {
             }.width('100%').alignItems(VerticalAlign.Center)
 
             if (this.editorExpanded) {
-              TextArea({ placeholder: '分享校园里的新鲜事...', text: this.content })
+              TextArea({ placeholder: this.tag === 'lost' ? '描述物品特征、时间等信息...' : '分享校园里的新鲜事...', text: this.content })
                 .width('100%').height(270).fontSize(19).fontColor('#333333').placeholderColor('#B4B5B8')
                 .fontWeight(this.bold ? FontWeight.Bold : FontWeight.Normal)
                 .fontStyle(this.italic ? FontStyle.Italic : FontStyle.Normal)
@@ -110,7 +124,19 @@ struct CampusPublishPage {
                 .backgroundColor(Color.Transparent).padding({ left: 58, right: 4, top: 4 })
                 .onChange((value: string) => { this.content = value; })
             } else {
-              Text(this.content || '分享校园里的新鲜事...').fontSize(18).fontColor(this.content ? '#555555' : '#B4B5B8').maxLines(2).width('100%').height(72).padding({ left: 58, top: 8 })
+              Text(this.content || (this.tag === 'lost' ? '描述物品特征、时间等信息...' : '分享校园里的新鲜事...')).fontSize(18).fontColor(this.content ? '#555555' : '#B4B5B8').maxLines(2).width('100%').height(72).padding({ left: 58, top: 8 })
+            }
+
+            if (this.tag === 'lost') {
+              Row() {
+                Text('地址：').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#555555')
+                TextInput({ placeholder: '具体地址', text: this.address }).layoutWeight(1).height(48).fontSize(18).fontColor('#444444').placeholderColor('#AAAAAA').backgroundColor(Color.Transparent).padding(0).border({ width: { bottom: 1 }, color: '#CCCCCC' }).onChange((value: string) => { this.address = value; })
+              }.width('100%').alignItems(VerticalAlign.Center).margin({ top: 4 })
+              Row() {
+                Text('类型：').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#555555').margin({ right: 8 })
+                Text('失物招领').fontSize(17).fontWeight(FontWeight.Bold).fontColor(this.lostFoundType === 'found' ? '#14B888' : '#77D8BC').backgroundColor(this.lostFoundType === 'found' ? '#E6F8F2' : '#F1FAF7').borderRadius(18).padding({ left: 18, right: 18, top: 10, bottom: 10 }).margin({ right: 10 }).onClick(() => { this.lostFoundType = 'found'; })
+                Text('寻物启事').fontSize(17).fontWeight(FontWeight.Bold).fontColor(this.lostFoundType === 'lost' ? '#14B888' : '#77D8BC').backgroundColor(this.lostFoundType === 'lost' ? '#E6F8F2' : '#F1FAF7').borderRadius(18).padding({ left: 18, right: 18, top: 10, bottom: 10 }).onClick(() => { this.lostFoundType = 'lost'; })
+              }.width('100%').alignItems(VerticalAlign.Center).margin({ top: 10 })
             }
 
             Row() {
