@@ -1,6 +1,6 @@
 import { HttpRequest } from './HttpRequest';
 import { AppStorage } from '../store/AppStorage';
-export interface SecondhandListing { id?: number; bookId?: number; sellerId?: string; price?: number; condition?: string; note?: string; images?: string[]; contact?: string; status?: string; createdAt?: number; bookTitle?: string; bookAuthor?: string; bookCover?: string; }
+export interface SecondhandListing { id?: number; bookId?: number; sellerId?: string; price?: number; condition?: string; note?: string; images?: string[]; contact?: string; status?: string; createdAt?: number; bookTitle?: string; bookAuthor?: string; bookCover?: string; campus?: string; campusName?: string; }
 export interface SecondhandBook { id?: number; isbn?: string; title?: string; author?: string; publisher?: string; edition?: string; category?: string; coverUrl?: string; listingCount?: number; priceMin?: number; priceMax?: number; priceAvg?: number; }
 interface Response<T> { data?: T; code?: number; message?: string; }
 interface Headers extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
