@@ -9,6 +9,10 @@ struct EditToolsPage {
   @State private enabledTools: ToolEntry[] = [];
   @State private disabledTools: ToolEntry[] = [];
   @State private draggingIndex: number = -1;
+  @State private draggingTitle: string = '';
+  @State private dragOffsetX: number = 0;
+  @State private dragOffsetY: number = 0;
+  @State private dragScale: number = 1;
   private dragAnchorX: number = 0;
   private dragAnchorY: number = 0;
   private allTools: ToolEntry[] = [
@@ -52,10 +56,20 @@ struct EditToolsPage {
       }.layoutWeight(1).alignItems(HorizontalAlign.Start)
       Image(item.icon).width(54).height(54).objectFit(ImageFit.Contain)
     }.width('100%').height(100).padding({ left: 12, right: 12 }).backgroundColor(Color.White).borderRadius(12)
+      .translate({ x: this.draggingTitle === item.title ? this.dragOffsetX : 0, y: this.draggingTitle === item.title ? this.dragOffsetY : 0 })
+      .scale({ x: this.draggingTitle === item.title ? this.dragScale : 1, y: this.draggingTitle === item.title ? this.dragScale : 1 })
+      .opacity(this.draggingTitle === item.title ? 0.94 : 1)
+      .shadow(this.draggingTitle === item.title ? { radius: 24, color: '#33000000', offsetX: 0, offsetY: 10 } : { radius: 0, color: '#00000000', offsetX: 0, offsetY: 0 })
+      .zIndex(this.draggingTitle === item.title ? 20 : 0)
+      .animation({ duration: 180, curve: Curve.EaseOut })
       .onClick(() => { if (this.draggingIndex < 0) this.openTool(item.title); })
       .gesture(GestureGroup(GestureMode.Sequence,
         LongPressGesture().onAction(() => {
           this.draggingIndex = this.allTools.findIndex((tool: ToolEntry) => tool.title === item.title);
+          this.draggingTitle = item.title;
+          this.dragOffsetX = 0;
+          this.dragOffsetY = 0;
+          this.dragScale = 1.06;
           this.dragAnchorX = 0;
           this.dragAnchorY = 0;
         }),
@@ -63,6 +77,8 @@ struct EditToolsPage {
           if (this.draggingIndex < 0) return;
           const moveX = event.offsetX - this.dragAnchorX;
           const moveY = event.offsetY - this.dragAnchorY;
+          this.dragOffsetX = moveX;
+          this.dragOffsetY = moveY;
           let delta = 0;
           if (Math.abs(moveY) >= 56) delta = moveY > 0 ? 2 : -2;
           else if (Math.abs(moveX) >= 70) delta = moveX > 0 ? 1 : -1;
@@ -78,9 +94,22 @@ struct EditToolsPage {
             this.draggingIndex = insertAt;
             this.dragAnchorX = event.offsetX;
             this.dragAnchorY = event.offsetY;
-            this.refreshLists();
+            this.dragOffsetX = 0;
+            this.dragOffsetY = 0;
+            animateTo({ duration: 220, curve: Curve.EaseOut }, () => this.refreshLists());
           }
-        }).onActionEnd(() => { if (this.draggingIndex >= 0) { this.saveLayout(); this.draggingIndex = -1; } })
+        }).onActionEnd(() => {
+          if (this.draggingIndex < 0) return;
+          this.saveLayout();
+          animateTo({ duration: 220, curve: Curve.EaseOut, onFinish: () => {
+            this.draggingIndex = -1;
+            this.draggingTitle = '';
+          } }, () => {
+            this.dragOffsetX = 0;
+            this.dragOffsetY = 0;
+            this.dragScale = 1;
+          });
+        })
       ))
   }
 
