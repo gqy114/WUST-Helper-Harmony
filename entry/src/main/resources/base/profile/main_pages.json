@@ -22,6 +22,7 @@
     "pages/main/ElectricityPage",
     "pages/campus/ClassroomQueryPage",
     "pages/campus/CourseSearchPage",
+    "pages/campus/CourseSearchResultPage",
     "pages/campus/EmptyClassroomQueryPage",
     "pages/campus/ClassroomResultPage",
     "pages/campus/SchoolBusPage",

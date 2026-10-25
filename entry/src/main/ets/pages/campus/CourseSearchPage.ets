@@ -1,8 +1,5 @@
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
-import { CourseApi } from '../../net/CourseApi';
-import { CourseData } from '../../model/CourseModel';
-import { AppStorage } from '../../store/AppStorage';
 
 @Entry
 @Component
@@ -18,8 +15,6 @@ struct CourseSearchPage {
   @State private pendingWeekday: string = '周一';
   @State private pendingStart: number = 1;
   @State private pendingEnd: number = 1;
-  @State private results: CourseData[] = [];
-  @State private searching: boolean = false;
 
   @Builder
   private field(value: string, placeholder: string, onChange: (value: string) => void) {
@@ -53,24 +48,16 @@ struct CourseSearchPage {
     this.picker = '';
   }
 
-  private async search(): Promise<void> {
+  private search(): void {
     if (this.courseName.trim().length === 0) {
       promptAction.showToast({ message: '请输入课程名', duration: 1500 });
       return;
     }
-    this.searching = true;
-    try {
-      const storage = AppStorage.getInstance();
-      const semester = await storage.getSemester();
-      const token = await storage.getToken();
-      await CourseApi.getCourseTable(semester, token);
-      const weekDay = this.weekday.length > 0 ? ['周一', '周二', '周三', '周四', '周五', '周六', '周日'].indexOf(this.weekday) + 1 : 0;
-      this.results = await CourseApi.searchCourses(semester, token, this.courseName, this.teacher, this.classroom,
-        weekDay, this.periodSelected ? this.startPeriod : 0, this.periodSelected ? this.endPeriod : 0);
-      if (this.results.length === 0) promptAction.showToast({ message: '没有找到符合条件的课程', duration: 1500 });
-    } catch {
-      promptAction.showToast({ message: '课程查询失败，请稍后重试', duration: 1500 });
-    } finally { this.searching = false; }
+    router.pushUrl({ url: 'pages/campus/CourseSearchResultPage', params: {
+      courseName: this.courseName.trim(), teacher: this.teacher.trim(), classroom: this.classroom.trim(),
+      weekday: this.weekday, startPeriod: this.periodSelected ? String(this.startPeriod) : '',
+      endPeriod: this.periodSelected ? String(this.endPeriod) : ''
+    } });
   }
 
   @Builder
@@ -124,16 +111,8 @@ struct CourseSearchPage {
             Text(this.periodSelected ? `第${this.startPeriod}节 - 第${this.endPeriod}节` : '节次（可选）').width('92%').height(58).fontSize(18)
               .fontColor(this.periodSelected ? '#666666' : '#AAAAAA').backgroundColor(Color.White).borderRadius(29)
               .padding({ left: 28 }).onClick(() => this.openPicker('period'));
-            Button(this.searching ? '搜索中…' : '开始搜索').width('92%').height(60).fontSize(20).fontWeight(FontWeight.Bold)
+            Button('开始搜索').width('92%').height(60).fontSize(20).fontWeight(FontWeight.Bold)
               .fontColor(Color.White).backgroundColor('#20C894').borderRadius(29).margin({ top: 24 }).onClick(() => this.search());
-            ForEach(this.results, (item: CourseData) => {
-              Row() {
-                Column() {
-                  Text(item.courseName).fontSize(18).fontWeight(FontWeight.Bold).width('100%');
-                  Text(`${item.teacher} · ${item.location}`).fontSize(14).fontColor('#777777').width('100%').margin({ top: 5 });
-                }.layoutWeight(1);
-              }.width('92%').padding(16).backgroundColor(Color.White).borderRadius(12).margin({ top: 10 });
-            })
             Blank().height(40);
           }.width('100%').padding({ top: 38, bottom: 30 }).alignItems(HorizontalAlign.Center);
         }.layoutWeight(1).width('100%').backgroundColor('#F5F6F8').scrollBar(BarState.Off);
