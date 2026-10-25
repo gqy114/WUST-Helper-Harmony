@@ -255,9 +255,11 @@ export struct PhysicalExperimentPage {
         Row() {
           Text('‹').fontSize(36).fontColor('#333333').onClick(() => router.back())
           Text('物理实验').fontSize(22).fontWeight(FontWeight.Bold).margin({ left: 12 }).layoutWeight(1)
-          Text('退出').fontSize(15).fontColor('#888888').margin({ right: 18 }).onClick(() => this.logoutPhysical())
-          Text('刷新').fontSize(16).fontColor('#1ec98d').onClick(() => this.loadCourses())
-        }.width('100%').height(56).padding({ left: 18, right: 18 }).backgroundColor(Color.White)
+          Text('退出').width(52).height(40).fontSize(16).fontWeight(FontWeight.Medium).fontColor('#888888')
+            .textAlign(TextAlign.Center).margin({ right: 4 }).onClick(() => this.logoutPhysical())
+          Text('刷新').width(52).height(40).fontSize(16).fontWeight(FontWeight.Medium).fontColor('#1ec98d')
+            .textAlign(TextAlign.Center).onClick(() => this.loadCourses())
+        }.width('100%').height(56).padding({ left: 18, right: 10 }).alignItems(VerticalAlign.Center).backgroundColor(Color.White)
 
         if (this.loading) {
           LoadingProgress().width(42).height(42).layoutWeight(1)
