@@ -1,8 +1,11 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { PhysicalExperimentApi, PhysicalExperimentCourse } from '../../net/PhysicalExperimentApi';
 import { CourseStore } from '../../store/CourseStore';
-import { CourseData } from '../../model/CourseModel';
+import { CourseData, CourseTimeSlot, TIME_SLOTS_HUANGJIAHU } from '../../model/CourseModel';
 import { AppStorage } from '../../store/AppStorage';
+import { CourseApi } from '../../net/CourseApi';
+
+interface DateParts { year: number; month: number; day: number; }
 
 @Entry
 @Component
@@ -62,20 +65,99 @@ export struct PhysicalExperimentPage {
     this.showLogin = true;
   }
 
-  private importCourses(): void {
-    const imported: CourseData[] = this.courses.map((item: PhysicalExperimentCourse): CourseData => ({
+  private parseDate(value: string): DateParts | undefined {
+    const parts = value.split('-');
+    if (parts.length !== 3) return undefined;
+    const result: DateParts = { year: Number(parts[0]), month: Number(parts[1]), day: Number(parts[2]) };
+    return result.year > 0 && result.month > 0 && result.day > 0 ? result : undefined;
+  }
+
+  private clockMinutes(value: string): number {
+    const parts = value.split(':');
+    if (parts.length < 2) return -1;
+    return Number(parts[0]) * 60 + Number(parts[1]);
+  }
+
+  private nearestPeriods(startClock: string): CourseTimeSlot {
+    const target = this.clockMinutes(startClock);
+    let best = TIME_SLOTS_HUANGJIAHU[0];
+    let bestDistance = Number.MAX_SAFE_INTEGER;
+    for (let i = 0; i < TIME_SLOTS_HUANGJIAHU.length; i++) {
+      const slot = TIME_SLOTS_HUANGJIAHU[i];
+      const distance = Math.abs(this.clockMinutes(slot.start) - target);
+      if (target >= 0 && distance < bestDistance) {
+        best = slot;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  private async ensureTermStart(storage: AppStorage): Promise<string> {
+    const cached = await storage.getTermStartDate();
+    if (cached) return cached;
+    const response = await CourseApi.getTermStartDate(await storage.getToken());
+    if (response.data) {
+      const month = response.data.month < 10 ? `0${response.data.month}` : `${response.data.month}`;
+      const day = response.data.day < 10 ? `0${response.data.day}` : `${response.data.day}`;
+      const value = `${response.data.year}-${month}-${day}`;
+      await storage.setTermStartDate(value);
+      return value;
+    }
+    return '';
+  }
+
+  private toCourse(item: PhysicalExperimentCourse, termStart: string): CourseData {
+    const slot = this.nearestPeriods(item.startClock || '');
+    let dayOfWeek = item.weekDay || 1;
+    let week = item.startWeek || 1;
+    const date = this.parseDate(item.date || '');
+    const start = this.parseDate(termStart);
+    if (date) {
+      const utc = Date.UTC(date.year, date.month - 1, date.day);
+      const weekday = new Date(utc).getUTCDay();
+      dayOfWeek = weekday === 0 ? 7 : weekday;
+      if (start) {
+        const startUtc = Date.UTC(start.year, start.month - 1, start.day);
+        week = Math.max(1, Math.floor((utc - startUtc) / 604800000) + 1);
+      }
+    }
+    return {
       courseName: item.courseName || item.className || item.name || item.course || '物理实验',
-      teacher: item.teacher || '', location: item.classroom || '', dayOfWeek: item.weekDay || 1,
-      startPeriod: item.startSection || item.section || 1,
-      endPeriod: item.endSection || item.startSection || item.section || 1,
-      weekRanges: item.startWeek && item.endWeek ? `${item.startWeek}-${item.endWeek}` : '1-16'
-    }));
+      teacher: item.teacher || '', location: item.classroom || '', dayOfWeek,
+      startPeriod: item.startClock ? slot.startPeriod : (item.startSection || item.section || 1),
+      endPeriod: item.startClock ? slot.endPeriod : (item.endSection || item.startSection || item.section || 1),
+      weekRanges: `${week}`, isPhysicalExperiment: true, physicalDate: item.date || ''
+    };
+  }
+
+  private async importCourses(): Promise<void> {
+    const storage = AppStorage.getInstance();
+    const termStart = await this.ensureTermStart(storage);
+    const imported: CourseData[] = this.courses.map((item: PhysicalExperimentCourse): CourseData => this.toCourse(item, termStart));
     if (imported.length === 0) {
       promptAction.showToast({ message: '暂无可导入的实验课程' });
       return;
     }
-    this.store.setCourses(this.store.courses.concat(imported));
-    promptAction.showToast({ message: `已导入${imported.length}门实验课程` });
+    const existing = await storage.getCurrentCourses();
+    const base = existing.length > 0 ? existing : this.store.courses;
+    const merged: CourseData[] = [...base];
+    let added = 0;
+    for (let i = 0; i < imported.length; i++) {
+      const item = imported[i];
+      let duplicate = false;
+      for (let j = 0; j < merged.length; j++) {
+        if (merged[j].isPhysicalExperiment && merged[j].courseName === item.courseName &&
+          merged[j].physicalDate === item.physicalDate) duplicate = true;
+      }
+      if (!duplicate) {
+        merged.push(item);
+        added++;
+      }
+    }
+    this.store.setCourses(merged);
+    await storage.setCurrentCourses(this.store.courses);
+    promptAction.showToast({ message: added > 0 ? `已导入${added}门实验课程` : '实验课程已在课表中' });
   }
 
   build() {

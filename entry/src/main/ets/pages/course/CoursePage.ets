@@ -309,7 +309,12 @@ export struct CoursePage {
 
       if (resp.code === 10000 || resp.code === 200 || resp.code === 0) {
         const list: CourseData[] = resp.data ? resp.data : [];
+        const savedCourses = await s.getCurrentCourses();
+        for (let i = 0; i < savedCourses.length; i++) {
+          if (savedCourses[i].isPhysicalExperiment) list.push(savedCourses[i]);
+        }
         this.store.setCourses(list);
+        await s.setCurrentCourses(this.store.courses);
         const colored = this.store.courses;
         this.allCourseList = Array.isArray(colored) ? [...colored] : [...list];
         this.applyOnlyThisWeekFilter();

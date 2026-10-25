@@ -31,6 +31,9 @@ export interface CourseApiRawItem {
   weekDay?: string | number;
   weekday?: string | number;
   dayOfWeek?: string | number;
+  date?: string;
+  startClock?: string;
+  endClock?: string;
 }
 
 /** 一步式课表接口顶层响应。成功时 data 是课程数组。 */
@@ -101,6 +104,12 @@ function normalizeItem(raw: CourseApiRawItem): CourseData {
   };
 }
 
+function isPhysicalExperimentItem(raw: CourseApiRawItem): boolean {
+  if (raw.date || raw.startClock || raw.endClock) return true;
+  const name = firstValue(raw.className) || firstValue(raw.name) || firstValue(raw.courseName);
+  return name.includes('物理实验') || /^实验\d+-\d+/.test(name);
+}
+
 export class CourseApi {
   static async searchCourses(semester: string, token: string, courseName: string, teacher: string,
     classroom: string, weekDay: number, startSection: number, endSection: number): Promise<CourseData[]> {
@@ -165,7 +174,7 @@ export class CourseApi {
       if (resp && (resp.code === 10000 || resp.code === 200 || resp.code === 0) && resp.data) {
         const list: CourseData[] = [];
         for (let i = 0; i < resp.data.length; i++) {
-          list.push(normalizeItem(resp.data[i]));
+          if (!isPhysicalExperimentItem(resp.data[i])) list.push(normalizeItem(resp.data[i]));
         }
         return {
           code: resp.code !== undefined ? resp.code : 10000,

@@ -15,6 +15,9 @@ export interface CourseData {
   endPeriod: number;
   weekRanges: string;
   color?: string;
+  /** 仅由独立物理实验页面写入，普通课表刷新时用于保留这些一次性课程。 */
+  isPhysicalExperiment?: boolean;
+  physicalDate?: string;
 }
 
 /**

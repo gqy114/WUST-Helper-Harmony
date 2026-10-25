@@ -50,6 +50,8 @@ export class CourseStore {
         endPeriod: raw.endPeriod,
         weekRanges: raw.weekRanges,
         color: raw.color ?? getCourseColor(i),
+        isPhysicalExperiment: raw.isPhysicalExperiment,
+        physicalDate: raw.physicalDate,
       };
       result.push(colored);
     }

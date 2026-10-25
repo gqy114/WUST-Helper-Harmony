@@ -132,7 +132,8 @@ struct ScheduleSetting {
   }
 
   private isPhysicalExperiment(course: CourseData): boolean {
-    return course.courseName.indexOf('实验') >= 0;
+    return course.isPhysicalExperiment === true || course.courseName.indexOf('物理实验') >= 0 ||
+      /^实验\d+-\d+/.test(course.courseName);
   }
 
   private async importCurrentWeekToCalendar(): Promise<void> {
