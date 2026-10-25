@@ -7,11 +7,27 @@ interface Headers extends Record<string, string> { Authorization: string; Platfo
 interface RecognizeRequest { isbn: string; title: string; author: string; publisher: string; edition: string; category: string; coverUrl: string; listPrice: number; ocrRaw: string; source: string; }
 interface RecognizeData { book?: SecondhandBook; }
 interface ListingRequest { bookId: number; price: number; condition: string; note: string; images: string[]; contact: string; ocrRaw: string; }
+interface MajorItem { name?: string; label?: string; value?: string; title?: string; major?: string; majorName?: string; }
+type MajorValue = string | MajorItem;
+interface MajorPage { items?: MajorValue[]; list?: MajorValue[]; majors?: MajorValue[]; records?: MajorValue[]; data?: MajorValue[]; }
 export class SecondHandBookApi {
   private static async headers(): Promise<Headers> { const token = await AppStorage.getInstance().getAppAuthAccessToken(); return { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' }; }
-  static async feed(keyword: string = '', category: string = ''): Promise<SecondhandListing[]> { const query = `?page=1&limit=50&keyword=${encodeURIComponent(keyword)}&category=${encodeURIComponent(category)}`; const response = await HttpRequest.get<Response<SecondhandListing[]>>(`https://lyzyy.love:8081/api/v1/secondhand/listings${query}`, await SecondHandBookApi.headers()); const data = response.data.data; return Array.isArray(data) ? data : []; }
+  static async feed(keyword: string = '', category: string = '', major: string = ''): Promise<SecondhandListing[]> { const query = `?page=1&limit=50&keyword=${encodeURIComponent(keyword)}&category=${encodeURIComponent(category)}${major.length > 0 ? `&major=${encodeURIComponent(major)}` : ''}`; const response = await HttpRequest.get<Response<SecondhandListing[]>>(`https://lyzyy.love:8081/api/v1/secondhand/listings${query}`, await SecondHandBookApi.headers()); const data = response.data.data; return Array.isArray(data) ? data : []; }
   static async categories(): Promise<string[]> { const response = await HttpRequest.get<Response<string[]>>('https://lyzyy.love:8081/api/v1/secondhand/categories', await SecondHandBookApi.headers()); return Array.isArray(response.data.data) ? response.data.data : []; }
-  static async majors(): Promise<string[]> { const response = await HttpRequest.get<Response<string[]>>('https://lyzyy.love:8081/api/v1/secondhand/majors', await SecondHandBookApi.headers()); return Array.isArray(response.data.data) ? response.data.data : []; }
+  static async majors(): Promise<string[]> {
+    const response = await HttpRequest.get<Response<MajorValue[] | MajorPage>>('https://lyzyy.love:8081/api/v1/secondhand/majors', await SecondHandBookApi.headers());
+    const data = response.data.data;
+    let values: MajorValue[] = [];
+    if (Array.isArray(data)) values = data;
+    else if (data) values = data.items || data.list || data.majors || data.records || data.data || [];
+    const names: string[] = [];
+    values.forEach((value: MajorValue) => {
+      const name = typeof value === 'string' ? value : (value.name || value.majorName || value.major || value.label || value.title || value.value || '');
+      const normalized = name.trim();
+      if (normalized.length > 0 && names.indexOf(normalized) < 0) names.push(normalized);
+    });
+    return names;
+  }
   static async publishManual(title: string, price: number, edition: string, meetingPlace: string, contact: string, note: string): Promise<void> {
     const headers = await SecondHandBookApi.headers();
     const recognize: RecognizeRequest = { isbn: '', title, author: '', publisher: '', edition, category: '', coverUrl: '', listPrice: 0, ocrRaw: '', source: 'manual' };

@@ -13,6 +13,9 @@ struct SecondHandBookPage {
   @State private avatarUrl: string = '';
   @State private selfMajor: string = '';
   @State private majors: string[] = [];
+  @State private majorPickerOpen: boolean = false;
+  @State private activeMajorMode: string = '全部专业';
+  @State private pendingMajorMode: string = '全部专业';
   @State private filterOpen: boolean = false;
   @State private activeMajor: string = '全部专业';
   @State private pendingMajor: string = '全部专业';
@@ -35,7 +38,8 @@ struct SecondHandBookPage {
 
   private async load(): Promise<void> {
     this.loading = true;
-    try { this.listings = await SecondHandBookApi.feed(this.query); }
+    const requestedMajor = this.activeMajor === '我的专业' ? this.selfMajor : (this.activeMajor === '全部专业' ? '' : this.activeMajor);
+    try { this.listings = await SecondHandBookApi.feed(this.query, '', requestedMajor); }
     catch { promptAction.showToast({ message: '二手书信息加载失败', duration: 1500 }); }
     this.loading = false;
   }
@@ -51,11 +55,10 @@ struct SecondHandBookPage {
   private majorMatches(item: SecondhandListing): boolean {
     if (this.activeMajor === '全部专业') return true;
     const itemMajor = (item.major || '').trim();
+    if (itemMajor.length === 0) return true;
     if (this.activeMajor === '我的专业') return this.selfMajor.length > 0 && itemMajor.indexOf(this.selfMajor) >= 0;
     return itemMajor.indexOf(this.activeMajor) >= 0;
   }
-
-  private majorOptions(): string[] { return ['全部专业', '我的专业'].concat(this.majors); }
 
   private visibleListings(): SecondhandListing[] {
     const result = this.listings.filter((item: SecondhandListing) => this.majorMatches(item) && this.campusMatches(item));
@@ -67,6 +70,7 @@ struct SecondHandBookPage {
 
   private openFilter(): void {
     this.pendingMajor = this.activeMajor;
+    this.pendingMajorMode = this.activeMajorMode;
     this.pendingCampus = this.activeCampus;
     this.pendingSort = this.activeSort;
     animateTo({ duration: 240, curve: Curve.EaseInOut }, () => { this.filterOpen = true; });
@@ -76,9 +80,52 @@ struct SecondHandBookPage {
 
   private applyFilter(): void {
     this.activeMajor = this.pendingMajor;
+    this.activeMajorMode = this.pendingMajorMode;
     this.activeCampus = this.pendingCampus;
     this.activeSort = this.pendingSort;
     this.closeFilter();
+    this.load();
+  }
+
+  private async openMajorPicker(): Promise<void> {
+    if (this.majors.length === 0) await this.loadMajors();
+    if (this.majors.length === 0) {
+      promptAction.showToast({ message: '暂未获取到专业列表', duration: 1500 });
+      return;
+    }
+    if (this.majors.indexOf(this.pendingMajor) < 0) this.pendingMajor = this.majors[0];
+    this.majorPickerOpen = true;
+  }
+
+  private chooseMajorMode(mode: string): void {
+    if (mode === '指定专业') {
+      this.openMajorPicker();
+      return;
+    }
+    this.pendingMajorMode = mode;
+    this.pendingMajor = mode;
+  }
+
+  @Builder
+  private majorPickerOverlay() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column().width('100%').height('100%').backgroundColor('#66000000').onClick(() => { this.majorPickerOpen = false; });
+      Column() {
+        Row() {
+          Text('取消').fontSize(18).fontColor('#999999').layoutWeight(1).onClick(() => { this.majorPickerOpen = false; });
+          Text('选择专业').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333333').layoutWeight(2).textAlign(TextAlign.Center);
+          Text('确定').fontSize(18).fontColor('#20C894').layoutWeight(1).textAlign(TextAlign.End).onClick(() => {
+            this.pendingMajorMode = '指定专业';
+            this.majorPickerOpen = false;
+          });
+        }.width('100%').height(56).padding({ left: 20, right: 20 });
+        TextPicker({ range: this.majors, selected: Math.max(0, this.majors.indexOf(this.pendingMajor)) })
+          .width('100%').height(250).onChange((value: string | string[], index: number | number[]) => {
+            const selected = Array.isArray(index) ? index[0] : index;
+            this.pendingMajor = this.majors[selected];
+          });
+      }.width('92%').backgroundColor(Color.White).borderRadius(20).padding({ bottom: 12 }).onClick(() => {});
+    }.width('100%').height('100%');
   }
 
   @Builder
@@ -89,6 +136,7 @@ struct SecondHandBookPage {
   }
 
   build() {
+    Stack({ alignContent: Alignment.Center }) {
     Column() {
       Row() {
         Text('‹').fontSize(42).width(48).onClick(() => router.back());
@@ -104,13 +152,15 @@ struct SecondHandBookPage {
       if (this.filterOpen) {
         Column() {
           Text('选择专业').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
-          Scroll() {
-            Flex({ wrap: FlexWrap.Wrap }) {
-              ForEach(this.majorOptions(), (item: string) => {
-                Column() { this.optionTag(item, this.pendingMajor === item); }.onClick(() => { this.pendingMajor = item; });
-              })
-            }.width('100%');
-          }.width('100%').height(this.majors.length > 4 ? 138 : 54).scrollBar(BarState.Auto)
+          Flex({ wrap: FlexWrap.Wrap }) {
+            ForEach(['全部专业', '我的专业', '指定专业'], (item: string) => {
+              Column() { this.optionTag(item, this.pendingMajorMode === item); }
+                .onClick(() => { this.chooseMajorMode(item); });
+            })
+          }.width('100%');
+          if (this.pendingMajorMode === '指定专业') {
+            Text(`已选：${this.pendingMajor}`).fontSize(15).fontColor('#777777').width('100%').margin({ bottom: 8 });
+          }
           Text('选择校区').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
           Flex({ wrap: FlexWrap.Wrap }) {
             ForEach(['全部校区', '黄家湖', '青山', '洪山'], (item: string) => {
@@ -170,5 +220,7 @@ struct SecondHandBookPage {
           .textAlign(TextAlign.Center).width('88%').height(54).backgroundColor('#857A25').borderRadius(27);
       }.margin({ bottom: 16 }).onClick(() => router.pushUrl({ url: 'pages/campus/SecondHandBookPublishPage' }));
     }.width('100%').height('100%').backgroundColor('#F5F6F8');
+      if (this.majorPickerOpen) { this.majorPickerOverlay(); }
+    }.width('100%').height('100%');
   }
 }
