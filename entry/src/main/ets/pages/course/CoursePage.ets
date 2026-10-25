@@ -476,9 +476,10 @@ export struct CoursePage {
     this.isRefreshing = true;
     console.info('CoursePage', 'onRefresh start');
 
-    this.refreshTimer = setInterval(() => {
-      this.refreshRotate = (this.refreshRotate + 9) % 360;
-    }, 20);
+    this.refreshRotate = 0;
+    animateTo({ duration: 700, curve: Curve.Linear }, () => {
+      this.refreshRotate = 360;
+    });
 
     setTimeout(async () => {
       if (this.isUseMockData) {
