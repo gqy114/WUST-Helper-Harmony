@@ -122,6 +122,8 @@ export class AppStorage {
   async setStudentId(v: string): Promise<void> { return this.putStr('studentId', v); }
   async getPassword(): Promise<string> { return this.getStr('password'); }
   async setPassword(v: string): Promise<void> { return this.putStr('password', v); }
+  async getPhysicalExperimentPassword(): Promise<string> { return this.getStr('physicalExperimentPassword'); }
+  async setPhysicalExperimentPassword(v: string): Promise<void> { return this.putStr('physicalExperimentPassword', v); }
   async getMessage(): Promise<string> { return this.getStr('login_msg'); }
   async setMessage(v: string): Promise<void> { return this.putStr('login_msg', v); }
   async getIsGraduate(): Promise<boolean> { return this.getBool('isGraduate'); }
