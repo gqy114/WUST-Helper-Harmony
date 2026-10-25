@@ -34,10 +34,10 @@ export class CampusCatApi {
     const items: CampusCatPost[] = Array.isArray(result.data.data) ? result.data.data : (result.data.data?.posts || result.data.data?.list || []);
     return items.map((post: CampusCatPost) => CampusCatApi.normalizePost(post));
   }
-  static async publish(title: string, content: string, tags: string[]): Promise<void> {
+  static async publish(title: string, content: string, tags: string[], images: string[] = []): Promise<void> {
     const token = await AppStorage.getInstance().getAppAuthAccessToken();
     const headers: CatHeaders = { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' };
-    const request: CatPublishRequest = { title, content, tags, images: [] };
+    const request: CatPublishRequest = { title, content, tags, images };
     const result = await HttpRequest.postRawJson<CatResponse>('https://lyzyy.love:8081/api/v1/campus-cat/posts', JSON.stringify(request), headers);
     if (result.data.code !== undefined && result.data.code !== 0 && result.data.code !== 200) throw new Error(result.data.message || 'publish failed');
   }

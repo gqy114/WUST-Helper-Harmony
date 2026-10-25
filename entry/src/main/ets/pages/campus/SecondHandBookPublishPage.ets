@@ -1,6 +1,8 @@
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { SecondHandBookApi } from '../../net/SecondHandBookApi';
+import common from '@ohos.app.ability.common';
+import { CommunityImageService } from '../../utils/CommunityImageService';
 
 @Entry
 @Component
@@ -12,6 +14,8 @@ struct SecondHandBookPublishPage {
   @State private contact: string = '';
   @State private note: string = '';
   @State private submitting: boolean = false;
+  @State private selectedImages: string[] = [];
+  @State private coverImage: string = '';
 
   private async submit(): Promise<void> {
     if (this.submitting) return;
@@ -21,13 +25,57 @@ struct SecondHandBookPublishPage {
     if (!this.contact.trim()) { promptAction.showToast({ message: '请填写联系方式', duration: 1200 }); return; }
     this.submitting = true;
     try {
-      await SecondHandBookApi.publishManual(this.title.trim(), amount, this.edition.trim(), this.meetingPlace.trim(), this.contact.trim(), this.note.trim());
+      const ordered = this.orderedImages();
+      const images = await CommunityImageService.uploadAll(getContext(this) as common.Context, ordered, 'secondhand');
+      await SecondHandBookApi.publishManual(this.title.trim(), amount, this.edition.trim(), this.meetingPlace.trim(), this.contact.trim(), this.note.trim(), images);
       promptAction.showToast({ message: '发布成功', duration: 1200 });
       router.back();
     } catch {
       promptAction.showToast({ message: '发布失败，请稍后重试', duration: 1500 });
     } finally {
       this.submitting = false;
+    }
+  }
+
+  private orderedImages(): string[] {
+    if (!this.coverImage || this.selectedImages.indexOf(this.coverImage) < 0) return this.selectedImages;
+    return [this.coverImage].concat(this.selectedImages.filter((uri: string) => uri !== this.coverImage));
+  }
+
+  private async chooseImages(): Promise<void> {
+    if (this.selectedImages.length >= 9) {
+      promptAction.showToast({ message: '最多选择 9 张图片', duration: 1200 });
+      return;
+    }
+    try {
+      this.selectedImages = await CommunityImageService.select(this.selectedImages, 9);
+      if (!this.coverImage && this.selectedImages.length > 0) this.coverImage = this.selectedImages[0];
+    } catch (error) {
+      console.error('SecondHandBookPublishPage', `choose images failed: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '选择图片失败', duration: 1500 });
+    }
+  }
+
+  private removeImage(uri: string): void {
+    this.selectedImages = this.selectedImages.filter((item: string) => item !== uri);
+    if (this.coverImage === uri) this.coverImage = this.selectedImages.length > 0 ? this.selectedImages[0] : '';
+  }
+
+  @Builder
+  private imageGrid() {
+    if (this.selectedImages.length > 0) {
+      Flex({ wrap: FlexWrap.Wrap }) {
+        ForEach(this.selectedImages, (uri: string) => {
+          Stack({ alignContent: Alignment.TopEnd }) {
+            Image(uri).width(92).height(108).objectFit(ImageFit.Cover).borderRadius(12).onClick(() => { this.coverImage = uri; });
+            if (this.coverImage === uri) {
+              Text('封面').fontSize(13).fontColor(Color.White).backgroundColor('#CC20C894').borderRadius(10).padding({ left: 8, right: 8, top: 3, bottom: 3 }).position({ x: 6, y: 78 });
+            }
+            Text('×').fontSize(18).fontColor(Color.White).textAlign(TextAlign.Center).width(26).height(26)
+              .backgroundColor('#99000000').borderRadius(13).margin(4).onClick(() => this.removeImage(uri));
+          }.width(92).height(108).margin({ right: 10, bottom: 10 });
+        }, (uri: string) => uri)
+      }.width('100%').margin({ top: 16 });
     }
   }
 
@@ -49,9 +97,10 @@ struct SecondHandBookPublishPage {
       Scroll() {
         Column() {
           Column() {
-            Row() { Text('书籍实拍').fontSize(21).fontWeight(FontWeight.Bold).layoutWeight(1); Text('已选 0 张').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#20C894').padding({ left: 14, right: 14, top: 7, bottom: 7 }).backgroundColor('#ECF9F5').borderRadius(18); }.width('100%')
+            Row() { Text('书籍实拍').fontSize(21).fontWeight(FontWeight.Bold).layoutWeight(1); Text(`已选 ${this.selectedImages.length} 张`).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#20C894').padding({ left: 14, right: 14, top: 7, bottom: 7 }).backgroundColor('#ECF9F5').borderRadius(18); }.width('100%')
             Text('最多上传 9 张，点按图片可设为封面').fontSize(16).fontColor('#999999').width('100%').margin({ top: 10 })
-            Column() { Text('+').fontSize(34).fontColor('#20C894'); Text('添加图片').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#20C894').margin({ top: 4 }); }.width(112).height(112).justifyContent(FlexAlign.Center).backgroundColor('#ECF9F5').borderRadius(16).margin({ top: 18, bottom: 22 }).onClick(() => promptAction.showToast({ message: '图片选择暂未开放', duration: 1200 }))
+            this.imageGrid()
+            Column() { Text('+').fontSize(34).fontColor('#20C894'); Text('添加图片').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#20C894').margin({ top: 4 }); }.width(112).height(112).justifyContent(FlexAlign.Center).backgroundColor('#ECF9F5').borderRadius(16).margin({ top: 18, bottom: 22 }).onClick(() => this.chooseImages())
             this.inputField('书名（必填）', this.title, (value: string) => { this.title = value; })
             Row() { Text('¥').fontSize(23).fontWeight(FontWeight.Bold).fontColor('#D0583B').margin({ right: 8 }); TextInput({ placeholder: '售价', text: this.price }).layoutWeight(1).fontSize(20).fontWeight(FontWeight.Bold).type(InputType.Number).backgroundColor(Color.Transparent).onChange((value: string) => { this.price = value; }); Text('整本 / 整套').fontSize(15).fontColor('#777777'); }.width('100%').height(62).padding({ left: 18, right: 18 }).backgroundColor('#F6F6F9').borderRadius(14).margin({ top: 12 })
             Column() { this.selectorPlaceholder('适用专业：请选择'); }.margin({ top: 12 })

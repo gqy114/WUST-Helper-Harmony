@@ -28,14 +28,14 @@ export class SecondHandBookApi {
     });
     return names;
   }
-  static async publishManual(title: string, price: number, edition: string, meetingPlace: string, contact: string, note: string): Promise<void> {
+  static async publishManual(title: string, price: number, edition: string, meetingPlace: string, contact: string, note: string, images: string[] = []): Promise<void> {
     const headers = await SecondHandBookApi.headers();
     const recognize: RecognizeRequest = { isbn: '', title, author: '', publisher: '', edition, category: '', coverUrl: '', listPrice: 0, ocrRaw: '', source: 'manual' };
     const recognized = await HttpRequest.postRawJson<Response<RecognizeData>>('https://lyzyy.love:8081/api/v1/secondhand/recognize', JSON.stringify(recognize), headers);
     const bookId = recognized.data.data?.book?.id || 0;
     if (bookId <= 0) throw new Error(recognized.data.message || 'book recognize failed');
     const fullNote = meetingPlace.trim().length > 0 ? `面交地点：${meetingPlace.trim()}\n${note.trim()}`.trim() : note.trim();
-    const listing: ListingRequest = { bookId, price, condition: '', note: fullNote, images: [], contact, ocrRaw: '' };
+    const listing: ListingRequest = { bookId, price, condition: '', note: fullNote, images, contact, ocrRaw: '' };
     const result = await HttpRequest.postRawJson<Response<SecondhandListing>>('https://lyzyy.love:8081/api/v1/secondhand/listings', JSON.stringify(listing), headers);
     if (result.data.code !== undefined && result.data.code !== 0 && result.data.code !== 200) throw new Error(result.data.message || 'publish failed');
   }

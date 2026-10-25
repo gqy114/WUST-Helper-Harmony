@@ -3,6 +3,8 @@ import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi } from '../../net/CampusWallApi';
 import { CampusCatApi } from '../../net/CampusCatApi';
 import { AppStorage } from '../../store/AppStorage';
+import common from '@ohos.app.ability.common';
+import { CommunityImageService } from '../../utils/CommunityImageService';
 
 interface PublishParams { tag?: string; label?: string; }
 interface LostFoundExtra { type: string; address: string; }
@@ -28,6 +30,7 @@ struct CampusPublishPage {
   @State private lostFoundType: string = 'found';
   @State private teamType: string = 'leader';
   @State private catTags: string[] = [];
+  @State private selectedImages: string[] = [];
 
   async aboutToAppear(): Promise<void> {
     const params = router.getParams() as PublishParams;
@@ -67,7 +70,8 @@ struct CampusPublishPage {
         const teamExtra: TeamExtra = { type: this.teamType };
         extra = JSON.stringify(teamExtra);
       }
-      await CampusWallApi.publish(this.title.trim(), this.content.trim(), publishTag, extra);
+      const images = await CommunityImageService.uploadAll(getContext(this) as common.Context, this.selectedImages, 'wall');
+      await CampusWallApi.publish(this.title.trim(), this.content.trim(), publishTag, extra, images);
       promptAction.showToast({ message: '发布成功', duration: 1200 });
       router.back();
     } catch {
@@ -90,13 +94,46 @@ struct CampusPublishPage {
     }
     this.submitting = true;
     try {
-      await CampusCatApi.publish(this.title.trim(), this.content.trim(), this.catTags);
+      const images = await CommunityImageService.uploadAll(getContext(this) as common.Context, this.selectedImages, 'cat');
+      await CampusCatApi.publish(this.title.trim(), this.content.trim(), this.catTags, images);
       promptAction.showToast({ message: '发布成功', duration: 1200 });
       router.back();
     } catch {
       promptAction.showToast({ message: '发布失败，请稍后重试', duration: 1500 });
     } finally {
       this.submitting = false;
+    }
+  }
+
+  private async chooseImages(): Promise<void> {
+    if (this.selectedImages.length >= 9) {
+      promptAction.showToast({ message: '最多选择 9 张图片', duration: 1200 });
+      return;
+    }
+    try {
+      this.selectedImages = await CommunityImageService.select(this.selectedImages, 9);
+    } catch (error) {
+      console.error('CampusPublishPage', `choose images failed: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '选择图片失败', duration: 1500 });
+    }
+  }
+
+  private removeImage(uri: string): void {
+    this.selectedImages = this.selectedImages.filter((item: string) => item !== uri);
+  }
+
+  @Builder
+  private imageChooser() {
+    if (this.selectedImages.length > 0) {
+      Flex({ wrap: FlexWrap.Wrap }) {
+        ForEach(this.selectedImages, (uri: string, index: number) => {
+          Stack({ alignContent: Alignment.TopEnd }) {
+            Image(uri).width(76).height(76).objectFit(ImageFit.Cover).borderRadius(10);
+            Text('×').fontSize(18).fontColor(Color.White).textAlign(TextAlign.Center).width(26).height(26)
+              .backgroundColor('#99000000').borderRadius(13).margin(4).onClick(() => this.removeImage(uri));
+          }.width(76).height(76).margin({ right: 10, bottom: 10 });
+        }, (uri: string) => uri)
+      }.width('100%').margin({ top: 10 });
     }
   }
 
@@ -113,7 +150,8 @@ struct CampusPublishPage {
             Text(tag).fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.catTags.indexOf(tag) >= 0 ? Color.White : '#707070').textAlign(TextAlign.Center).width(92).height(48).backgroundColor(this.catTags.indexOf(tag) >= 0 ? '#20C894' : '#ECF8F4').borderRadius(16).margin({ right: 10, bottom: 10 }).onClick(() => this.toggleCatTag(tag))
           })
         }.width('100%')
-        Text('+  添加图片（最多 9 张，每张小于 5MB）').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#666666').width('100%').height(64).textAlign(TextAlign.Center).backgroundColor('#ECF8F4').borderRadius(16).margin({ top: 4 }).onClick(() => promptAction.showToast({ message: '图片功能待图片选择图标和上传流程接入', duration: 1500 }))
+        this.imageChooser()
+        Text(`+  添加图片（${this.selectedImages.length}/9，每张小于 5MB）`).fontSize(17).fontWeight(FontWeight.Bold).fontColor('#666666').width('100%').height(64).textAlign(TextAlign.Center).backgroundColor('#ECF8F4').borderRadius(16).margin({ top: 4 }).onClick(() => this.chooseImages())
         Row() {
           Button('取消').layoutWeight(1).height(58).fontSize(20).fontWeight(FontWeight.Bold).fontColor(Color.White).backgroundColor('#E26B58').borderRadius(10).margin({ right: 18 }).onClick(() => router.back())
           Button(this.submitting ? '发布中…' : '发布').layoutWeight(1).height(58).fontSize(20).fontWeight(FontWeight.Bold).fontColor(Color.White).backgroundColor(this.submitting ? '#A4DDBB' : '#55D900').borderRadius(10).onClick(() => this.submitCat())
@@ -212,12 +250,14 @@ struct CampusPublishPage {
               }.width('100%').alignItems(VerticalAlign.Center).margin({ top: 10 })
             }
 
+            this.imageChooser()
+
             Row() {
               this.formatButton('B', this.bold, () => { this.bold = !this.bold; })
               this.formatButton('/', this.italic, () => { this.italic = !this.italic; })
               this.formatButton('U', this.underline, () => { this.underline = !this.underline; })
               this.formatButton('S', this.strike, () => { this.strike = !this.strike; })
-              Text('图片').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#20C894').textAlign(TextAlign.Center).width(72).height(42).backgroundColor('#ECFAF6').borderRadius(16).onClick(() => promptAction.showToast({ message: '图片功能待图标和上传接口接入', duration: 1400 }))
+              Text(this.selectedImages.length > 0 ? `图片 ${this.selectedImages.length}` : '图片').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#20C894').textAlign(TextAlign.Center).width(72).height(42).backgroundColor('#ECFAF6').borderRadius(16).onClick(() => this.chooseImages())
             }.width('100%').justifyContent(FlexAlign.SpaceBetween).margin({ top: 14 })
 
             Row() {

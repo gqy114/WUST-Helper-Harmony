@@ -95,10 +95,10 @@ export class CampusWallApi {
       { content }, await CampusWallApi.headers());
   }
 
-  static async publish(title: string, content: string, tag: string = 'wall', extra: string = '{}'): Promise<void> {
+  static async publish(title: string, content: string, tag: string = 'wall', extra: string = '{}', images: string[] = []): Promise<void> {
     const response = await HttpRequest.postJson<PublishResponse>(
       'https://lyzyy.love:8081/api/v1/campus-wall/posts',
-      { title, content, tag, extra, images: '[]' }, await CampusWallApi.headers());
+      { title, content, tag, extra, images: JSON.stringify(images) }, await CampusWallApi.headers());
     const code = response.data.code;
     if (code !== undefined && code !== 0 && code !== 200) throw new Error(response.data.message || 'publish failed');
   }
