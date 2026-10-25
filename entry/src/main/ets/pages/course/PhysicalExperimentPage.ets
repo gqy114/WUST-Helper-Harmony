@@ -4,6 +4,9 @@ import { CourseStore } from '../../store/CourseStore';
 import { CourseData, CourseTimeSlot, TIME_SLOTS_HUANGJIAHU } from '../../model/CourseModel';
 import { AppStorage } from '../../store/AppStorage';
 import { CourseApi } from '../../net/CourseApi';
+import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
+import common from '@ohos.app.ability.common';
+import { calendarManager } from '@kit.CalendarKit';
 
 interface DateParts { year: number; month: number; day: number; }
 
@@ -16,6 +19,7 @@ export struct PhysicalExperimentPage {
   @State private showLogin: boolean = false;
   @State private studentId: string = '';
   @State private physicalPassword: string = '';
+  @State private importingCalendar: boolean = false;
   private store: CourseStore = CourseStore.getInstance();
 
   aboutToAppear(): void { this.prepare(); }
@@ -160,6 +164,91 @@ export struct PhysicalExperimentPage {
     promptAction.showToast({ message: added > 0 ? `已导入${added}门实验课程` : '实验课程已在课表中' });
   }
 
+  private async requestCalendarPermission(): Promise<boolean> {
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      const result = await abilityAccessCtrl.createAtManager().requestPermissionsFromUser(context, [
+        'ohos.permission.READ_CALENDAR', 'ohos.permission.WRITE_CALENDAR'
+      ]);
+      const authResults = result.authResults;
+      const granted = authResults !== undefined && authResults.length >= 2 &&
+        authResults[0] === 0 && authResults[1] === 0;
+      if (!granted) promptAction.showToast({ message: '日历权限被拒绝，无法导入', duration: 2000 });
+      return granted;
+    } catch (error) {
+      console.error('PhysicalExperimentPage', `calendar permission error: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '日历权限申请失败', duration: 1800 });
+      return false;
+    }
+  }
+
+  private createCalendarEvent(item: PhysicalExperimentCourse): calendarManager.Event | undefined {
+    const date = this.parseDate(item.date || '');
+    const startMinutes = this.clockMinutes(item.startClock || '');
+    const endMinutes = this.clockMinutes(item.endClock || '');
+    if (!date || startMinutes < 0 || endMinutes <= startMinutes) return undefined;
+    const startTime = new Date(date.year, date.month - 1, date.day,
+      Math.floor(startMinutes / 60), startMinutes % 60, 0, 0);
+    const endTime = new Date(date.year, date.month - 1, date.day,
+      Math.floor(endMinutes / 60), endMinutes % 60, 0, 0);
+    return {
+      type: calendarManager.EventType.NORMAL,
+      title: item.courseName || item.className || item.name || item.course || '物理实验',
+      location: { location: item.classroom || '', longitude: 0, latitude: 0 },
+      startTime: startTime.getTime(), endTime: endTime.getTime(),
+      description: `物理实验 ${item.startClock || ''}-${item.endClock || ''}`
+    };
+  }
+
+  private eventKey(item: PhysicalExperimentCourse): string {
+    return `${item.date || ''}|${item.startClock || ''}|${item.endClock || ''}|` +
+      `${item.courseName || item.className || item.name || item.course || ''}|${item.classroom || ''}`;
+  }
+
+  private async importToCalendar(): Promise<void> {
+    if (this.importingCalendar || this.courses.length === 0) return;
+    if (!await this.requestCalendarPermission()) return;
+    this.importingCalendar = true;
+    try {
+      const storage = AppStorage.getInstance();
+      const raw = await storage.getSettingString('physicalExperimentCalendarKeys', '');
+      const savedKeys: string[] = raw ? JSON.parse(raw) as string[] : [];
+      const manager = calendarManager.getCalendarManager(getContext(this) as common.Context);
+      const calendar = await manager.getCalendar();
+      let imported = 0;
+      let skipped = 0;
+      for (let i = 0; i < this.courses.length; i++) {
+        const item = this.courses[i];
+        const key = this.eventKey(item);
+        if (savedKeys.indexOf(key) >= 0) {
+          skipped++;
+          continue;
+        }
+        const event = this.createCalendarEvent(item);
+        if (!event) {
+          skipped++;
+          continue;
+        }
+        await calendar.addEvent(event);
+        savedKeys.push(key);
+        await storage.setSettingString('physicalExperimentCalendarKeys', JSON.stringify(savedKeys));
+        imported++;
+      }
+      if (imported > 0) {
+        promptAction.showToast({ message: `已按准确时间导入${imported}门实验到日程`, duration: 2000 });
+      } else if (skipped > 0) {
+        promptAction.showToast({ message: '实验日程已导入，无需重复添加', duration: 1800 });
+      } else {
+        promptAction.showToast({ message: '没有可导入的实验日程', duration: 1800 });
+      }
+    } catch (error) {
+      console.error('PhysicalExperimentPage', `calendar import error: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '导入日程失败，请检查日历权限', duration: 2000 });
+    } finally {
+      this.importingCalendar = false;
+    }
+  }
+
   build() {
     Stack({ alignContent: Alignment.Center }) {
       Column() {
@@ -196,7 +285,10 @@ export struct PhysicalExperimentPage {
                 }.width('100%').padding(16).backgroundColor(Color.White).borderRadius(10).margin({ bottom: 10 })
               })
               Button('导入到课表').width('90%').height(48).backgroundColor('#1ec98d').fontColor(Color.White)
-                .margin({ top: 12, bottom: 24 }).onClick(() => this.importCourses())
+                .margin({ top: 12, bottom: 10 }).onClick(() => this.importCourses())
+              Button(this.importingCalendar ? '正在导入日程...' : '导入到日程').width('90%').height(48)
+                .backgroundColor(Color.White).fontColor('#1ec98d').border({ width: 1, color: '#1ec98d' })
+                .margin({ bottom: 24 }).enabled(!this.importingCalendar).onClick(() => this.importToCalendar())
             }.width('100%').padding(16)
           }.width('100%').layoutWeight(1)
         }
