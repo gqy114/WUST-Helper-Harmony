@@ -6,6 +6,7 @@ import { CourseData } from '../model/CourseModel';
 const UG_COURSE_TABLE_URL = 'https://lyzyy.love/UnderGraduate/Support/getCoursesPage';
 const UG_COURSE_TABLE_BACKUP_URL = 'https://www.lyzyy.love/UnderGraduate/Support/getCoursesPage';
 const UG_COURSE_TABLE_LEGACY_URL = 'https://lyzyy.love/UnderGraduate/Support/getCoursesPage';
+const UG_COURSE_SEARCH_URL = 'https://lyzyy.love/UnderGraduate/Support/searchCourses';
 
 /** 学期起始日接口（用于计算真实当前周）。 */
 const UG_TERM_STARTDATE_URL = 'https://lyzyy.love/UnderGraduate/Support/getData';
@@ -101,6 +102,29 @@ function normalizeItem(raw: CourseApiRawItem): CourseData {
 }
 
 export class CourseApi {
+  static async searchCourses(semester: string, token: string, courseName: string, teacher: string,
+    classroom: string, weekDay: number, startSection: number, endSection: number): Promise<CourseData[]> {
+    const params: string[] = [`semester=${encodeURIComponent(semester)}`];
+    if (courseName.trim().length > 0) params.push(`courseName=${encodeURIComponent(courseName.trim())}`);
+    if (teacher.trim().length > 0) params.push(`teacherName=${encodeURIComponent(teacher.trim())}`);
+    if (classroom.trim().length > 0) params.push(`classroom=${encodeURIComponent(classroom.trim())}`);
+    if (weekDay > 0) params.push(`weekDay=${weekDay}`);
+    if (startSection > 0 && endSection > 0) params.push(`section=${startSection}-${endSection}`);
+    const headers: CourseHeaders = {
+      Authorization: token.trim().startsWith('Bearer ') ? token.trim() : `Bearer ${token.trim()}`,
+      Platform: 'android', Accept: 'application/json'
+    };
+    const result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_SEARCH_URL}?${params.join('&')}`, headers);
+    const response = result.data;
+    if (!response || (response.code !== 0 && response.code !== 200 && response.code !== 10000)) {
+      throw new Error(response?.msg || '课程查询失败');
+    }
+    const raw = response.data || [];
+    const courses: CourseData[] = [];
+    for (let i = 0; i < raw.length; i++) courses.push(normalizeItem(raw[i]));
+    return courses;
+  }
+
   /**
    * 按学期获取当前课表
    * @param semester 学期字符串，如 "2025-2026-1"

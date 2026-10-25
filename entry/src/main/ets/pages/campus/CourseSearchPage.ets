@@ -30,45 +30,39 @@ struct CourseSearchPage {
 
   private openPicker(type: string): void {
     this.picker = type;
-    this.pendingWeekday = this.weekday || '周一';
-    this.pendingStart = this.startPeriod;
-    this.pendingEnd = this.endPeriod;
+    this.pendingWeekday = this.weekday || '不限';
+    this.pendingStart = this.periodSelected ? this.startPeriod : 0;
+    this.pendingEnd = this.periodSelected ? this.endPeriod : 0;
   }
 
   private confirmPicker(): void {
-    if (this.picker === 'period' && this.pendingEnd < this.pendingStart) {
+    if (this.picker === 'period' && ((this.pendingStart === 0) !== (this.pendingEnd === 0))) {
+      promptAction.showToast({ message: '开始和结束节次需同时选择', duration: 1500 });
+      return;
+    }
+    if (this.picker === 'period' && this.pendingStart > 0 && this.pendingEnd < this.pendingStart) {
       promptAction.showToast({ message: '请选择正确范围', duration: 1500 });
       return;
     }
     if (this.picker === 'weekday') {
-      this.weekday = this.pendingWeekday;
+      this.weekday = this.pendingWeekday === '不限' ? '' : this.pendingWeekday;
     } else {
-      this.startPeriod = this.pendingStart;
-      this.endPeriod = this.pendingEnd;
-      this.periodSelected = true;
+      this.periodSelected = this.pendingStart > 0 && this.pendingEnd > 0;
+      if (this.periodSelected) { this.startPeriod = this.pendingStart; this.endPeriod = this.pendingEnd; }
     }
     this.picker = '';
   }
 
   private async search(): Promise<void> {
-    if (this.courseName.trim().length === 0 && this.teacher.trim().length === 0 && this.classroom.trim().length === 0) {
-      promptAction.showToast({ message: '请至少输入一项查询条件', duration: 1500 });
-      return;
-    }
     this.searching = true;
     try {
       const storage = AppStorage.getInstance();
-      const response = await CourseApi.getCourseTable(await storage.getSemester(), await storage.getToken());
-      const name = this.courseName.trim().toLowerCase();
-      const teacher = this.teacher.trim().toLowerCase();
-      const room = this.classroom.trim().toLowerCase();
-      const courses: CourseData[] = response.data || [];
-      this.results = courses.filter((item: CourseData) => {
-        const weekdayMatches = this.weekday.length === 0 || `周${['一', '二', '三', '四', '五', '六', '日'][item.dayOfWeek - 1]}` === this.weekday;
-        const periodMatches = !this.periodSelected || (item.startPeriod <= this.endPeriod && item.endPeriod >= this.startPeriod);
-        return item.courseName.toLowerCase().indexOf(name) >= 0 && item.teacher.toLowerCase().indexOf(teacher) >= 0 &&
-          item.location.toLowerCase().indexOf(room) >= 0 && weekdayMatches && periodMatches;
-      });
+      const semester = await storage.getSemester();
+      const token = await storage.getToken();
+      await CourseApi.getCourseTable(semester, token);
+      const weekDay = this.weekday.length > 0 ? ['周一', '周二', '周三', '周四', '周五', '周六', '周日'].indexOf(this.weekday) + 1 : 0;
+      this.results = await CourseApi.searchCourses(semester, token, this.courseName, this.teacher, this.classroom,
+        weekDay, this.periodSelected ? this.startPeriod : 0, this.periodSelected ? this.endPeriod : 0);
       if (this.results.length === 0) promptAction.showToast({ message: '没有找到符合条件的课程', duration: 1500 });
     } catch {
       promptAction.showToast({ message: '课程查询失败，请稍后重试', duration: 1500 });
@@ -88,20 +82,20 @@ struct CourseSearchPage {
             .onClick(() => this.confirmPicker());
         }.width('100%').height(54).padding({ left: 20, right: 20 });
         if (this.picker === 'weekday') {
-          TextPicker({ range: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'], selected: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'].indexOf(this.pendingWeekday) })
+          TextPicker({ range: ['不限', '周一', '周二', '周三', '周四', '周五', '周六', '周日'], selected: ['不限', '周一', '周二', '周三', '周四', '周五', '周六', '周日'].indexOf(this.pendingWeekday) })
             .width('100%').height(250).onChange((value: string | string[], index: number | number[]) => {
               const selected = Array.isArray(index) ? index[0] : index;
-              this.pendingWeekday = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][selected];
+              this.pendingWeekday = ['不限', '周一', '周二', '周三', '周四', '周五', '周六', '周日'][selected];
             });
         } else {
           Row() {
-            TextPicker({ range: ['第1节', '第2节', '第3节', '第4节', '第5节', '第6节', '第7节', '第8节', '第9节', '第10节', '第11节', '第12节'], selected: this.pendingStart - 1 })
+            TextPicker({ range: ['不限', '第1节', '第2节', '第3节', '第4节', '第5节', '第6节', '第7节', '第8节', '第9节', '第10节', '第11节', '第12节'], selected: this.pendingStart })
               .layoutWeight(1).height(250).onChange((value: string | string[], index: number | number[]) => {
-                const selected = Array.isArray(index) ? index[0] : index; this.pendingStart = selected + 1;
+                const selected = Array.isArray(index) ? index[0] : index; this.pendingStart = selected;
               });
-            TextPicker({ range: ['第1节', '第2节', '第3节', '第4节', '第5节', '第6节', '第7节', '第8节', '第9节', '第10节', '第11节', '第12节'], selected: this.pendingEnd - 1 })
+            TextPicker({ range: ['不限', '第1节', '第2节', '第3节', '第4节', '第5节', '第6节', '第7节', '第8节', '第9节', '第10节', '第11节', '第12节'], selected: this.pendingEnd })
               .layoutWeight(1).height(250).onChange((value: string | string[], index: number | number[]) => {
-                const selected = Array.isArray(index) ? index[0] : index; this.pendingEnd = selected + 1;
+                const selected = Array.isArray(index) ? index[0] : index; this.pendingEnd = selected;
               });
           }.width('100%');
         }
