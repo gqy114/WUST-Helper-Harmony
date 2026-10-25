@@ -21,6 +21,7 @@
     "pages/countdown/CountdownPage",
     "pages/main/ElectricityPage",
     "pages/campus/ClassroomQueryPage",
+    "pages/campus/CourseSearchPage",
     "pages/campus/EmptyClassroomQueryPage",
     "pages/campus/ClassroomResultPage",
     "pages/campus/SchoolBusPage",
