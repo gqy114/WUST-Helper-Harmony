@@ -11,15 +11,27 @@ struct SecondHandBookPage {
   @State private searching: boolean = false;
   @State private loading: boolean = true;
   @State private avatarUrl: string = '';
+  @State private selfMajor: string = '';
+  @State private majors: string[] = [];
   @State private filterOpen: boolean = false;
+  @State private activeMajor: string = '全部专业';
+  @State private pendingMajor: string = '全部专业';
   @State private activeCampus: string = '全部校区';
   @State private pendingCampus: string = '全部校区';
   @State private activeSort: string = '默认排序';
   @State private pendingSort: string = '默认排序';
 
-  aboutToAppear(): void { this.load(); this.loadAvatar(); }
+  aboutToAppear(): void { this.load(); this.loadProfile(); this.loadMajors(); }
 
-  private async loadAvatar(): Promise<void> { this.avatarUrl = await AppStorage.getInstance().getAvatarUrl(); }
+  private async loadProfile(): Promise<void> {
+    const storage = AppStorage.getInstance();
+    this.avatarUrl = await storage.getAvatarUrl();
+    this.selfMajor = await storage.getMajor();
+  }
+
+  private async loadMajors(): Promise<void> {
+    try { this.majors = await SecondHandBookApi.majors(); } catch { this.majors = []; }
+  }
 
   private async load(): Promise<void> {
     this.loading = true;
@@ -36,8 +48,17 @@ struct SecondHandBookPage {
     return text.indexOf(this.activeCampus.toLowerCase()) >= 0;
   }
 
+  private majorMatches(item: SecondhandListing): boolean {
+    if (this.activeMajor === '全部专业') return true;
+    const itemMajor = (item.major || '').trim();
+    if (this.activeMajor === '我的专业') return this.selfMajor.length > 0 && itemMajor.indexOf(this.selfMajor) >= 0;
+    return itemMajor.indexOf(this.activeMajor) >= 0;
+  }
+
+  private majorOptions(): string[] { return ['全部专业', '我的专业'].concat(this.majors); }
+
   private visibleListings(): SecondhandListing[] {
-    const result = this.listings.filter((item: SecondhandListing) => this.campusMatches(item));
+    const result = this.listings.filter((item: SecondhandListing) => this.majorMatches(item) && this.campusMatches(item));
     if (this.activeSort === '最新发布') return result.sort((a: SecondhandListing, b: SecondhandListing) => (b.createdAt || 0) - (a.createdAt || 0));
     if (this.activeSort === '价格升序') return result.sort((a: SecondhandListing, b: SecondhandListing) => (a.price || 0) - (b.price || 0));
     if (this.activeSort === '价格降序') return result.sort((a: SecondhandListing, b: SecondhandListing) => (b.price || 0) - (a.price || 0));
@@ -45,6 +66,7 @@ struct SecondHandBookPage {
   }
 
   private openFilter(): void {
+    this.pendingMajor = this.activeMajor;
     this.pendingCampus = this.activeCampus;
     this.pendingSort = this.activeSort;
     animateTo({ duration: 240, curve: Curve.EaseInOut }, () => { this.filterOpen = true; });
@@ -53,6 +75,7 @@ struct SecondHandBookPage {
   private closeFilter(): void { animateTo({ duration: 240, curve: Curve.EaseInOut }, () => { this.filterOpen = false; }); }
 
   private applyFilter(): void {
+    this.activeMajor = this.pendingMajor;
     this.activeCampus = this.pendingCampus;
     this.activeSort = this.pendingSort;
     this.closeFilter();
@@ -80,6 +103,14 @@ struct SecondHandBookPage {
 
       if (this.filterOpen) {
         Column() {
+          Text('选择专业').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
+          Scroll() {
+            Flex({ wrap: FlexWrap.Wrap }) {
+              ForEach(this.majorOptions(), (item: string) => {
+                Column() { this.optionTag(item, this.pendingMajor === item); }.onClick(() => { this.pendingMajor = item; });
+              })
+            }.width('100%');
+          }.width('100%').height(this.majors.length > 4 ? 138 : 54).scrollBar(BarState.Auto)
           Text('选择校区').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
           Flex({ wrap: FlexWrap.Wrap }) {
             ForEach(['全部校区', '黄家湖', '青山', '洪山'], (item: string) => {
