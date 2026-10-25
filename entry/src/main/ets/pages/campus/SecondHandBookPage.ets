@@ -1,6 +1,7 @@
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { SecondHandBookApi, SecondhandListing } from '../../net/SecondHandBookApi';
+import { AppStorage } from '../../store/AppStorage';
 
 @Entry
 @Component
@@ -9,14 +10,16 @@ struct SecondHandBookPage {
   @State private query: string = '';
   @State private searching: boolean = false;
   @State private loading: boolean = true;
+  @State private avatarUrl: string = '';
   @State private filterOpen: boolean = false;
-  @State private filterType: string = '';
   @State private activeCampus: string = '全部校区';
   @State private pendingCampus: string = '全部校区';
   @State private activeSort: string = '默认排序';
   @State private pendingSort: string = '默认排序';
 
-  aboutToAppear(): void { this.load(); }
+  aboutToAppear(): void { this.load(); this.loadAvatar(); }
+
+  private async loadAvatar(): Promise<void> { this.avatarUrl = await AppStorage.getInstance().getAvatarUrl(); }
 
   private async load(): Promise<void> {
     this.loading = true;
@@ -41,32 +44,18 @@ struct SecondHandBookPage {
     return result;
   }
 
-  private openCampusFilter(): void {
+  private openFilter(): void {
     this.pendingCampus = this.activeCampus;
-    this.filterType = 'campus';
-    animateTo({ duration: 240, curve: Curve.EaseInOut }, () => { this.filterOpen = true; });
-  }
-
-  private openSortFilter(): void {
     this.pendingSort = this.activeSort;
-    this.filterType = 'sort';
     animateTo({ duration: 240, curve: Curve.EaseInOut }, () => { this.filterOpen = true; });
   }
 
   private closeFilter(): void { animateTo({ duration: 240, curve: Curve.EaseInOut }, () => { this.filterOpen = false; }); }
 
   private applyFilter(): void {
-    if (this.filterType === 'campus') this.activeCampus = this.pendingCampus;
-    if (this.filterType === 'sort') this.activeSort = this.pendingSort;
+    this.activeCampus = this.pendingCampus;
+    this.activeSort = this.pendingSort;
     this.closeFilter();
-  }
-
-  @Builder
-  private filterButton(label: string) {
-    Row() {
-      Text(label).fontSize(17).fontWeight(FontWeight.Bold).fontColor('#50535A').maxLines(1);
-      Text('▾').fontSize(15).fontColor('#777A80').margin({ left: 8 });
-    }.justifyContent(FlexAlign.Center).height(52).layoutWeight(1)
   }
 
   @Builder
@@ -82,38 +71,26 @@ struct SecondHandBookPage {
         Text('‹').fontSize(42).width(48).onClick(() => router.back());
         Text('二手书').fontSize(28).fontWeight(FontWeight.Bold).margin({ left: 12 });
         Blank().layoutWeight(1);
-        Image($r('app.media.search')).width(25).height(25).onClick(() => { this.searching = !this.searching; });
+        Image($r('app.media.filter')).width(24).height(24).margin({ right: 18 }).onClick(() => {
+          if (this.filterOpen) this.closeFilter(); else this.openFilter();
+        });
+        Image($r('app.media.search')).width(25).height(25).margin({ right: 18 }).onClick(() => { this.searching = !this.searching; });
+        Image(this.avatarUrl || $r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover);
       }.width('100%').height(76).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
-
-      if (this.searching) {
-        Row() {
-          TextInput({ placeholder: '搜索书名、作者', text: this.query }).layoutWeight(1).fontSize(18)
-            .onChange((value: string) => { this.query = value; }).onSubmit(() => this.load());
-          Text('搜索').fontSize(17).fontColor('#857A25').margin({ left: 10 }).onClick(() => this.load());
-        }.width('92%').height(52).padding({ left: 16, right: 12 }).backgroundColor(Color.White).borderRadius(26);
-      }
-
-      Row() {
-        Column() { this.filterButton('全部专业'); }.layoutWeight(1)
-          .onClick(() => promptAction.showToast({ message: '专业筛选稍后开放', duration: 1100 }));
-        Column() { this.filterButton(this.activeCampus); }.layoutWeight(1).onClick(() => this.openCampusFilter());
-        Column() { this.filterButton(this.activeSort); }.layoutWeight(1).onClick(() => this.openSortFilter());
-      }.width('100%').padding({ left: 10, right: 10, top: 4, bottom: 4 });
 
       if (this.filterOpen) {
         Column() {
-          Text(this.filterType === 'campus' ? '选择校区' : '选择排序方式')
-            .fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
+          Text('选择校区').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
           Flex({ wrap: FlexWrap.Wrap }) {
-            if (this.filterType === 'campus') {
-              ForEach(['全部校区', '黄家湖', '青山', '洪山'], (item: string) => {
-                Column() { this.optionTag(item, this.pendingCampus === item); }.onClick(() => { this.pendingCampus = item; });
-              })
-            } else {
-              ForEach(['默认排序', '最新发布', '价格升序', '价格降序'], (item: string) => {
-                Column() { this.optionTag(item, this.pendingSort === item); }.onClick(() => { this.pendingSort = item; });
-              })
-            }
+            ForEach(['全部校区', '黄家湖', '青山', '洪山'], (item: string) => {
+              Column() { this.optionTag(item, this.pendingCampus === item); }.onClick(() => { this.pendingCampus = item; });
+            })
+          }.width('100%');
+          Text('排序方式').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ top: 6, bottom: 10 });
+          Flex({ wrap: FlexWrap.Wrap }) {
+            ForEach(['默认排序', '最新发布', '价格升序', '价格降序'], (item: string) => {
+              Column() { this.optionTag(item, this.pendingSort === item); }.onClick(() => { this.pendingSort = item; });
+            })
           }.width('100%');
           Row() {
             Text('取消').fontSize(17).fontColor('#999999').layoutWeight(1).onClick(() => this.closeFilter());
@@ -123,6 +100,14 @@ struct SecondHandBookPage {
           .shadow({ radius: 12, color: '#22000000', offsetY: 3 })
           .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: 0, y: -80 })))
           .animation({ duration: 240, curve: Curve.EaseInOut });
+      }
+
+      if (this.searching) {
+        Row() {
+          TextInput({ placeholder: '搜索书名、作者', text: this.query }).layoutWeight(1).fontSize(18)
+            .onChange((value: string) => { this.query = value; }).onSubmit(() => this.load());
+          Text('搜索').fontSize(17).fontColor('#857A25').margin({ left: 10 }).onClick(() => this.load());
+        }.width('92%').height(52).padding({ left: 16, right: 12 }).backgroundColor(Color.White).borderRadius(26).margin({ bottom: 10 });
       }
 
       Scroll() {
