@@ -54,6 +54,10 @@ struct CourseSearchPage {
   }
 
   private async search(): Promise<void> {
+    if (this.courseName.trim().length === 0) {
+      promptAction.showToast({ message: '请输入课程名', duration: 1500 });
+      return;
+    }
     this.searching = true;
     try {
       const storage = AppStorage.getInstance();
@@ -112,7 +116,7 @@ struct CourseSearchPage {
         }.width('100%').height(56).padding({ left: 16 }).alignItems(VerticalAlign.Center).backgroundColor('#20C894');
         Scroll() {
           Column() {
-            this.field(this.courseName, '课程名', (value: string) => { this.courseName = value; });
+            this.field(this.courseName, '课程名（必填）', (value: string) => { this.courseName = value; });
             this.field(this.teacher, '教师（可选）', (value: string) => { this.teacher = value; });
             this.field(this.classroom, '教室（可选）', (value: string) => { this.classroom = value; });
             Text(this.weekday || '请选择星期（可选）').width('92%').height(58).fontSize(18).fontColor(this.weekday ? '#666666' : '#AAAAAA')
