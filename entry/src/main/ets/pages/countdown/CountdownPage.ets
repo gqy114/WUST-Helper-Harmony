@@ -41,7 +41,7 @@ struct CountdownPage {
       if (!term) term = await storage.getSelectSemester();
       exams = await CountdownApi.listExams(term);
     } catch { console.warn('CountdownPage', '考试列表获取失败'); }
-    this.events = custom.concat(exams);
+    this.events = custom.concat(exams).sort((a: CountdownItem, b: CountdownItem) => this.eventTimestamp(a.time) - this.eventTimestamp(b.time));
     this.eventCount = this.events.length;
     this.loading = false;
   }
@@ -52,6 +52,32 @@ struct CountdownPage {
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const day = date.getDate().toString().padStart(2, '0');
     this.currentDate = year + '-' + month + '-' + day;
+  }
+
+  private eventTimestamp(value: string): number {
+    const dateMatch: RegExpExecArray | null = /(\d{4})\D+(\d{1,2})\D+(\d{1,2})/.exec(value);
+    if (!dateMatch) return Number.MAX_SAFE_INTEGER;
+    const timeMatch: RegExpExecArray | null = /(\d{1,2}):(\d{2})/.exec(value);
+    const hour = timeMatch ? Number(timeMatch[1]) : 0;
+    const minute = timeMatch ? Number(timeMatch[2]) : 0;
+    return new Date(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]), hour, minute).getTime();
+  }
+
+  private daysUntil(value: string): number {
+    const timestamp = this.eventTimestamp(value);
+    if (timestamp === Number.MAX_SAFE_INTEGER) return 0;
+    const today = new Date();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    return Math.max(0, Math.ceil((timestamp - startOfToday) / 86400000));
+  }
+
+  private itemDetail(item: CountdownItem): string {
+    const details: string[] = [];
+    if (item.examType) details.push(`形式：${item.examType}`);
+    if (item.location || item.comment) details.push(`地点：${item.location || item.comment}`);
+    if (item.seatNumber) details.push(`座位：${item.seatNumber}`);
+    if (details.length === 0 && item.comment) details.push(item.comment);
+    return details.join(' · ');
   }
 
   private addCountdown(): void {
@@ -195,7 +221,7 @@ struct CountdownPage {
               .height(28)
               .fillColor('#FFFFFF')
               .margin({ right: 20 })
-              .onClick(() => this.updateDate())
+              .onClick(() => { this.updateDate(); this.loadCountdowns(); })
           }
           .width('100%')
           .height(70)
@@ -235,11 +261,25 @@ struct CountdownPage {
             }
           } else {
             Scroll() { Column() {
-              ForEach(this.events, (item: CountdownItem) => Column() {
-                Text(item.name).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#333333').width('100%');
-                Text(item.time).fontSize(16).fontColor('#20C78A').margin({ top: 8 });
-                if (item.comment.length > 0) { Text(item.comment).fontSize(14).fontColor('#888888').margin({ top: 6 }); }
-              }.width('92%').padding(18).backgroundColor(Color.White).borderRadius(16).margin({ bottom: 12 }), (item: CountdownItem) => item.uuid);
+              ForEach(this.events, (item: CountdownItem) => Row() {
+                Column().width(5).height(92).backgroundColor(item.source === 'exam' ? '#FFAA54' : '#20C78A').margin({ right: 18 });
+                Column() {
+                  Text(`${item.source === 'exam' ? '[考试] ' : ''}${item.name}`).fontSize(21).fontWeight(FontWeight.Bold)
+                    .fontColor('#333333').width('100%').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+                  Text(item.time || '时间待定').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#66736F').width('100%').margin({ top: 9 });
+                  if (this.itemDetail(item).length > 0) {
+                    Text(this.itemDetail(item)).fontSize(15).fontColor('#7A8581').width('100%').maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 8 });
+                  }
+                }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+                Column() {
+                  Text(`${this.daysUntil(item.time)}`).fontSize(38).fontWeight(FontWeight.Bold)
+                    .fontColor(item.source === 'exam' ? '#FFAA54' : '#20C78A');
+                  Text('天').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#666666').margin({ top: 3 });
+                }.width(64).alignItems(HorizontalAlign.Center).justifyContent(FlexAlign.Center);
+              }.width('92%').padding({ left: 12, right: 16, top: 16, bottom: 16 }).backgroundColor(Color.White)
+                .borderRadius(16).shadow({ radius: 6, color: '#18000000', offsetY: 2 }).margin({ bottom: 14 }),
+                (item: CountdownItem) => item.uuid);
             }.width('100%').alignItems(HorizontalAlign.Center) }.width('100%').height('100%').scrollBar(BarState.Off)
           }
         }
