@@ -661,8 +661,11 @@ export struct CoursePage {
 
   private courseBackground(course: CourseData): Resource {
     if (!isCourseInWeek(course, this.currentWeek)) return $r('app.media.not_this_week_course');
-    if ((course.courseName || '').includes('物理实验')) return $r('app.media.physics_experiment');
-    if ((course.courseName || '').includes('体育')) return $r('app.media.pe_course');
+    const courseName = course.courseName || '';
+    if (course.isPhysicalExperiment === true || courseName.includes('物理实验') || /^实验\d+-\d+/.test(courseName)) {
+      return $r('app.media.physics_experiment');
+    }
+    if (courseName.includes('体育')) return $r('app.media.pe_course');
     return $r('app.media.normal_course');
   }
 
