@@ -57,6 +57,7 @@ struct CampusPublishPage {
 
   private async submit(): Promise<void> {
     if (this.submitting) return;
+    if (this.tag !== 'cat') this.syncEditorContent();
     if (this.title.trim().length === 0 || this.content.trim().length === 0) {
       promptAction.showToast({ message: '请填写标题和内容', duration: 1200 });
       return;
@@ -125,9 +126,39 @@ struct CampusPublishPage {
     this.selectedImages = this.selectedImages.filter((item: string) => item !== uri);
   }
 
+  private escapeHtml(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  private plainEditorContent(value: string): string {
+    return value.replace(/<br\s*\/?>/gi, '\n').replace(/<\/?(?:p|div)[^>]*>/gi, '\n')
+      .replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+      .replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   private syncEditorContent(): void {
     const spans: RichEditorTextSpanResult[] = this.editorController.getSpans() as RichEditorTextSpanResult[];
-    this.content = spans.map((span: RichEditorTextSpanResult): string => span.value).join('');
+    this.content = spans.map((span: RichEditorTextSpanResult): string => {
+      let value = this.escapeHtml(span.value);
+      const style = span.textStyle;
+      if (style.fontWeight >= 600) value = `<b>${value}</b>`;
+      if (style.fontStyle === FontStyle.Italic) value = `<i>${value}</i>`;
+      if (style.decoration.type === TextDecorationType.Underline) value = `<u>${value}</u>`;
+      if (style.decoration.type === TextDecorationType.LineThrough) value = `<s>${value}</s>`;
+      return value;
+    }).join('');
+  }
+
+  private syncFormatState(range: RichEditorRange): void {
+    if ((range.start || 0) === (range.end || 0)) return;
+    const spans = this.editorController.getSpans(range) as RichEditorTextSpanResult[];
+    if (spans.length === 0) return;
+    this.bold = spans.every((span: RichEditorTextSpanResult) => span.textStyle.fontWeight >= 600);
+    this.italic = spans.every((span: RichEditorTextSpanResult) => span.textStyle.fontStyle === FontStyle.Italic);
+    this.underline = spans.every((span: RichEditorTextSpanResult) => span.textStyle.decoration.type === TextDecorationType.Underline);
+    this.strike = spans.every((span: RichEditorTextSpanResult) => span.textStyle.decoration.type === TextDecorationType.LineThrough);
   }
 
   private applyFormat(kind: string): void {
@@ -164,6 +195,7 @@ struct CampusPublishPage {
     };
     this.editorController.updateSpanStyle(options);
     this.editorController.setCaretOffset(this.selectionEnd);
+    this.syncEditorContent();
   }
 
   @Builder
@@ -271,16 +303,17 @@ struct CampusPublishPage {
                 .backgroundColor(Color.Transparent).padding({ left: 58, right: 4, top: 4 })
                 .onReady(() => {
                   if (this.editorController.getSpans().length === 0 && this.content.length > 0) {
-                    this.editorController.addTextSpan(this.content, { style: { fontSize: 19, fontColor: '#333333' } });
+                    this.editorController.addTextSpan(this.plainEditorContent(this.content), { style: { fontSize: 19, fontColor: '#333333' } });
                   }
                 })
                 .onSelectionChange((range: RichEditorRange) => {
                   this.selectionStart = range.start || 0;
                   this.selectionEnd = range.end || 0;
+                  this.syncFormatState(range);
                 })
                 .onDidChange(() => { this.syncEditorContent(); })
             } else {
-              Text(this.content || (this.tag === 'lost' ? '描述物品特征、时间等信息...' : (this.tag === 'team' ? '说明比赛、方向、需求和联系方式...' : (this.tag === 'help' ? '描述你需要求助的问题...' : '分享校园里的新鲜事...')))).fontSize(18).fontColor(this.content ? '#555555' : '#B4B5B8').maxLines(2).width('100%').height(72).padding({ left: 58, top: 8 })
+              Text(this.content ? this.plainEditorContent(this.content) : (this.tag === 'lost' ? '描述物品特征、时间等信息...' : (this.tag === 'team' ? '说明比赛、方向、需求和联系方式...' : (this.tag === 'help' ? '描述你需要求助的问题...' : '分享校园里的新鲜事...')))).fontSize(18).fontColor(this.content ? '#555555' : '#B4B5B8').maxLines(2).width('100%').height(72).padding({ left: 58, top: 8 })
             }
 
             if (this.tag === 'lost') {

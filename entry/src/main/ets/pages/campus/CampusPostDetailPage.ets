@@ -4,6 +4,13 @@ import { CampusWallApi, CampusWallPost, CampusWallReply, decodeHtmlEntities } fr
 import { AppStorage } from '../../store/AppStorage';
 
 interface DetailParams extends Record<string, string> { id: string; }
+interface FormattedRun {
+  text: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strike: boolean;
+}
 
 @Entry
 @Component
@@ -62,13 +69,58 @@ struct CampusPostDetailPage {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
-  private plainContent(value: string | undefined): string {
-    return decodeHtmlEntities(value || '')
-      .replace(/<\/?(?:p|div)[^>]*>/gi, '\n')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<[^>]+>/g, '')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+  private formattedContent(value: string | undefined): FormattedRun[] {
+    const source = decodeHtmlEntities(value || '');
+    const runs: FormattedRun[] = [];
+    const tagPattern = /<[^>]+>/g;
+    let boldDepth = 0;
+    let italicDepth = 0;
+    let underlineDepth = 0;
+    let strikeDepth = 0;
+    let cursor = 0;
+    let match: RegExpExecArray | null = tagPattern.exec(source);
+    const append = (text: string): void => {
+      if (!text) return;
+      const last = runs.length > 0 ? runs[runs.length - 1] : undefined;
+      const bold = boldDepth > 0;
+      const italic = italicDepth > 0;
+      const underline = underlineDepth > 0;
+      const strike = strikeDepth > 0;
+      if (last && last.bold === bold && last.italic === italic && last.underline === underline && last.strike === strike) {
+        last.text += text;
+      } else {
+        runs.push({ text, bold, italic, underline, strike });
+      }
+    };
+    while (match) {
+      append(source.substring(cursor, match.index));
+      const tag = match[0].toLowerCase();
+      const closing = tag.startsWith('</');
+      if (/^<\/?(?:b|strong)\b/.test(tag)) boldDepth = Math.max(0, boldDepth + (closing ? -1 : 1));
+      else if (/^<\/?(?:i|em)\b/.test(tag)) italicDepth = Math.max(0, italicDepth + (closing ? -1 : 1));
+      else if (/^<\/?u\b/.test(tag)) underlineDepth = Math.max(0, underlineDepth + (closing ? -1 : 1));
+      else if (/^<\/?(?:s|strike)\b/.test(tag)) strikeDepth = Math.max(0, strikeDepth + (closing ? -1 : 1));
+      else if (/^<br\b/.test(tag) || /^<\/?(?:p|div)\b/.test(tag)) append('\n');
+      cursor = match.index + match[0].length;
+      match = tagPattern.exec(source);
+    }
+    append(source.substring(cursor));
+    if (runs.length === 0) runs.push({ text: source, bold: false, italic: false, underline: false, strike: false });
+    runs[0].text = runs[0].text.replace(/^\s+/, '');
+    runs[runs.length - 1].text = runs[runs.length - 1].text.replace(/\s+$/, '');
+    return runs.filter((run: FormattedRun) => run.text.length > 0);
+  }
+
+  @Builder
+  private formattedBody() {
+    Text() {
+      ForEach(this.formattedContent(this.post.content), (run: FormattedRun) => {
+        Span(run.text).fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
+          .fontStyle(run.italic ? FontStyle.Italic : FontStyle.Normal)
+          .decoration({ type: run.underline ? TextDecorationType.Underline :
+            (run.strike ? TextDecorationType.LineThrough : TextDecorationType.None) })
+      }, (run: FormattedRun, index: number) => `${index}-${run.text}`)
+    }.width('100%').fontSize(20).fontColor('#444444').lineHeight(32).margin({ top: 18 })
   }
 
   @Builder
@@ -134,8 +186,7 @@ struct CampusPostDetailPage {
               this.authorHeader()
               Text(decodeHtmlEntities(this.post.title || ''))
                 .fontSize(25).fontWeight(FontWeight.Bold).fontColor('#222222').lineHeight(36).margin({ top: 26 })
-              Text(this.plainContent(this.post.content)).width('100%').fontSize(20).fontColor('#444444')
-                .lineHeight(32).margin({ top: 18 })
+              this.formattedBody()
               ForEach(this.post.images || [], (url: string) => {
                 this.postImage(url)
               }, (url: string) => url)
