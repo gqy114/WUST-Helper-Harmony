@@ -31,6 +31,9 @@ struct CampusPublishPage {
   @State private teamType: string = 'leader';
   @State private catTags: string[] = [];
   @State private selectedImages: string[] = [];
+  @State private selectionStart: number = 0;
+  @State private selectionEnd: number = 0;
+  private editorController: RichEditorController = new RichEditorController();
 
   async aboutToAppear(): Promise<void> {
     const params = router.getParams() as PublishParams;
@@ -122,6 +125,47 @@ struct CampusPublishPage {
     this.selectedImages = this.selectedImages.filter((item: string) => item !== uri);
   }
 
+  private syncEditorContent(): void {
+    const spans: RichEditorTextSpanResult[] = this.editorController.getSpans() as RichEditorTextSpanResult[];
+    this.content = spans.map((span: RichEditorTextSpanResult): string => span.value).join('');
+  }
+
+  private applyFormat(kind: string): void {
+    if (kind === 'bold') this.bold = !this.bold;
+    if (kind === 'italic') this.italic = !this.italic;
+    if (kind === 'underline') {
+      this.underline = !this.underline;
+      if (this.underline) this.strike = false;
+    }
+    if (kind === 'strike') {
+      this.strike = !this.strike;
+      if (this.strike) this.underline = false;
+    }
+
+    if (this.selectionStart === this.selectionEnd) {
+      const typingStyle: RichEditorTextStyle = {
+        fontWeight: this.bold ? FontWeight.Bold : FontWeight.Normal,
+        fontStyle: this.italic ? FontStyle.Italic : FontStyle.Normal,
+        decoration: { type: this.underline ? TextDecorationType.Underline : (this.strike ? TextDecorationType.LineThrough : TextDecorationType.None) }
+      };
+      this.editorController.setTypingStyle(typingStyle);
+      return;
+    }
+
+    let textStyle: RichEditorTextStyle = {};
+    if (kind === 'bold') textStyle = { fontWeight: this.bold ? FontWeight.Bold : FontWeight.Normal };
+    if (kind === 'italic') textStyle = { fontStyle: this.italic ? FontStyle.Italic : FontStyle.Normal };
+    if (kind === 'underline') textStyle = { decoration: { type: this.underline ? TextDecorationType.Underline : TextDecorationType.None } };
+    if (kind === 'strike') textStyle = { decoration: { type: this.strike ? TextDecorationType.LineThrough : TextDecorationType.None } };
+    const options: RichEditorUpdateTextSpanStyleOptions = {
+      start: this.selectionStart,
+      end: this.selectionEnd,
+      textStyle
+    };
+    this.editorController.updateSpanStyle(options);
+    this.editorController.setCaretOffset(this.selectionEnd);
+  }
+
   @Builder
   private imageChooser() {
     if (this.selectedImages.length > 0) {
@@ -161,12 +205,12 @@ struct CampusPublishPage {
   }
 
   @Builder
-  private formatButton(text: string, active: boolean, click: () => void) {
-    Text(text)
-      .fontSize(18)
-      .fontWeight(text === 'B' ? FontWeight.Bold : FontWeight.Medium)
-      .fontColor(active ? Color.White : '#20C894')
-      .textAlign(TextAlign.Center)
+  private formatButton(icon: Resource, active: boolean, click: () => void) {
+    Image(icon)
+      .width(23)
+      .height(23)
+      .fillColor(active ? Color.White : '#20C894')
+      .objectFit(ImageFit.Contain)
       .width(48)
       .height(42)
       .backgroundColor(active ? '#20C894' : '#ECFAF6')
@@ -221,13 +265,20 @@ struct CampusPublishPage {
             }.width('100%').alignItems(VerticalAlign.Center)
 
             if (this.editorExpanded) {
-              TextArea({ placeholder: this.tag === 'lost' ? '描述物品特征、时间等信息...' : (this.tag === 'team' ? '说明比赛、方向、需求和联系方式...' : (this.tag === 'help' ? '描述你需要求助的问题...' : '分享校园里的新鲜事...')), text: this.content })
-                .width('100%').height(270).fontSize(19).fontColor('#333333').placeholderColor('#B4B5B8')
-                .fontWeight(this.bold ? FontWeight.Bold : FontWeight.Normal)
-                .fontStyle(this.italic ? FontStyle.Italic : FontStyle.Normal)
-                .decoration({ type: this.underline ? TextDecorationType.Underline : (this.strike ? TextDecorationType.LineThrough : TextDecorationType.None) })
+              RichEditor({ controller: this.editorController })
+                .width('100%').height(270)
+                .placeholder(this.tag === 'lost' ? '描述物品特征、时间等信息...' : (this.tag === 'team' ? '说明比赛、方向、需求和联系方式...' : (this.tag === 'help' ? '描述你需要求助的问题...' : '分享校园里的新鲜事...')), { font: { size: 19 }, fontColor: '#B4B5B8' })
                 .backgroundColor(Color.Transparent).padding({ left: 58, right: 4, top: 4 })
-                .onChange((value: string) => { this.content = value; })
+                .onReady(() => {
+                  if (this.editorController.getSpans().length === 0 && this.content.length > 0) {
+                    this.editorController.addTextSpan(this.content, { style: { fontSize: 19, fontColor: '#333333' } });
+                  }
+                })
+                .onSelectionChange((range: RichEditorRange) => {
+                  this.selectionStart = range.start || 0;
+                  this.selectionEnd = range.end || 0;
+                })
+                .onDidChange(() => { this.syncEditorContent(); })
             } else {
               Text(this.content || (this.tag === 'lost' ? '描述物品特征、时间等信息...' : (this.tag === 'team' ? '说明比赛、方向、需求和联系方式...' : (this.tag === 'help' ? '描述你需要求助的问题...' : '分享校园里的新鲜事...')))).fontSize(18).fontColor(this.content ? '#555555' : '#B4B5B8').maxLines(2).width('100%').height(72).padding({ left: 58, top: 8 })
             }
@@ -253,10 +304,10 @@ struct CampusPublishPage {
             this.imageChooser()
 
             Row() {
-              this.formatButton('B', this.bold, () => { this.bold = !this.bold; })
-              this.formatButton('/', this.italic, () => { this.italic = !this.italic; })
-              this.formatButton('U', this.underline, () => { this.underline = !this.underline; })
-              this.formatButton('S', this.strike, () => { this.strike = !this.strike; })
+              this.formatButton($r('app.media.bold'), this.bold, () => { this.applyFormat('bold'); })
+              this.formatButton($r('app.media.italic'), this.italic, () => { this.applyFormat('italic'); })
+              this.formatButton($r('app.media.underlined'), this.underline, () => { this.applyFormat('underline'); })
+              this.formatButton($r('app.media.strikethrough'), this.strike, () => { this.applyFormat('strike'); })
               Text(this.selectedImages.length > 0 ? `图片 ${this.selectedImages.length}` : '图片').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#20C894').textAlign(TextAlign.Center).width(72).height(42).backgroundColor('#ECFAF6').borderRadius(16).onClick(() => this.chooseImages())
             }.width('100%').justifyContent(FlexAlign.SpaceBetween).margin({ top: 14 })
 
