@@ -1,5 +1,6 @@
 import { promptAction } from '@kit.ArkUI';
 import { AppStorage } from '../../store/AppStorage';
+import { VolunteerApi, VolunteerHourCodeInfo } from '../../net/VolunteerApi';
 
 @Component
 export struct VolunteerPage {
@@ -10,6 +11,14 @@ export struct VolunteerPage {
   @State private participatedCount: number = 0;
   @State private certifiedHours: number = 0;
   @State private uncertifiedHours: number = 0;
+  @State private loadingCode: boolean = false;
+  @State private submitting: boolean = false;
+  @State private showHourSelector: boolean = false;
+  @State private activityName: string = '';
+  @State private activityDate: string = '';
+  @State private activityOwner: string = '';
+  @State private availableHours: number[] = [];
+  @State private selectedHours: number = 0;
 
   aboutToAppear(): void { this.load(); }
 
@@ -23,12 +32,46 @@ export struct VolunteerPage {
     return index < this.hourCode.length ? this.hourCode.charAt(index) : '';
   }
 
-  private certify(): void {
+  private errorMessage(error: Object, fallback: string): string {
+    const message: string = `${error}`.replace(/^Error:\s*/, '');
+    return message.length > 0 && message !== '[object Object]' ? message : fallback;
+  }
+
+  private async certify(): Promise<void> {
     if (this.hourCode.length !== 6) {
       promptAction.showToast({ message: '请输入完整的 6 位工时码', duration: 1400 });
       return;
     }
-    promptAction.showToast({ message: '工时认证接口暂未接入', duration: 1400 });
+    if (this.loadingCode) return;
+    this.loadingCode = true;
+    try {
+      const info: VolunteerHourCodeInfo = await VolunteerApi.getHourCodeInfo(this.hourCode);
+      this.activityName = info.activityName;
+      this.activityDate = info.participateDate;
+      this.activityOwner = info.crater;
+      this.availableHours = info.volunteerTimes;
+      this.selectedHours = info.volunteerTimes[0];
+      this.showHourSelector = true;
+    } catch (error) {
+      promptAction.showToast({ message: this.errorMessage(error as Object, '工时码查询失败'), duration: 2200 });
+    } finally {
+      this.loadingCode = false;
+    }
+  }
+
+  private async confirmCertification(): Promise<void> {
+    if (this.selectedHours <= 0 || this.submitting) return;
+    this.submitting = true;
+    try {
+      await VolunteerApi.certifyHours(this.hourCode, this.selectedHours);
+      this.showHourSelector = false;
+      this.hourCode = '';
+      promptAction.showToast({ message: '工时认证成功', duration: 1800 });
+    } catch (error) {
+      promptAction.showToast({ message: this.errorMessage(error as Object, '工时认证失败'), duration: 2200 });
+    } finally {
+      this.submitting = false;
+    }
   }
 
   @Builder
@@ -100,7 +143,7 @@ export struct VolunteerPage {
                 .onClick(() => promptAction.showToast({ message: '扫码认证功能暂未接入', duration: 1400 }))
               Button('认证工时').layoutWeight(1.35).height(52).fontSize(18).fontWeight(FontWeight.Bold).fontColor(Color.White)
                 .backgroundColor(this.hourCode.length === 6 ? '#4DB85A' : '#9BD39D').borderRadius(12).margin({ left: 14 })
-                .onClick(() => this.certify())
+                .onClick(() => { this.certify(); })
             }.width('100%').margin({ top: 18 })
           }.width('100%').padding({ left: 24, right: 24, top: 24, bottom: 24 }).backgroundColor(Color.White).borderRadius(24).margin({ top: 16 })
 
@@ -121,6 +164,43 @@ export struct VolunteerPage {
           }.width('100%').padding({ left: 8, right: 8, top: 8 }).backgroundColor(Color.White).borderRadius(24).margin({ top: 16, bottom: 24 })
         }.width('100%').padding({ left: 16, right: 16 })
       }.layoutWeight(1).width('100%').scrollBar(BarState.Off)
+
+      if (this.showHourSelector) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column() {}
+            .width('100%').height('100%').backgroundColor('#66000000')
+            .onClick(() => { if (!this.submitting) this.showHourSelector = false; })
+          Column() {
+            Text('确认志愿工时').fontSize(23).fontWeight(FontWeight.Bold).fontColor('#333333')
+            Text(this.activityName).fontSize(19).fontWeight(FontWeight.Medium).fontColor('#444444')
+              .width('100%').margin({ top: 20 })
+            if (this.activityDate.length > 0) {
+              Text(`活动日期：${this.activityDate}`).fontSize(15).fontColor('#888888').width('100%').margin({ top: 8 })
+            }
+            if (this.activityOwner.length > 0) {
+              Text(`活动负责人：${this.activityOwner}`).fontSize(15).fontColor('#888888').width('100%').margin({ top: 6 })
+            }
+            Text('请选择本次真实服务时长').fontSize(16).fontColor('#555555').width('100%').margin({ top: 22, bottom: 12 })
+            Flex({ wrap: FlexWrap.Wrap }) {
+              ForEach(this.availableHours, (hours: number) => {
+                Text(`${hours}h`).fontSize(17).fontWeight(FontWeight.Bold)
+                  .fontColor(this.selectedHours === hours ? Color.White : '#20A878')
+                  .backgroundColor(this.selectedHours === hours ? '#20C894' : '#E8F8F2')
+                  .borderRadius(18).padding({ left: 20, right: 20, top: 10, bottom: 10 })
+                  .margin({ right: 10, bottom: 10 }).onClick(() => { this.selectedHours = hours; })
+              }, (hours: number) => `${hours}`)
+            }.width('100%')
+            Row() {
+              Button('取消').layoutWeight(1).height(48).fontSize(17).fontColor('#666666')
+                .backgroundColor('#F1F2F3').borderRadius(12)
+                .onClick(() => { this.showHourSelector = false; })
+              Button(this.submitting ? '提交中…' : '确认认证').layoutWeight(1.35).height(48).fontSize(17)
+                .fontWeight(FontWeight.Bold).fontColor(Color.White).backgroundColor('#20C894')
+                .borderRadius(12).margin({ left: 12 }).onClick(() => { this.confirmCertification(); })
+            }.width('100%').margin({ top: 18 })
+          }.width('88%').padding(24).backgroundColor(Color.White).borderRadius(24)
+        }.width('100%').height('100%')
+      }
     }.width('100%').height('100%').backgroundColor('#F5F6F7')
   }
 }
