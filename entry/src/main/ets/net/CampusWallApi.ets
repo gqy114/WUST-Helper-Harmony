@@ -25,7 +25,7 @@ export interface CampusWallPost {
   replies?: CampusWallReply[];
   reactions?: Record<string, number>;
 }
-export interface CampusWallExtra { type?: string; address?: string; }
+export interface CampusWallExtra { type?: string; address?: string; acceptedReplyId?: number | string; }
 export function campusWallExtra(post: CampusWallPost): CampusWallExtra {
   if (!post.extra) return {};
   try { return JSON.parse(post.extra) as CampusWallExtra; } catch { return {}; }
@@ -122,6 +122,23 @@ export class CampusWallApi {
       if (items.length > 0 || aliases.length === 1) return items.map((post: CampusWallPost) => CampusWallApi.normalizePost(post));
     }
     return [];
+  }
+
+  static async listPages(tag: string, maxPages: number = 5): Promise<CampusWallPost[]> {
+    const posts: CampusWallPost[] = [];
+    const seen: Set<number> = new Set<number>();
+    for (let page = 1; page <= maxPages; page++) {
+      const items = await CampusWallApi.list(page, tag);
+      for (const post of items) {
+        const id = post.id || 0;
+        if (id === 0 || !seen.has(id)) {
+          posts.push(post);
+          if (id > 0) seen.add(id);
+        }
+      }
+      if (items.length < 20) break;
+    }
+    return posts;
   }
 
   static async detail(id: number): Promise<CampusWallPost> {
