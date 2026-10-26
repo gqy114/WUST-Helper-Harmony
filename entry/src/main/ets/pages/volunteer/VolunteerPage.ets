@@ -1,4 +1,7 @@
 import { promptAction } from '@kit.ArkUI';
+import { scanBarcode, scanCore } from '@kit.ScanKit';
+import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
+import common from '@ohos.app.ability.common';
 import { AppStorage } from '../../store/AppStorage';
 import { VolunteerApi, VolunteerHourCodeInfo } from '../../net/VolunteerApi';
 
@@ -30,6 +33,43 @@ export struct VolunteerPage {
 
   private codeCharacter(index: number): string {
     return index < this.hourCode.length ? this.hourCode.charAt(index) : '';
+  }
+
+  private extractHourCode(content: string): string {
+    const text: string = content.trim();
+    if (/^\d{6}$/.test(text)) return text;
+    const namedMatch: RegExpMatchArray | null = text.match(/(?:randomString|verifyCode|hourCode|code)["']?\s*(?:=|:|%3D)\s*["']?(\d{6})/i);
+    if (namedMatch && namedMatch[1]) return namedMatch[1];
+    const standaloneMatch: RegExpMatchArray | null = text.match(/(?:^|\D)(\d{6})(?:\D|$)/);
+    return standaloneMatch && standaloneMatch[1] ? standaloneMatch[1] : '';
+  }
+
+  private async scanHourCode(): Promise<void> {
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      const atManager = abilityAccessCtrl.createAtManager();
+      const permissionResult = await atManager.requestPermissionsFromUser(context, ['ohos.permission.CAMERA']);
+      if (!permissionResult.authResults || permissionResult.authResults[0] !== 0) {
+        promptAction.showToast({ message: '需要相机权限才能扫码认证', duration: 1600 });
+        return;
+      }
+      const options: scanBarcode.ScanOptions = {
+        scanTypes: [scanCore.ScanType.QR_CODE],
+        enableMultiMode: false,
+        enableAlbum: true
+      };
+      const result = await scanBarcode.startScanForResult(context, options);
+      const code: string = this.extractHourCode(result.originalValue || '');
+      if (code.length !== 6) {
+        promptAction.showToast({ message: '未识别到有效的六位工时码', duration: 1800 });
+        return;
+      }
+      this.hourCode = code;
+      await this.certify();
+    } catch (error) {
+      console.info('VolunteerPage', `扫码取消或失败: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '扫码已取消', duration: 1300 });
+    }
   }
 
   private errorMessage(error: Object, fallback: string): string {
@@ -140,7 +180,7 @@ export struct VolunteerPage {
             Row() {
               Button('扫码').layoutWeight(1).height(52).fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555')
                 .backgroundColor('#D2D2D2').borderRadius(12)
-                .onClick(() => promptAction.showToast({ message: '扫码认证功能暂未接入', duration: 1400 }))
+                .onClick(() => { this.scanHourCode(); })
               Button('认证工时').layoutWeight(1.35).height(52).fontSize(18).fontWeight(FontWeight.Bold).fontColor(Color.White)
                 .backgroundColor(this.hourCode.length === 6 ? '#4DB85A' : '#9BD39D').borderRadius(12).margin({ left: 14 })
                 .onClick(() => { this.certify(); })
