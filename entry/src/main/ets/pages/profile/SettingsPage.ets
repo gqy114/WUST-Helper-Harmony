@@ -94,7 +94,7 @@ struct SettingsPage {
           this.groupTitle('界面')
           this.navItem('底部导航自定义', () => router.pushUrl({ url: 'pages/profile/BottomNavCustomizePage' }))
           this.switchItem('显示校园猫入口', this.showCampusCat, (value: boolean) => { this.showCampusCat = value; this.saveBool('showCampusCat', value); })
-          this.navItem('重置小组件', () => promptAction.showToast({ message: '开发中', duration: 1500 }))
+          this.navItem('小组件设置', () => router.pushUrl({ url: 'pages/profile/WidgetSettingsPage' }))
           this.groupTitle('校园社区')
           this.switchItem('@我的通知', this.atNotify, (value: boolean) => { this.atNotify = value; this.saveBool('atNotify', value); })
           this.switchItem('回复我的通知', this.replyNotify, (value: boolean) => { this.replyNotify = value; this.saveBool('replyNotify', value); })
