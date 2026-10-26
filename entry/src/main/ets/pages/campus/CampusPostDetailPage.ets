@@ -32,6 +32,9 @@ struct CampusPostDetailPage {
   @State private actionReplyName: string = '';
   @State private reactionsOpen: boolean = false;
   @State private favorited: boolean = false;
+  @State private reportDialogOpen: boolean = false;
+  @State private reportReason: string = '';
+  @State private reporting: boolean = false;
 
   aboutToAppear(): void {
     const params = router.getParams() as DetailParams;
@@ -78,17 +81,22 @@ struct CampusPostDetailPage {
     this.actionOpen = false;
   }
 
-  private async confirmReport(): Promise<void> {
-    const result = await promptAction.showDialog({
-      title: '举报内容', message: '确认举报这条内容吗？',
-      buttons: [{ text: '取消', color: '#777777' }, { text: '举报', color: '#D9534F' }]
-    });
-    if (result.index !== 1) return;
+  private openReportDialog(): void {
+    this.actionOpen = false;
+    this.reportReason = '';
+    this.reportDialogOpen = true;
+  }
+
+  private async submitReport(): Promise<void> {
+    if (this.reporting) return;
+    this.reporting = true;
     try {
-      await CampusWallApi.report(this.actionTarget, this.actionTarget === 'post' ? this.postId : this.actionReplyId, '不当内容');
-      this.actionOpen = false;
+      await CampusWallApi.report(this.actionTarget, this.actionTarget === 'post' ? this.postId : this.actionReplyId,
+        this.reportReason.trim() || '不当内容');
+      this.reportDialogOpen = false;
       promptAction.showToast({ message: '举报已提交', duration: 1200 });
     } catch { promptAction.showToast({ message: '举报失败，请稍后重试', duration: 1500 }); }
+    this.reporting = false;
   }
 
   private async react(type: string): Promise<void> {
@@ -335,10 +343,31 @@ struct CampusPostDetailPage {
           Column() {
             Text('⚑').fontSize(42).width(82).height(82).textAlign(TextAlign.Center).backgroundColor('#F7F7F7').borderRadius(18)
             Text('举报').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
-          }.onClick(() => this.confirmReport())
+          }.onClick(() => this.openReportDialog())
         }.width('100%').margin({ top: 24 })
       }.width('100%').height(310).padding({ left: 28, right: 28, top: 28 }).backgroundColor(Color.White)
         .borderRadius({ topLeft: 28, topRight: 28 })
+    }
+    if (this.reportDialogOpen) {
+      Stack({ alignContent: Alignment.Center }) {
+        Column().width('100%').height('100%').backgroundColor('#66000000')
+        Column() {
+          Text('举报这条内容？').fontSize(25).fontWeight(FontWeight.Bold).fontColor('#444444')
+            .width('100%').textAlign(TextAlign.Center).margin({ bottom: 24 })
+          TextArea({ placeholder: '请输入举报原因（可选）', text: this.reportReason })
+            .width('82%').height(110).fontSize(18).fontColor('#444444').placeholderColor('#AAAAAA')
+            .backgroundColor('#F5F5F5').borderRadius(14).padding({ left: 16, right: 16, top: 14, bottom: 14 })
+            .onChange((value: string) => { this.reportReason = value; })
+          Row() {
+            Button('取消').fontSize(19).fontWeight(FontWeight.Bold).fontColor(Color.White)
+              .width('42%').height(54).backgroundColor('#E66D57').borderRadius(9)
+              .onClick(() => { this.reportDialogOpen = false; })
+            Button(this.reporting ? '提交中' : '举报').fontSize(19).fontWeight(FontWeight.Bold).fontColor(Color.White)
+              .width('42%').height(54).backgroundColor('#58D900').borderRadius(9).margin({ left: 28 })
+              .enabled(!this.reporting).onClick(() => this.submitReport())
+          }.width('82%').margin({ top: 26 })
+        }.width('82%').padding({ top: 28, bottom: 30 }).backgroundColor(Color.White).borderRadius(24)
+      }.width('100%').height('100%')
     }
     }
   }
