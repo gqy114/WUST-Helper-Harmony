@@ -24,6 +24,7 @@ export interface CampusWallPost {
   extra?: string;
   replies?: CampusWallReply[];
   reactions?: Record<string, number>;
+  myReactions?: string[];
 }
 export interface CampusWallExtra { type?: string; address?: string; acceptedReplyId?: number | string; }
 export function campusWallExtra(post: CampusWallPost): CampusWallExtra {
@@ -107,7 +108,8 @@ export class CampusWallApi {
       likeCount: post.likeCount, replyCount: post.replyCount, images: fullImages,
       status: post.status, resolved: post.resolved, isResolved: post.isResolved,
       type: post.type, category: post.category, noticeType: post.noticeType, extra: post.extra,
-      replies: (post.replies || []).map((reply: CampusWallReply) => CampusWallApi.normalizeReply(reply)), reactions: post.reactions || {} };
+      replies: (post.replies || []).map((reply: CampusWallReply) => CampusWallApi.normalizeReply(reply)),
+      reactions: post.reactions || {}, myReactions: post.myReactions || [] };
   }
   private static async headers(): Promise<WallHeaders> {
     const token = await AppStorage.getInstance().getAppAuthAccessToken();

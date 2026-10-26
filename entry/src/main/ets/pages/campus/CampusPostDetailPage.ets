@@ -11,6 +11,11 @@ interface FormattedRun {
   underline: boolean;
   strike: boolean;
 }
+interface ReactionOption { type: string; emoji: string; }
+const DETAIL_REACTIONS: ReactionOption[] = [
+  { type: 'thumbs_up', emoji: '👍' }, { type: 'thumbs_down', emoji: '👎' },
+  { type: 'heart', emoji: '❤️' }, { type: 'eyes', emoji: '👀' }, { type: 'rocket', emoji: '🚀' }
+];
 
 @Entry
 @Component
@@ -92,6 +97,9 @@ struct CampusPostDetailPage {
       await this.load();
     } catch { promptAction.showToast({ message: '当前帖子暂不支持表态', duration: 1200 }); }
   }
+
+  private reactionCount(type: string): number { return this.post.reactions?.[type] || 0; }
+  private reactedByMe(type: string): boolean { return (this.post.myReactions || []).indexOf(type) >= 0; }
 
   private async loadMyAvatar(): Promise<void> {
     this.myAvatar = await AppStorage.getInstance().getAvatarUrl();
@@ -255,17 +263,17 @@ struct CampusPostDetailPage {
               ForEach(this.post.images || [], (url: string) => {
                 this.postImage(url)
               }, (url: string) => url)
-              Row() {
+              Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.End }) {
                 Blank().layoutWeight(1)
-                if (this.reactionsOpen) {
-                  Row() {
-                    Text('👍').fontSize(25).onClick(() => this.react('thumbs_up'))
-                    Text('👎').fontSize(25).margin({ left: 14 }).onClick(() => this.react('thumbs_down'))
-                    Text('❤️').fontSize(25).margin({ left: 14 }).onClick(() => this.react('heart'))
-                    Text('👀').fontSize(25).margin({ left: 14 }).onClick(() => this.react('eyes'))
-                    Text('🚀').fontSize(25).margin({ left: 14 }).onClick(() => this.react('rocket'))
-                  }.padding({ left: 18, right: 18, top: 9, bottom: 9 }).backgroundColor('#ECF8F4').borderRadius(24)
-                } else {
+                ForEach(DETAIL_REACTIONS, (option: ReactionOption) => {
+                  if (this.reactionsOpen || this.reactionCount(option.type) > 0) {
+                    Text(`${option.emoji}${this.reactionCount(option.type) > 0 ? ` ${this.reactionCount(option.type)}` : ''}`)
+                      .fontSize(22).fontColor('#655C86').padding({ left: 12, right: 12, top: 7, bottom: 7 })
+                      .backgroundColor(this.reactedByMe(option.type) ? '#CDEFE4' : '#ECF8F4').borderRadius(20)
+                      .margin({ left: 7, bottom: 6 }).onClick(() => this.react(option.type))
+                  }
+                }, (option: ReactionOption) => option.type)
+                if (!this.reactionsOpen) {
                   Image($r('app.media.more_horiz')).width(48).height(30).padding({ left: 10, right: 10 })
                     .backgroundColor('#ECF8F4').borderRadius(20).onClick(() => { this.reactionsOpen = true; })
                 }
