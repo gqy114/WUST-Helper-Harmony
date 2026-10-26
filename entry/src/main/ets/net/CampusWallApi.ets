@@ -77,6 +77,7 @@ interface FlowerRankingResponse { code?: number; message?: string; data?: Campus
 interface ReactionData { added?: boolean; }
 interface ReactionResponse { data?: ReactionData; }
 interface PublishResponse { code?: number; message?: string; }
+interface ReportResponse { code?: number; message?: string; }
 interface WallHeaders extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
 export class CampusWallApi {
   private static fullAssetUrl(url: string): string {
@@ -173,6 +174,14 @@ export class CampusWallApi {
     await HttpRequest.postJson<Record<string, string>>(
       `https://lyzyy.love:8081/api/v1/campus-wall/posts/${id}/replies`,
       { content }, await CampusWallApi.headers());
+  }
+
+  static async report(targetType: string, targetId: number, reason: string): Promise<void> {
+    const response = await HttpRequest.postJson<ReportResponse>(
+      'https://lyzyy.love:8081/api/v1/campus-wall/reports',
+      { targetType, targetId: String(targetId), reason }, await CampusWallApi.headers());
+    const code = response.data.code;
+    if (code !== undefined && code !== 0 && code !== 200) throw new Error(response.data.message || 'report failed');
   }
 
   static async publish(title: string, content: string, tag: string = 'wall', extra: string = '{}', images: string[] = []): Promise<void> {

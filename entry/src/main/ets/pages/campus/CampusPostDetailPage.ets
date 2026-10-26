@@ -21,12 +21,76 @@ struct CampusPostDetailPage {
   @State private loading: boolean = true;
   @State private sending: boolean = false;
   @State private myAvatar: string = '';
+  @State private actionOpen: boolean = false;
+  @State private actionTarget: string = 'post';
+  @State private actionReplyId: number = 0;
+  @State private actionReplyName: string = '';
+  @State private reactionsOpen: boolean = false;
+  @State private favorited: boolean = false;
 
   aboutToAppear(): void {
     const params = router.getParams() as DetailParams;
     this.postId = Number(params?.id || 0);
     this.load();
     this.loadMyAvatar();
+    this.loadFavorite();
+  }
+
+  private async loadFavorite(): Promise<void> {
+    const raw = await AppStorage.getInstance().getSettingString('campusFavoritePostIds', '[]');
+    try { this.favorited = (JSON.parse(raw) as number[]).indexOf(this.postId) >= 0; } catch { this.favorited = false; }
+  }
+
+  private openPostActions(): void {
+    this.actionTarget = 'post';
+    this.actionReplyId = 0;
+    this.actionReplyName = '';
+    this.actionOpen = true;
+  }
+
+  private openReplyActions(reply: CampusWallReply): void {
+    this.actionTarget = 'reply';
+    this.actionReplyId = reply.id || 0;
+    this.actionReplyName = reply.displayName || reply.realName || '同学';
+    this.actionOpen = true;
+  }
+
+  private async toggleFavorite(): Promise<void> {
+    const storage = AppStorage.getInstance();
+    const raw = await storage.getSettingString('campusFavoritePostIds', '[]');
+    let ids: number[] = [];
+    try { ids = JSON.parse(raw) as number[]; } catch {}
+    if (ids.indexOf(this.postId) >= 0) ids = ids.filter((id: number) => id !== this.postId);
+    else ids.push(this.postId);
+    await storage.setSettingString('campusFavoritePostIds', JSON.stringify(ids));
+    this.favorited = ids.indexOf(this.postId) >= 0;
+    this.actionOpen = false;
+    promptAction.showToast({ message: this.favorited ? '已收藏' : '已取消收藏', duration: 1200 });
+  }
+
+  private replyToSelected(): void {
+    this.replyText = `@${this.actionReplyName} `;
+    this.actionOpen = false;
+  }
+
+  private async confirmReport(): Promise<void> {
+    const result = await promptAction.showDialog({
+      title: '举报内容', message: '确认举报这条内容吗？',
+      buttons: [{ text: '取消', color: '#777777' }, { text: '举报', color: '#D9534F' }]
+    });
+    if (result.index !== 1) return;
+    try {
+      await CampusWallApi.report(this.actionTarget, this.actionTarget === 'post' ? this.postId : this.actionReplyId, '不当内容');
+      this.actionOpen = false;
+      promptAction.showToast({ message: '举报已提交', duration: 1200 });
+    } catch { promptAction.showToast({ message: '举报失败，请稍后重试', duration: 1500 }); }
+  }
+
+  private async react(type: string): Promise<void> {
+    try {
+      await CampusWallApi.toggleReaction(this.postId, type);
+      await this.load();
+    } catch { promptAction.showToast({ message: '当前帖子暂不支持表态', duration: 1200 }); }
   }
 
   private async loadMyAvatar(): Promise<void> {
@@ -136,7 +200,7 @@ struct CampusPostDetailPage {
       }.alignItems(HorizontalAlign.Start).layoutWeight(1)
       Column() {
         Text(this.dateLabel(this.post.createdAt)).fontSize(14).fontColor('#999999')
-        Image($r('app.media.more_horiz')).width(27).height(27).margin({ top: 12 })
+        Image($r('app.media.more_horiz')).width(27).height(27).margin({ top: 12 }).onClick(() => this.openPostActions())
       }.alignItems(HorizontalAlign.End)
     }.width('100%').alignItems(VerticalAlign.Top)
   }
@@ -155,7 +219,7 @@ struct CampusPostDetailPage {
         Row() {
           Text(reply.displayName || reply.realName || '同学')
             .fontSize(19).fontWeight(FontWeight.Bold).fontColor('#655C86').layoutWeight(1)
-          Image($r('app.media.more_horiz')).width(24).height(24)
+          Image($r('app.media.more_horiz')).width(24).height(24).onClick(() => this.openReplyActions(reply))
         }.width('100%')
         Text(reply.college || reply.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 })
         Text(decodeHtmlEntities(reply.content || '')).fontSize(19).fontColor('#333333').lineHeight(29).margin({ top: 16 })
@@ -169,6 +233,7 @@ struct CampusPostDetailPage {
   }
 
   build() {
+    Stack({ alignContent: Alignment.Bottom }) {
     Column() {
       Row() {
         Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back())
@@ -190,6 +255,21 @@ struct CampusPostDetailPage {
               ForEach(this.post.images || [], (url: string) => {
                 this.postImage(url)
               }, (url: string) => url)
+              Row() {
+                Blank().layoutWeight(1)
+                if (this.reactionsOpen) {
+                  Row() {
+                    Text('👍').fontSize(25).onClick(() => this.react('thumbs_up'))
+                    Text('👎').fontSize(25).margin({ left: 14 }).onClick(() => this.react('thumbs_down'))
+                    Text('❤️').fontSize(25).margin({ left: 14 }).onClick(() => this.react('heart'))
+                    Text('👀').fontSize(25).margin({ left: 14 }).onClick(() => this.react('eyes'))
+                    Text('🚀').fontSize(25).margin({ left: 14 }).onClick(() => this.react('rocket'))
+                  }.padding({ left: 18, right: 18, top: 9, bottom: 9 }).backgroundColor('#ECF8F4').borderRadius(24)
+                } else {
+                  Image($r('app.media.more_horiz')).width(48).height(30).padding({ left: 10, right: 10 })
+                    .backgroundColor('#ECF8F4').borderRadius(20).onClick(() => { this.reactionsOpen = true; })
+                }
+              }.width('100%').margin({ top: 18 })
             }.width('100%').alignItems(HorizontalAlign.Start)
               .padding({ left: 28, right: 28, top: 24, bottom: 28 }).backgroundColor(Color.White)
 
@@ -215,5 +295,34 @@ struct CampusPostDetailPage {
         .backgroundColor(Color.White).borderRadius(34).margin({ top: 8, bottom: 16 })
         .shadow({ radius: 8, color: '#22000000', offsetY: 2 })
     }.width('100%').height('100%').backgroundColor('#F5F6F8')
+    if (this.actionOpen) {
+      Column().width('100%').height('100%').backgroundColor('#66000000').onClick(() => { this.actionOpen = false; })
+      Column() {
+        Row() {
+          Text('操作').fontSize(24).fontWeight(FontWeight.Bold).fontColor('#222222').layoutWeight(1)
+          Text('×').fontSize(32).fontWeight(FontWeight.Bold).fontColor('#555555').width(52).height(52)
+            .textAlign(TextAlign.Center).backgroundColor('#F5F5F5').borderRadius(26).onClick(() => { this.actionOpen = false; })
+        }.width('100%')
+        Row() {
+          if (this.actionTarget === 'post') {
+            Column() {
+              Text(this.favorited ? '★' : '☆').fontSize(42).width(82).height(82).textAlign(TextAlign.Center).backgroundColor('#F7F7F7').borderRadius(18)
+              Text(this.favorited ? '取消收藏' : '收藏').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
+            }.margin({ right: 22 }).onClick(() => this.toggleFavorite())
+          } else {
+            Column() {
+              Text('↩').fontSize(42).width(82).height(82).textAlign(TextAlign.Center).backgroundColor('#F7F7F7').borderRadius(18)
+              Text('回复').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
+            }.margin({ right: 22 }).onClick(() => this.replyToSelected())
+          }
+          Column() {
+            Text('⚑').fontSize(42).width(82).height(82).textAlign(TextAlign.Center).backgroundColor('#F7F7F7').borderRadius(18)
+            Text('举报').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
+          }.onClick(() => this.confirmReport())
+        }.width('100%').margin({ top: 24 })
+      }.width('100%').height(310).padding({ left: 28, right: 28, top: 28 }).backgroundColor(Color.White)
+        .borderRadius({ topLeft: 28, topRight: 28 })
+    }
+    }
   }
 }
