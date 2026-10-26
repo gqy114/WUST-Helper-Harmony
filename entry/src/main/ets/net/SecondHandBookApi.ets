@@ -15,7 +15,12 @@ export class SecondHandBookApi {
   static async feed(keyword: string = '', category: string = '', major: string = ''): Promise<SecondhandListing[]> { const query = `?page=1&limit=50&keyword=${encodeURIComponent(keyword)}&category=${encodeURIComponent(category)}${major.length > 0 ? `&major=${encodeURIComponent(major)}` : ''}`; const response = await HttpRequest.get<Response<SecondhandListing[]>>(`https://lyzyy.love:8081/api/v1/secondhand/listings${query}`, await SecondHandBookApi.headers()); const data = response.data.data; return Array.isArray(data) ? data : []; }
   static async categories(): Promise<string[]> { const response = await HttpRequest.get<Response<string[]>>('https://lyzyy.love:8081/api/v1/secondhand/categories', await SecondHandBookApi.headers()); return Array.isArray(response.data.data) ? response.data.data : []; }
   static async majors(): Promise<string[]> {
-    const response = await HttpRequest.get<Response<MajorValue[] | MajorPage>>('https://lyzyy.love:8081/api/v1/secondhand/majors', await SecondHandBookApi.headers());
+    // 专业数据来自校园社区二手书接口。旧的 /secondhand/majors 路由未部署，
+    // 请求它只会得到 404，页面随后把异常吞掉并表现为专业列表为空。
+    const response = await HttpRequest.get<Response<MajorValue[] | MajorPage>>('https://lyzyy.love:8081/api/v1/campus-wall/book-trade/majors', await SecondHandBookApi.headers());
+    if (response.data.code !== undefined && response.data.code !== 0 && response.data.code !== 200) {
+      throw new Error(response.data.message || 'major list load failed');
+    }
     const data = response.data.data;
     let values: MajorValue[] = [];
     if (Array.isArray(data)) values = data;
