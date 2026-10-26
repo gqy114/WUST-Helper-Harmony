@@ -331,17 +331,21 @@ struct CampusPostDetailPage {
         Row() {
           if (this.actionTarget === 'post') {
             Column() {
-              Text(this.favorited ? '★' : '☆').fontSize(42).width(82).height(82).textAlign(TextAlign.Center).backgroundColor('#F7F7F7').borderRadius(18)
+              Image(this.favorited ? $r('app.media.star_shine') : $r('app.media.star'))
+                .width(82).height(82).padding(20).objectFit(ImageFit.Contain)
+                .backgroundColor('#F7F7F7').borderRadius(18)
               Text(this.favorited ? '取消收藏' : '收藏').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
             }.margin({ right: 22 }).onClick(() => this.toggleFavorite())
           } else {
             Column() {
-              Text('↩').fontSize(42).width(82).height(82).textAlign(TextAlign.Center).backgroundColor('#F7F7F7').borderRadius(18)
+              Image($r('app.media.reply')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
+                .backgroundColor('#F7F7F7').borderRadius(18)
               Text('回复').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
             }.margin({ right: 22 }).onClick(() => this.replyToSelected())
           }
           Column() {
-            Text('⚑').fontSize(42).width(82).height(82).textAlign(TextAlign.Center).backgroundColor('#F7F7F7').borderRadius(18)
+            Image($r('app.media.flag')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
+              .backgroundColor('#F7F7F7').borderRadius(18)
             Text('举报').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
           }.onClick(() => this.openReportDialog())
         }.width('100%').margin({ top: 24 })
