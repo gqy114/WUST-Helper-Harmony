@@ -1,6 +1,6 @@
 import { HttpRequest } from './HttpRequest';
 import { AppStorage } from '../store/AppStorage';
-export interface CampusWallReply { id?: number; displayName?: string; realName?: string; avatarUrl?: string; college?: string; major?: string; content?: string; createdAt?: string; images?: string[]; }
+export interface CampusWallReply { id?: number; displayName?: string; realName?: string; avatarUrl?: string; college?: string; major?: string; content?: string; createdAt?: string; images?: string[]; redFlowers?: number; }
 export interface CampusWallPost {
   id?: number;
   title?: string;
@@ -89,7 +89,7 @@ export class CampusWallApi {
     const images: string[] = Array.isArray(reply.images) ? reply.images.map((url: string) => CampusWallApi.fullAssetUrl(url)) : [];
     return { id: reply.id, displayName: reply.displayName, realName: reply.realName,
       avatarUrl: CampusWallApi.fullAssetUrl(reply.avatarUrl || ''), college: reply.college,
-      major: reply.major, content: reply.content, createdAt: reply.createdAt, images };
+      major: reply.major, content: reply.content, createdAt: reply.createdAt, images, redFlowers: reply.redFlowers || 0 };
   }
   private static normalizePost(post: CampusWallPost): CampusWallPost {
     let images: string[] = [];

@@ -225,8 +225,17 @@ struct CampusPostDetailPage {
         .width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 14 })
       Column() {
         Row() {
-          Text(reply.displayName || reply.realName || '同学')
-            .fontSize(19).fontWeight(FontWeight.Bold).fontColor('#655C86').layoutWeight(1)
+          Row() {
+            Text(reply.displayName || reply.realName || '同学')
+              .fontSize(19).fontWeight(FontWeight.Bold).fontColor('#655C86').maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            if ((reply.redFlowers || 0) > 0) {
+              Row() {
+                Image($r('app.media.flower')).width(18).height(18).objectFit(ImageFit.Contain)
+                Text(`${reply.redFlowers}`).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#B83D5B').margin({ left: 4 })
+              }.height(28).padding({ left: 7, right: 8 }).backgroundColor('#FFF0F2').borderRadius(14).margin({ left: 8 })
+            }
+          }.layoutWeight(1)
           Image($r('app.media.more_horiz')).width(24).height(24).onClick(() => this.openReplyActions(reply))
         }.width('100%')
         Text(reply.college || reply.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 })
