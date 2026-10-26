@@ -62,12 +62,13 @@ struct CampusPostDetailPage {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
-  private contentHtml(value: string | undefined): string {
-    let content = decodeHtmlEntities(value || '');
-    if (!/<\/?(?:b|strong|i|em|u|s|strike|p|div|br)\b/i.test(content)) {
-      content = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-    }
-    return `<div style="font-size:19px;color:#444444;line-height:1.65;word-break:break-word;">${content}</div>`;
+  private plainContent(value: string | undefined): string {
+    return decodeHtmlEntities(value || '')
+      .replace(/<\/?(?:p|div)[^>]*>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   @Builder
@@ -90,7 +91,7 @@ struct CampusPostDetailPage {
 
   @Builder
   private postImage(url: string) {
-    Image(url).width('100%').height(280).objectFit(ImageFit.Contain).margin({ top: 18 })
+    Image(url).width('100%').height(280).objectFit(ImageFit.Contain).margin({ top: 14 })
   }
 
   @Builder
@@ -133,7 +134,8 @@ struct CampusPostDetailPage {
               this.authorHeader()
               Text(decodeHtmlEntities(this.post.title || ''))
                 .fontSize(25).fontWeight(FontWeight.Bold).fontColor('#222222').lineHeight(36).margin({ top: 26 })
-              RichText(this.contentHtml(this.post.content)).width('100%').margin({ top: 20 })
+              Text(this.plainContent(this.post.content)).width('100%').fontSize(20).fontColor('#444444')
+                .lineHeight(32).margin({ top: 18 })
               ForEach(this.post.images || [], (url: string) => {
                 this.postImage(url)
               }, (url: string) => url)
