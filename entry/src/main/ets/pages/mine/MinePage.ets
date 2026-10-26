@@ -22,6 +22,7 @@ import { ApiService } from '../../net/ApiService';
 import { UserStore } from '../../store/UserStore';
 import { UserInfo } from '../../model/UserInfoModel';
 import { HttpRequest } from '../../net/HttpRequest';
+import { CampusWallApi, CampusRedFlowerRank, CampusRedFlowerRanking } from '../../net/CampusWallApi';
 
 const TAG = 'MinePage';
 interface UpdateItem { title?: string; context?: string; }
@@ -99,6 +100,13 @@ struct MinePage {
   @State private errorMsg: string = '';
   @State private showLogoutDialog: boolean = false;
   @State private logoutAnim: boolean = false;
+  @State private flowerCount: number = 0;
+  @State private showFlowerRanking: boolean = false;
+  @State private flowerDialogAnim: boolean = false;
+  @State private flowerLoading: boolean = false;
+  @State private flowerRanking: CampusRedFlowerRanking = { top: [], mine: {
+    rank: 0, studentId: '', redFlowers: 0, participating: false
+  } };
 
   private store: UserStore = UserStore.getInstance();
 
@@ -124,6 +132,7 @@ struct MinePage {
       // 后台拉取 API 更新用户信息
       this.fetchUserInfo(token);
       this.refreshAvatar();
+      this.loadFlowerRanking(false);
     } catch {
       console.error(TAG, 'verify error');
       this.loading = false;
@@ -138,6 +147,30 @@ struct MinePage {
     } catch {
       console.warn(TAG, 'refresh avatar failed');
     }
+  }
+
+  private async loadFlowerRanking(showError: boolean): Promise<void> {
+    this.flowerLoading = true;
+    try {
+      this.flowerRanking = await CampusWallApi.flowerRanking();
+      this.flowerCount = this.flowerRanking.mine.redFlowers || 0;
+    } catch {
+      if (showError) promptAction.showToast({ message: '小红花排行榜加载失败', duration: 1500 });
+    }
+    this.flowerLoading = false;
+  }
+
+  private openFlowerDialog(): void {
+    this.showFlowerRanking = true;
+    this.loadFlowerRanking(true);
+    setTimeout(() => {
+      animateTo({ duration: 240, curve: Curve.EaseOut }, () => { this.flowerDialogAnim = true; });
+    }, 10);
+  }
+
+  private closeFlowerDialog(): void {
+    animateTo({ duration: 180, curve: Curve.EaseIn }, () => { this.flowerDialogAnim = false; });
+    setTimeout(() => { this.showFlowerRanking = false; }, 190);
   }
 
   private async checkUpdate(): Promise<void> {
@@ -261,6 +294,104 @@ struct MinePage {
     setTimeout(() => { this.showLogoutDialog = false; }, 190);
   }
 
+  private flowerName(item: CampusRedFlowerRank): string {
+    return item.displayName || item.realName || '同学';
+  }
+
+  @Builder
+  private flowerPodium(item: CampusRedFlowerRank, place: number) {
+    Column() {
+      Image(item.avatarUrl || $r('app.media.ic_default_avatar'))
+        .width(place === 1 ? 62 : 54).height(place === 1 ? 62 : 54)
+        .borderRadius(place === 1 ? 31 : 27).objectFit(ImageFit.Cover)
+      Text(this.flowerName(item)).fontSize(15).fontWeight(FontWeight.Bold).fontColor('#444444')
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 7 })
+      Row() {
+        Image($r('app.media.flower')).width(17).height(17).objectFit(ImageFit.Contain)
+        Text(`${item.redFlowers} 朵`).fontSize(15).fontWeight(FontWeight.Bold).fontColor('#B83D5B').margin({ left: 4 })
+      }.margin({ top: 5 })
+      Text(`第 ${place} 名`).fontSize(15).fontWeight(FontWeight.Bold)
+        .fontColor(place === 1 ? '#A37B24' : '#777777').width('100%').height(place === 1 ? 54 : 46)
+        .textAlign(TextAlign.Center).backgroundColor(place === 1 ? '#FFF4D7' : '#F5F5F5')
+        .borderRadius({ topLeft: 8, topRight: 8 }).margin({ top: 7 })
+    }.width('31%').justifyContent(FlexAlign.End)
+  }
+
+  @Builder
+  private flowerRankRow(item: CampusRedFlowerRank) {
+    Row() {
+      Text(`${item.rank}`).width(34).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#B83D5B').textAlign(TextAlign.Center)
+      Image(item.avatarUrl || $r('app.media.ic_default_avatar'))
+        .width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover).margin({ left: 6, right: 12 })
+      Column() {
+        Text(this.flowerName(item)).fontSize(17).fontWeight(FontWeight.Bold).fontColor('#333333')
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(item.college || item.major || '').fontSize(13).fontColor('#999999').maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 3 })
+      }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+      Row() {
+        Image($r('app.media.flower')).width(18).height(18).objectFit(ImageFit.Contain)
+        Text(`${item.redFlowers} 朵`).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#B83D5B').margin({ left: 4 })
+      }
+    }.width('100%').height(62)
+  }
+
+  @Builder
+  private flowerRankingOverlay() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column().width('100%').height('100%').backgroundColor('#77000000')
+        .opacity(this.flowerDialogAnim ? 1 : 0).onClick(() => this.closeFlowerDialog())
+      Column() {
+        Text('小红花排行榜').fontSize(25).fontWeight(FontWeight.Bold).fontColor('#444444').margin({ top: 24, bottom: 18 })
+        if (this.flowerLoading && this.flowerRanking.top.length === 0) {
+          LoadingProgress().width(42).height(42).color('#20C894').margin({ top: 60, bottom: 80 })
+        } else if (this.flowerRanking.top.length === 0) {
+          Text('暂时还没有上榜同学').fontSize(17).fontColor('#999999').margin({ top: 60, bottom: 80 })
+        } else {
+          Row() {
+            if (this.flowerRanking.top.length > 1) {
+              this.flowerPodium(this.flowerRanking.top[1], 2)
+            } else { Blank().width('31%') }
+            this.flowerPodium(this.flowerRanking.top[0], 1)
+            if (this.flowerRanking.top.length > 2) {
+              this.flowerPodium(this.flowerRanking.top[2], 3)
+            } else { Blank().width('31%') }
+          }.width('100%').alignItems(VerticalAlign.Bottom)
+
+          Text('前 30 名').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#666666')
+            .width('100%').margin({ top: 14, bottom: 4 })
+          Scroll() {
+            Column() {
+              ForEach(this.flowerRanking.top.slice(3), (item: CampusRedFlowerRank) => {
+                this.flowerRankRow(item)
+              }, (item: CampusRedFlowerRank) => item.studentId)
+            }.width('100%')
+          }.width('100%').height(190)
+        }
+
+        if (this.flowerRanking.mine.participating) {
+          Row() {
+            Image($r('app.media.flower')).width(22).height(22).objectFit(ImageFit.Contain)
+            Text(`第 ${this.flowerRanking.mine.rank} 名`).fontSize(17).fontWeight(FontWeight.Bold)
+              .fontColor('#B83D5B').margin({ left: 10 }).layoutWeight(1)
+            Text(`${this.flowerRanking.mine.redFlowers} 朵`).fontSize(17).fontWeight(FontWeight.Bold).fontColor('#B83D5B')
+          }.width('100%').height(58).padding({ left: 16, right: 16 }).backgroundColor('#FFF0F2').borderRadius(8)
+        }
+
+        Row() {
+          Button('获取规则').fontSize(17).fontColor('#777777').backgroundColor('#EEEEEE').borderRadius(8).layoutWeight(1)
+            .onClick(() => promptAction.showDialog({ title: '小红花获取规则',
+              message: '在求助区回复一个不同的问题可获得 1 朵小红花；回复被提问者采纳后，再获得 5 朵小红花。',
+              buttons: [{ text: '知道了', color: '#20C894' }] }))
+          Button('知道了').fontSize(17).fontColor(Color.White).backgroundColor('#20C894').borderRadius(8)
+            .layoutWeight(1).margin({ left: 12 }).onClick(() => this.closeFlowerDialog())
+        }.width('100%').height(50).margin({ top: 20, bottom: 22 })
+      }.width('82%').height('84%').padding({ left: 22, right: 22 }).backgroundColor(Color.White).borderRadius(22)
+        .scale({ x: this.flowerDialogAnim ? 1 : 0.88, y: this.flowerDialogAnim ? 1 : 0.88 })
+        .opacity(this.flowerDialogAnim ? 1 : 0).onClick(() => {})
+    }.width('100%').height('100%')
+  }
+
   build() {
     Stack({ alignContent: Alignment.Center }) {
       Column() {
@@ -308,16 +439,14 @@ struct MinePage {
                   .fontSize(13)
                   .fontColor('#999999')
                   .margin({ top: 4 })
+                Row() {
+                  Image($r('app.media.flower')).width(20).height(20).objectFit(ImageFit.Contain)
+                  Text(`${this.flowerCount}`).fontSize(15).fontWeight(FontWeight.Bold).fontColor('#B83D5B').margin({ left: 5 })
+                }.margin({ top: 7 }).onClick(() => this.openFlowerDialog())
               }
               .alignItems(HorizontalAlign.Start)
               .layoutWeight(1)
               .margin({ left: 12 })
-              .onClick(() => {
-                router.pushUrl({
-                  url: 'pages/profile/InfoSettingsPage',
-                  params: { name: this.userInfo.userName || this.userInfo.realName || '', studentId: this.userInfo.studentId }
-                });
-              })
 
               Text('注销')
                 .fontSize(13)
@@ -456,6 +585,7 @@ struct MinePage {
       }
       }
       if (this.showLogoutDialog) { this.logoutOverlay() }
+      if (this.showFlowerRanking) { this.flowerRankingOverlay() }
     }
     .width('100%').height('100%').backgroundColor('#F5F5F5')
   }

@@ -24,6 +24,19 @@ export interface CampusWallPost {
   replies?: CampusWallReply[];
   reactions?: Record<string, number>;
 }
+export interface CampusRedFlowerRank {
+  rank: number;
+  studentId: string;
+  studentType?: string;
+  realName?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  college?: string;
+  major?: string;
+  redFlowers: number;
+  participating: boolean;
+}
+export interface CampusRedFlowerRanking { top: CampusRedFlowerRank[]; mine: CampusRedFlowerRank; }
 export function decodeHtmlEntities(value: string): string {
   let result = value.replace(/<br\s*\/?>/gi, '\n');
   for (let index = 0; index < 3; index++) {
@@ -38,6 +51,7 @@ export function decodeHtmlEntities(value: string): string {
 interface WallData { posts?: CampusWallPost[]; list?: CampusWallPost[]; }
 interface WallResponse { code?: number; data?: WallData | CampusWallPost[]; }
 interface WallDetailResponse { code?: number; data?: CampusWallPost; }
+interface FlowerRankingResponse { code?: number; message?: string; data?: CampusRedFlowerRanking; }
 interface ReactionData { added?: boolean; }
 interface ReactionResponse { data?: ReactionData; }
 interface PublishResponse { code?: number; message?: string; }
@@ -91,6 +105,22 @@ export class CampusWallApi {
   static async detail(id: number): Promise<CampusWallPost> {
     const response = await HttpRequest.get<WallDetailResponse>(`https://lyzyy.love:8081/api/v1/campus-wall/posts/${id}`, await CampusWallApi.headers());
     return CampusWallApi.normalizePost(response.data.data || {});
+  }
+
+  static async flowerRanking(): Promise<CampusRedFlowerRanking> {
+    const response = await HttpRequest.get<FlowerRankingResponse>(
+      'https://lyzyy.love:8081/api/v1/campus-wall/red-flowers/ranking', await CampusWallApi.headers());
+    const code = response.data.code;
+    if (code !== undefined && code !== 0 && code !== 200) throw new Error(response.data.message || 'ranking failed');
+    const ranking: CampusRedFlowerRanking = response.data.data || { top: [], mine: {
+      rank: 0, studentId: '', redFlowers: 0, participating: false
+    } };
+    ranking.top = (ranking.top || []).map((item: CampusRedFlowerRank) => {
+      item.avatarUrl = CampusWallApi.fullAssetUrl(item.avatarUrl || '');
+      return item;
+    });
+    ranking.mine.avatarUrl = CampusWallApi.fullAssetUrl(ranking.mine.avatarUrl || '');
+    return ranking;
   }
 
   static async toggleReaction(id: number, type: string = 'like'): Promise<boolean> {
