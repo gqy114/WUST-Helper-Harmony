@@ -21,8 +21,30 @@ export interface CampusWallPost {
   type?: string;
   category?: string;
   noticeType?: string;
+  extra?: string;
   replies?: CampusWallReply[];
   reactions?: Record<string, number>;
+}
+export interface CampusWallExtra { type?: string; address?: string; }
+export function campusWallExtra(post: CampusWallPost): CampusWallExtra {
+  if (!post.extra) return {};
+  try { return JSON.parse(post.extra) as CampusWallExtra; } catch { return {}; }
+}
+export function campusWallRelativeTime(value?: string): string {
+  if (!value) return '';
+  const stamp = Date.parse(value);
+  if (isNaN(stamp)) return value;
+  const elapsed = Math.max(0, Date.now() - stamp);
+  const minutes = Math.floor(elapsed / 60000);
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes}分钟前`;
+  const hours = Math.floor(elapsed / 3600000);
+  if (hours < 24) return `${hours}小时前`;
+  const days = Math.floor(elapsed / 86400000);
+  if (days < 30) return `${days}天前`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}个月前`;
+  return `${Math.floor(days / 365)}年前`;
 }
 export interface CampusRedFlowerRank {
   rank: number;
@@ -83,7 +105,7 @@ export class CampusWallApi {
       college: post.college, major: post.major, createdAt: post.createdAt,
       likeCount: post.likeCount, replyCount: post.replyCount, images: fullImages,
       status: post.status, resolved: post.resolved, isResolved: post.isResolved,
-      type: post.type, category: post.category, noticeType: post.noticeType,
+      type: post.type, category: post.category, noticeType: post.noticeType, extra: post.extra,
       replies: (post.replies || []).map((reply: CampusWallReply) => CampusWallApi.normalizeReply(reply)), reactions: post.reactions || {} };
   }
   private static async headers(): Promise<WallHeaders> {

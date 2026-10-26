@@ -1,7 +1,7 @@
 import router from '@ohos.router';
 import { AppStorage } from '../../store/AppStorage';
 import { promptAction } from '@kit.ArkUI';
-import { CampusWallApi, CampusWallPost, decodeHtmlEntities } from '../../net/CampusWallApi';
+import { CampusWallApi, CampusWallPost, campusWallExtra, campusWallRelativeTime, decodeHtmlEntities } from '../../net/CampusWallApi';
 
 @Entry @Component
 struct CampusMatchPage {
@@ -43,7 +43,10 @@ struct CampusMatchPage {
     const collegeOk: boolean = this.activeCollegeFilter === '全部' || (this.activeCollegeFilter === '同学院' ? same : !same);
     return teamOk && collegeOk;
   }
-  private teamLabel(post: CampusWallPost): string { const value = (post.noticeType || post.type || post.category || '').toLowerCase(); return value.indexOf('队伍') >= 0 || value.indexOf('team') >= 0 || value.indexOf('join') >= 0 ? '找队伍' : '找队友'; }
+  private teamLabel(post: CampusWallPost): string {
+    const value = (campusWallExtra(post).type || post.noticeType || post.type || post.category || '').toLowerCase();
+    return value === 'member' || value.indexOf('队伍') >= 0 || value.indexOf('join') >= 0 ? '找队伍' : '找队友';
+  }
 
   @Builder private highlighted(value: string, size: number, color: string, bold: boolean) {
     Text(value).fontSize(size).fontWeight(bold ? FontWeight.Bold : FontWeight.Normal).fontColor(color).width('100%');
@@ -85,7 +88,7 @@ struct CampusMatchPage {
                 }.width('100%');
                 if (post.title) { this.highlighted(decodeHtmlEntities(post.title), 22, '#222222', true); }
                 this.highlighted(decodeHtmlEntities(post.content || ''), 18, '#333333', false);
-                Text('刚刚').fontSize(16).fontColor('#AAAAAA').margin({ top: 18 });
+                Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA').margin({ top: 18 });
               }.width('100%').padding({ left: 34, right: 34, top: 22, bottom: 24 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => router.pushUrl({ url: 'pages/campus/CampusPostDetailPage', params: { id: String(post.id || 0) } }));
             }, (post: CampusWallPost) => `${post.id || post.createdAt || post.content}`);
           }
