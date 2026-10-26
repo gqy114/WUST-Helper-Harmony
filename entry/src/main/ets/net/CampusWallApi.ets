@@ -1,6 +1,6 @@
 import { HttpRequest } from './HttpRequest';
 import { AppStorage } from '../store/AppStorage';
-export interface CampusWallReply { id?: number; displayName?: string; realName?: string; avatarUrl?: string; college?: string; major?: string; content?: string; createdAt?: string; }
+export interface CampusWallReply { id?: number; displayName?: string; realName?: string; avatarUrl?: string; college?: string; major?: string; content?: string; createdAt?: string; images?: string[]; }
 export interface CampusWallPost {
   id?: number;
   title?: string;
@@ -43,6 +43,16 @@ interface ReactionResponse { data?: ReactionData; }
 interface PublishResponse { code?: number; message?: string; }
 interface WallHeaders extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
 export class CampusWallApi {
+  private static fullAssetUrl(url: string): string {
+    if (!url || url.startsWith('http') || url.startsWith('file:') || url.startsWith('data:')) return url;
+    return `https://lyzyy.love${url.startsWith('/') ? '' : '/'}${url}`;
+  }
+  private static normalizeReply(reply: CampusWallReply): CampusWallReply {
+    const images: string[] = Array.isArray(reply.images) ? reply.images.map((url: string) => CampusWallApi.fullAssetUrl(url)) : [];
+    return { id: reply.id, displayName: reply.displayName, realName: reply.realName,
+      avatarUrl: CampusWallApi.fullAssetUrl(reply.avatarUrl || ''), college: reply.college,
+      major: reply.major, content: reply.content, createdAt: reply.createdAt, images };
+  }
   private static normalizePost(post: CampusWallPost): CampusWallPost {
     let images: string[] = [];
     const rawImages: string[] | string = post.images as string[] | string;
@@ -53,13 +63,14 @@ export class CampusWallApi {
         images = Array.isArray(parsed) ? parsed : [rawImages];
       } catch { images = rawImages.trim() ? [rawImages] : []; }
     }
-    const fullImages: string[] = images.map((url: string) => url.startsWith('http') ? url : `https://lyzyy.love${url.startsWith('/') ? '' : '/'}${url}`);
+    const fullImages: string[] = images.map((url: string) => CampusWallApi.fullAssetUrl(url));
     return { id: post.id, title: post.title, content: post.content, tag: post.tag,
-      displayName: post.displayName, realName: post.realName, avatarUrl: post.avatarUrl,
+      displayName: post.displayName, realName: post.realName, avatarUrl: CampusWallApi.fullAssetUrl(post.avatarUrl || ''),
       college: post.college, major: post.major, createdAt: post.createdAt,
       likeCount: post.likeCount, replyCount: post.replyCount, images: fullImages,
       status: post.status, resolved: post.resolved, isResolved: post.isResolved,
-      type: post.type, category: post.category, noticeType: post.noticeType, replies: post.replies || [], reactions: post.reactions || {} };
+      type: post.type, category: post.category, noticeType: post.noticeType,
+      replies: (post.replies || []).map((reply: CampusWallReply) => CampusWallApi.normalizeReply(reply)), reactions: post.reactions || {} };
   }
   private static async headers(): Promise<WallHeaders> {
     const token = await AppStorage.getInstance().getAppAuthAccessToken();
