@@ -60,6 +60,14 @@ export interface CampusRedFlowerRank {
   participating: boolean;
 }
 export interface CampusRedFlowerRanking { top: CampusRedFlowerRank[]; mine: CampusRedFlowerRank; }
+export interface CampusWallNotificationActor {
+  studentId?: string; realName?: string; displayName?: string; avatarUrl?: string; college?: string; major?: string;
+}
+export interface CampusWallNotification {
+  id?: number; eventType?: string; targetType?: string; targetId?: number; postId?: number; createdAt?: string;
+  readAt?: string; actor?: CampusWallNotificationActor; postTitle?: string; postTag?: string; content?: string;
+}
+export interface CampusWallNotificationPage { items: CampusWallNotification[]; latestId: number; unreadCount: number; }
 export function decodeHtmlEntities(value: string): string {
   let result = value.replace(/<br\s*\/?>/gi, '\n');
   for (let index = 0; index < 3; index++) {
@@ -79,6 +87,7 @@ interface ReactionData { added?: boolean; }
 interface ReactionResponse { data?: ReactionData; }
 interface PublishResponse { code?: number; message?: string; }
 interface ReportResponse { code?: number; message?: string; }
+interface NotificationResponse { code?: number; message?: string; data?: CampusWallNotificationPage; }
 interface WallHeaders extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
 export class CampusWallApi {
   private static fullAssetUrl(url: string): string {
@@ -147,6 +156,28 @@ export class CampusWallApi {
   static async detail(id: number): Promise<CampusWallPost> {
     const response = await HttpRequest.get<WallDetailResponse>(`https://lyzyy.love:8081/api/v1/campus-wall/posts/${id}`, await CampusWallApi.headers());
     return CampusWallApi.normalizePost(response.data.data || {});
+  }
+
+  static async notifications(beforeId: number = 0, limit: number = 30): Promise<CampusWallNotificationPage> {
+    const cursor = beforeId > 0 ? `&beforeId=${beforeId}` : '';
+    const response = await HttpRequest.get<NotificationResponse>(
+      `https://lyzyy.love:8081/api/v1/campus-wall/notifications?limit=${limit}&includeCat=1${cursor}`,
+      await CampusWallApi.headers());
+    const code = response.data.code;
+    if (code !== undefined && code !== 0 && code !== 200) throw new Error(response.data.message || 'notifications failed');
+    const page = response.data.data || { items: [], latestId: 0, unreadCount: 0 };
+    page.items = (page.items || []).map((item: CampusWallNotification) => {
+      if (item.actor) item.actor.avatarUrl = CampusWallApi.fullAssetUrl(item.actor.avatarUrl || '');
+      return item;
+    });
+    return page;
+  }
+
+  static async markNotificationsRead(throughId: number): Promise<void> {
+    if (throughId <= 0) return;
+    await HttpRequest.postJson<Record<string, Object>>(
+      'https://lyzyy.love:8081/api/v1/campus-wall/notifications/read?includeCat=1',
+      { throughId: String(throughId) }, await CampusWallApi.headers());
   }
 
   static async flowerRanking(): Promise<CampusRedFlowerRanking> {
