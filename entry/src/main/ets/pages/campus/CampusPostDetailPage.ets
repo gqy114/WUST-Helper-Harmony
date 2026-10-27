@@ -37,13 +37,52 @@ struct CampusPostDetailPage {
   @State private reportDialogOpen: boolean = false;
   @State private reportReason: string = '';
   @State private reporting: boolean = false;
+  @State private myStudentId: string = '';
+  @State private deleteDialogOpen: boolean = false;
+  @State private deleting: boolean = false;
 
   aboutToAppear(): void {
     const params = router.getParams() as DetailParams;
     this.postId = Number(params?.id || 0);
     this.load();
     this.loadMyAvatar();
+    this.loadIdentity();
     this.loadFavorite();
+  }
+
+  private async loadIdentity(): Promise<void> {
+    this.myStudentId = await AppStorage.getInstance().getStudentId();
+  }
+
+  private isOwnTarget(): boolean {
+    if (!this.myStudentId) return false;
+    if (this.actionTarget === 'post') return this.post.studentId === this.myStudentId;
+    const reply = (this.post.replies || []).find((item: CampusWallReply) => (item.id || 0) === this.actionReplyId);
+    return reply?.studentId === this.myStudentId;
+  }
+
+  private openDeleteDialog(): void {
+    this.actionOpen = false;
+    this.deleteDialogOpen = true;
+  }
+
+  private async confirmDelete(): Promise<void> {
+    if (this.deleting) return;
+    this.deleting = true;
+    try {
+      if (this.actionTarget === 'post') {
+        await CampusWallApi.deletePost(this.postId);
+        this.deleteDialogOpen = false;
+        promptAction.showToast({ message: '帖子已删除', duration: 1200 });
+        router.back();
+      } else {
+        await CampusWallApi.deleteReply(this.postId, this.actionReplyId);
+        this.deleteDialogOpen = false;
+        promptAction.showToast({ message: '回复已删除', duration: 1200 });
+        await this.load();
+      }
+    } catch { promptAction.showToast({ message: '删除失败，请稍后重试', duration: 1500 }); }
+    this.deleting = false;
   }
 
   private async loadFavorite(): Promise<void> {
@@ -343,10 +382,36 @@ struct CampusPostDetailPage {
             Image($r('app.media.flag')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
               .backgroundColor('#F7F7F7').borderRadius(18)
             Text('举报').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
-          }.onClick(() => this.openReportDialog())
+          }.margin({ right: this.isOwnTarget() ? 22 : 0 }).onClick(() => this.openReportDialog())
+          if (this.isOwnTarget()) {
+            Column() {
+              Image($r('app.media.delete')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
+                .backgroundColor('#F7F7F7').borderRadius(18)
+              Text('删除').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#D9534F').margin({ top: 10 })
+            }.onClick(() => this.openDeleteDialog())
+          }
         }.width('100%').margin({ top: 24 })
       }.width('100%').height(310).padding({ left: 28, right: 28, top: 28 }).backgroundColor(Color.White)
         .borderRadius({ topLeft: 28, topRight: 28 })
+    }
+    if (this.deleteDialogOpen) {
+      Stack({ alignContent: Alignment.Center }) {
+        Column().width('100%').height('100%').backgroundColor('#66000000')
+        Column() {
+          Text(this.actionTarget === 'post' ? '删除这条帖子？' : '删除这条回复？')
+            .fontSize(25).fontWeight(FontWeight.Bold).fontColor('#333333')
+          Text('删除后无法恢复').fontSize(17).fontColor('#999999').margin({ top: 14, bottom: 28 })
+          Row() {
+            Button('取消').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#555555')
+              .width('42%').height(54).backgroundColor('#F0F0F0').borderRadius(9)
+              .onClick(() => { this.deleteDialogOpen = false; })
+            Button(this.deleting ? '删除中' : '删除').fontSize(19).fontWeight(FontWeight.Bold).fontColor(Color.White)
+              .width('42%').height(54).backgroundColor('#E35D5B').borderRadius(9).margin({ left: 18 })
+              .onClick(() => this.confirmDelete())
+          }.justifyContent(FlexAlign.Center)
+        }.width('82%').padding({ left: 24, right: 24, top: 30, bottom: 28 })
+          .backgroundColor(Color.White).borderRadius(24).alignItems(HorizontalAlign.Center)
+      }.width('100%').height('100%')
     }
     if (this.reportDialogOpen) {
       Stack({ alignContent: Alignment.Center }) {

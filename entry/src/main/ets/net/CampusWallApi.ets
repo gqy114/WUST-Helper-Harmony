@@ -1,8 +1,9 @@
 import { HttpRequest } from './HttpRequest';
 import { AppStorage } from '../store/AppStorage';
-export interface CampusWallReply { id?: number; displayName?: string; realName?: string; avatarUrl?: string; college?: string; major?: string; content?: string; createdAt?: string; images?: string[]; redFlowers?: number; }
+export interface CampusWallReply { id?: number; studentId?: string; displayName?: string; realName?: string; avatarUrl?: string; college?: string; major?: string; content?: string; createdAt?: string; images?: string[]; redFlowers?: number; }
 export interface CampusWallPost {
   id?: number;
+  studentId?: string;
   title?: string;
   content?: string;
   tag?: string;
@@ -87,6 +88,7 @@ interface ReactionData { added?: boolean; }
 interface ReactionResponse { data?: ReactionData; }
 interface PublishResponse { code?: number; message?: string; }
 interface ReportResponse { code?: number; message?: string; }
+interface DeleteResponse { code?: number; message?: string; }
 interface NotificationResponse { code?: number; message?: string; data?: CampusWallNotificationPage; }
 interface WallHeaders extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
 export class CampusWallApi {
@@ -96,7 +98,7 @@ export class CampusWallApi {
   }
   private static normalizeReply(reply: CampusWallReply): CampusWallReply {
     const images: string[] = Array.isArray(reply.images) ? reply.images.map((url: string) => CampusWallApi.fullAssetUrl(url)) : [];
-    return { id: reply.id, displayName: reply.displayName, realName: reply.realName,
+    return { id: reply.id, studentId: reply.studentId, displayName: reply.displayName, realName: reply.realName,
       avatarUrl: CampusWallApi.fullAssetUrl(reply.avatarUrl || ''), college: reply.college,
       major: reply.major, content: reply.content, createdAt: reply.createdAt, images, redFlowers: reply.redFlowers || 0 };
   }
@@ -111,7 +113,7 @@ export class CampusWallApi {
       } catch { images = rawImages.trim() ? [rawImages] : []; }
     }
     const fullImages: string[] = images.map((url: string) => CampusWallApi.fullAssetUrl(url));
-    return { id: post.id, title: post.title, content: post.content, tag: post.tag,
+    return { id: post.id, studentId: post.studentId, title: post.title, content: post.content, tag: post.tag,
       displayName: post.displayName, realName: post.realName, avatarUrl: CampusWallApi.fullAssetUrl(post.avatarUrl || ''),
       college: post.college, major: post.major, createdAt: post.createdAt,
       likeCount: post.likeCount, replyCount: post.replyCount, images: fullImages,
@@ -215,6 +217,21 @@ export class CampusWallApi {
       { targetType, targetId: String(targetId), reason }, await CampusWallApi.headers());
     const code = response.data.code;
     if (code !== undefined && code !== 0 && code !== 200) throw new Error(response.data.message || 'report failed');
+  }
+
+  static async deletePost(id: number): Promise<void> {
+    const response = await HttpRequest.postJson<DeleteResponse>(
+      `https://lyzyy.love:8081/api/v1/campus-wall/posts/${id}/delete`, {}, await CampusWallApi.headers());
+    const code = response.data.code;
+    if (code !== undefined && code !== 0 && code !== 200) throw new Error(response.data.message || 'delete post failed');
+  }
+
+  static async deleteReply(postId: number, replyId: number): Promise<void> {
+    const response = await HttpRequest.postJson<DeleteResponse>(
+      `https://lyzyy.love:8081/api/v1/campus-wall/posts/${postId}/replies/${replyId}/delete`, {},
+      await CampusWallApi.headers());
+    const code = response.data.code;
+    if (code !== undefined && code !== 0 && code !== 200) throw new Error(response.data.message || 'delete reply failed');
   }
 
   static async publish(title: string, content: string, tag: string = 'wall', extra: string = '{}', images: string[] = []): Promise<void> {
