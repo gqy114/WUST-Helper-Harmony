@@ -16,12 +16,14 @@ import { AppStorage } from '../store/AppStorage';
 // 当前 Go 后端与其余本科教务接口统一部署在 8081 端口；443 反向代理保留为故障回退。
 export const UG_LOGIN_V2 = 'https://lyzyy.love:8081/UnderGraduate/Support/loginGetCookie';
 const UG_LOGIN_V2_BACKUP = 'https://www.lyzyy.love/UnderGraduate/Support/loginGetCookie';
+const GO_BACKUP_BASE = 'http://port.happylandmc.cc:52144';
+const UG_LOGIN_BACKEND_BACKUP = `${GO_BACKUP_BASE}/UnderGraduate/Support/loginGetCookie`;
 export const GRADUATE_LOGIN_V2 = 'https://www.lyzyy.love:8009/personal-info';
 const GRADUATE_LOGIN_V2_BACKUP = 'https://lyzyy.love:8009/personal-info';
 export const APP_AUTH_LOGIN = 'https://lyzyy.love:8081/api/v1/auth/login';
 const APP_AUTH_LOGIN_BACKUP = 'https://www.lyzyy.love:8081/api/v1/auth/login';
-const UG_TWO_VERIFY_SEND = 'https://lyzyy.love:8081/UnderGraduate/Support/twoVerify/sendCode';
-const UG_TWO_VERIFY_CHECK = 'https://lyzyy.love:8081/UnderGraduate/Support/twoVerify/verify';
+const UG_TWO_VERIFY_SEND_PATH = '/UnderGraduate/Support/twoVerify/sendCode';
+const UG_TWO_VERIFY_CHECK_PATH = '/UnderGraduate/Support/twoVerify/verify';
 
 interface UndergradLoginResponse {
   code: number;
@@ -32,13 +34,17 @@ interface UndergradLoginResponse {
 }
 
 export class ApiService {
+  private static undergradSessionBackend: string = 'https://lyzyy.love:8081';
+
   static async sendUndergradVerifyCode(state: string): Promise<BaseResponse<{ cooldown_seconds?: number }>> {
-    const result = await HttpRequest.postJson<BaseResponse<{ cooldown_seconds?: number }>>(UG_TWO_VERIFY_SEND, { state });
+    const result = await HttpRequest.postJsonPinned<BaseResponse<{ cooldown_seconds?: number }>>(
+      `${ApiService.undergradSessionBackend}${UG_TWO_VERIFY_SEND_PATH}`, { state });
     return result.data;
   }
 
   static async verifyUndergradCode(state: string, code: string): Promise<BaseResponse<TokenDataContent>> {
-    const result = await HttpRequest.postJson<BaseResponse<TokenDataContent>>(UG_TWO_VERIFY_CHECK, { state, code });
+    const result = await HttpRequest.postJsonPinned<BaseResponse<TokenDataContent>>(
+      `${ApiService.undergradSessionBackend}${UG_TWO_VERIFY_CHECK_PATH}`, { state, code });
     return result.data;
   }
   /** Mock helper: wrap success response */
@@ -58,7 +64,7 @@ export class ApiService {
         student_type: 'undergrad',
       });
     }
-    const endpoints: string[] = [UG_LOGIN_V2, UG_LOGIN_V2_BACKUP];
+    const endpoints: string[] = [UG_LOGIN_V2, UG_LOGIN_BACKEND_BACKUP, UG_LOGIN_V2_BACKUP];
     let data: UndergradLoginResponse | undefined = undefined;
     for (const endpoint of endpoints) {
       try {
@@ -67,6 +73,7 @@ export class ApiService {
         // 只有结构化业务响应才停止回退；网关 HTML、空响应等继续尝试备用入口。
         if (candidate && typeof candidate === 'object' && candidate.code !== undefined) {
           data = candidate;
+          ApiService.undergradSessionBackend = HttpRequest.getPreferredBackendBase();
           break;
         }
         console.warn('ApiService', `undergrad login returned invalid response from ${endpoint}`);

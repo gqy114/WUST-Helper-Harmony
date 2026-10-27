@@ -13,7 +13,39 @@ export interface RequestResult<T> {
   data: T;
 }
 
+interface BackendTarget {
+  url: string;
+  index: number;
+}
+
 export class HttpRequest {
+  private static readonly BACKENDS: string[] = [
+    'https://lyzyy.love:8081',
+    'http://port.happylandmc.cc:52144'
+  ];
+  private static preferredBackend: number = 0;
+
+  static getPreferredBackendBase(): string {
+    return HttpRequest.BACKENDS[HttpRequest.preferredBackend];
+  }
+
+  private static backendTargets(url: string, pinBackend: boolean = false): BackendTarget[] {
+    const mainMatch = url.match(/^https?:\/\/(?:www\.)?lyzyy\.love(?::8081)?(?=\/|$)/i);
+    const backupMatch = url.match(/^http:\/\/port\.happylandmc\.cc:52144(?=\/|$)/i);
+    const matched = mainMatch?.[0] || backupMatch?.[0] || '';
+    if (!matched) return [{ url, index: -1 }];
+    if (pinBackend) {
+      return [{ url, index: backupMatch ? 1 : 0 }];
+    }
+    const path = url.substring(matched.length);
+    const first = HttpRequest.preferredBackend;
+    const second = first === 0 ? 1 : 0;
+    return [
+      { url: `${HttpRequest.BACKENDS[first]}${path}`, index: first },
+      { url: `${HttpRequest.BACKENDS[second]}${path}`, index: second }
+    ];
+  }
+
   static async request<T>(
     url: string,
     method: HttpMethod,
@@ -24,10 +56,11 @@ export class HttpRequest {
       expectDataType?: http.HttpDataType;
       /** form表单，true代表application/x‑www‑form‑urlencoded */
       isForm?: boolean;
+      /** 多步骤会话必须固定在创建会话的节点，不参与故障切换。 */
+      pinBackend?: boolean;
     },
   ): Promise<RequestResult<T>> {
-    const httpRequest = http.createHttp();
-    try {
+    {
       let header: Record<string, string> = {
         Platform: 'android',
         ...options?.headers,
@@ -59,29 +92,50 @@ export class HttpRequest {
         header = { 'Content-Type': 'application/json' };
         console.info(TAG, `campus proxy enabled for ${method} ${url}`);
       }
-      const response = await httpRequest.request(requestUrl, {
-        method: requestMethod,
-        header,
-        extraData,
-        expectDataType: options?.expectDataType ?? http.HttpDataType.STRING,
-        // 教务登录接口偶尔需要较长时间完成统一认证，10 秒会被鸿蒙网络层直接中止。
-        connectTimeout: 12000,
-        readTimeout: 20000
-      });
-      console.info(TAG, `${method} ${url} responseCode=${response.responseCode}`);
-      let data: T;
-      try {
-        data = JSON.parse(response.result as string) as T;
-      } catch {
-        // 教务取数接口在解析链第一步返回 HTML 页面串，不是 JSON。
-        data = response.result as T;
+
+      const targets = HttpRequest.backendTargets(requestUrl, options?.pinBackend ?? false);
+      for (let index = 0; index < targets.length; index++) {
+        const target = targets[index];
+        const httpRequest = http.createHttp();
+        try {
+          const response = await httpRequest.request(target.url, {
+            method: requestMethod,
+            header,
+            extraData,
+            expectDataType: options?.expectDataType ?? http.HttpDataType.STRING,
+            // 多节点按顺序尝试，单节点连接超时不宜过长。
+            connectTimeout: 10000,
+            readTimeout: 20000
+          });
+          console.info(TAG, `${method} ${target.url} responseCode=${response.responseCode}`);
+          const unavailable = response.responseCode === 502 || response.responseCode === 503 || response.responseCode === 504;
+          if (target.index >= 0 && unavailable && index + 1 < targets.length) {
+            HttpRequest.preferredBackend = targets[index + 1].index;
+            // 写请求可能已经到达后端，不在公共层自动重放；下次请求使用新首选节点。
+            if (method === 'GET') continue;
+          } else if (target.index >= 0 && !unavailable) {
+            HttpRequest.preferredBackend = target.index;
+          }
+          let data: T;
+          try {
+            data = JSON.parse(response.result as string) as T;
+          } catch {
+            // 教务取数接口在解析链第一步返回 HTML 页面串，不是 JSON。
+            data = response.result as T;
+          }
+          return { response, data };
+        } catch (err) {
+          console.error(TAG, `网络请求异常 ${target.url}：${JSON.stringify(err)}`);
+          if (target.index >= 0 && index + 1 < targets.length) {
+            HttpRequest.preferredBackend = targets[index + 1].index;
+            if (method === 'GET') continue;
+          }
+          throw err;
+        } finally {
+          httpRequest.destroy();
+        }
       }
-      return { response, data };
-    } catch (err) {
-      console.error(TAG, `网络请求异常：${JSON.stringify(err)}`);
-      throw err; //抛出给上层处理弹窗
-    } finally {
-      httpRequest.destroy();
+      throw new Error('all backend nodes unavailable');
     }
   }
 
@@ -100,6 +154,20 @@ export class HttpRequest {
       body,
       headers: extraHeaders,
       isForm:false
+    });
+  }
+
+  /** 发送到 URL 指定的节点，用于必须保持同一服务端会话的多步骤请求。 */
+  static async postJsonPinned<T>(
+    url: string,
+    body: Record<string, string>,
+    extraHeaders?: Record<string, string>,
+  ): Promise<RequestResult<T>> {
+    return HttpRequest.request<T>(url, 'POST', {
+      body,
+      headers: extraHeaders,
+      isForm: false,
+      pinBackend: true
     });
   }
 
