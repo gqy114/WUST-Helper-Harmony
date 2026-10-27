@@ -44,6 +44,7 @@
     "pages/main/EditToolsPage",
     "pages/course/PhysicalExperimentPage",
     "pages/campus/SecondHandBookPage",
-    "pages/campus/SecondHandBookPublishPage"
+    "pages/campus/SecondHandBookPublishPage",
+    "pages/campus/SecondHandBookDetailPage"
   ]
 }

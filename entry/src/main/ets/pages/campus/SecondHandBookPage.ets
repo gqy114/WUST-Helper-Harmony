@@ -209,7 +209,8 @@ struct SecondHandBookPage {
                   Text(this.money(item.price)).fontSize(21).fontWeight(FontWeight.Bold).fontColor('#B26E2A').margin({ top: 8 });
                 }.layoutWeight(1);
               }.width('92%').padding(16).backgroundColor(Color.White).borderRadius(16).margin({ top: 10 })
-                .onClick(() => { if (item.contact) promptAction.showToast({ message: `联系方式：${item.contact}`, duration: 2200 }); });
+                .onClick(() => router.pushUrl({ url: 'pages/campus/SecondHandBookDetailPage',
+                  params: { listing: JSON.stringify(item) } }));
             }, (item: SecondhandListing) => `${item.id || item.bookId || item.bookTitle}`)
           }
         }.width('100%').padding({ bottom: 24 }).backgroundColor('#F5F6F8');
