@@ -20,7 +20,6 @@
  */
 import { CourseData, LABEL_WIDTH, PERIOD_HEIGHT, DAY_LABELS, TIME_SLOTS, CourseTimeSlot, isCourseInWeek } from '../model/CourseModel';
 import { CourseItem } from './CourseItem';
-import { CourseStore } from '../store/CourseStore';
 
 const PERIOD_ARRAY: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const DAYS_7: number[] = [1, 2, 3, 4, 5, 6, 7];
@@ -54,30 +53,7 @@ export struct CourseCalendar {
   @State private columnWidth: number = 50;
 
   aboutToAppear(): void {
-    console.info("CourseCalendar", "aboutToAppear start");
-    console.info("CourseCalendar", `aboutToAppear currentWeek=${this.currentWeek}`);
-    const testCourse: CourseData = {
-      courseName: '测试',
-      teacher: '测试',
-      location: '测试',
-      dayOfWeek: 2,
-      startPeriod: 5,
-      endPeriod: 6,
-      weekRanges: '2,4,6,8,10,12,14,16',
-      color: '#FF0000'
-    };
-    const r2 = isCourseInWeek(testCourse, 2);
-    const r1 = isCourseInWeek(testCourse, 1);
-    console.info('CourseCalendar', `硬编码测试 week2=${r2} week1=${r1}`);
-    const storeCourses = CourseStore.getInstance().courses;
-    console.info("CourseCalendar", `aboutToAppear courseListLen=${this.courseList ? this.courseList.length : 0}, storeLen=${storeCourses ? storeCourses.length : 0}`);
     this.calcColumnWidth();
-    console.info("CourseCalendar", `init: gridWidth=${this.gridWidth}, columnWidth=${this.columnWidth}, LABEL_WIDTH=${LABEL_WIDTH}, PERIOD_HEIGHT=${PERIOD_HEIGHT}`);
-  }
-
-  aboutToUpdate(): void {
-    const storeCourses = CourseStore.getInstance().courses;
-    console.info("CourseCalendar", `aboutToUpdate courseListLen=${this.courseList ? this.courseList.length : 0}, storeLen=${storeCourses ? storeCourses.length : 0}`);
   }
 
   private calcColumnWidth(): void {
@@ -85,7 +61,6 @@ export struct CourseCalendar {
     const lw = typeof LABEL_WIDTH === 'number' && !isNaN(LABEL_WIDTH) ? LABEL_WIDTH : 36;
     const w = (gw - lw) / 7;
     this.columnWidth = (!isNaN(w) && w > 0) ? w : 50;
-    console.info("CourseCalendar", `calcColumnWidth: gridWidth=${this.gridWidth}, columnWidth=${this.columnWidth}`);
   }
 
   private todayWeekday(): number {
@@ -124,7 +99,7 @@ export struct CourseCalendar {
           }
           .width(this.columnWidth)
           .alignItems(HorizontalAlign.Center)
-        })
+        }, (day: number) => `header-${day}`)
       }.width('100%').height(52).backgroundColor(Color.White).border({
         width: { bottom: 0.5 },
         color: '#E0E0E0',
@@ -147,13 +122,13 @@ export struct CourseCalendar {
                   .height(PERIOD_SLOT_HEIGHT)
                   .justifyContent(FlexAlign.Center)
                   .alignItems(HorizontalAlign.Center)
-                  ForEach(DAYS_7, () => {
+                  ForEach(DAYS_7, (day: number) => {
                     Text('').width(this.columnWidth - 1).height(PERIOD_SLOT_HEIGHT)
-                  })
+                  }, (day: number) => `grid-${slot.start}-${slot.end}-${day}`)
                 }.width('100%').height(PERIOD_SLOT_HEIGHT)
                 Divider().height(0.5).color('#EEEEEE').width('100%')
               }
-            })
+            }, (slot: CourseTimeSlot, index: number) => `slot-${index}-${slot.start}-${slot.end}`)
           }
           .width('100%')
 
@@ -183,7 +158,7 @@ export struct CourseCalendar {
             })
             .width(this.columnWidth - 3)
             .height((course.endPeriod - course.startPeriod + 1) * ((typeof PERIOD_HEIGHT === 'number' ? PERIOD_HEIGHT : 60) + 5) - 3)
-          }, (course: CourseData) => `${this.refreshKey}-${course.dayOfWeek}-${course.startPeriod}-${course.courseName}`)
+          }, (course: CourseData, index: number) => `${this.refreshKey}-${index}-${course.dayOfWeek}-${course.startPeriod}-${course.endPeriod}-${course.courseName}-${course.teacher}-${course.location}-${course.weekRanges}`)
         }
         .width('100%')
         .height(this.timeSlots.length * PERIOD_SLOT_HEIGHT + 10)

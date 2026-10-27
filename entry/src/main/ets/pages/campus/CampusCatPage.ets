@@ -14,9 +14,39 @@ struct CampusCatPage {
   @State private filterOpen: boolean = false;
   @State private pendingTags: string[] = [];
   @State private activeTags: string[] = [];
+  @State private currentPage: number = 1;
+  @State private loadingMore: boolean = false;
+  @State private hasMore: boolean = true;
+  private readonly pageSize: number = 20;
   private async loadAvatar(): Promise<void> { this.avatarUrl = await AppStorage.getInstance().getAvatarUrl(); }
   aboutToAppear(): void { this.load(); this.loadAvatar(); }
-  private async load(): Promise<void> { this.loading = true; try { this.posts = await CampusCatApi.list(1, 100); } catch { promptAction.showToast({ message: '校园猫加载失败', duration: 1500 }); } this.loading = false; }
+  private async load(): Promise<void> {
+    this.loading = true;
+    this.currentPage = 1;
+    this.hasMore = true;
+    try {
+      const firstPage = await CampusCatApi.list(1, this.pageSize);
+      this.posts = firstPage;
+      this.hasMore = firstPage.length >= this.pageSize;
+    } catch {
+      promptAction.showToast({ message: '校园猫加载失败', duration: 1500 });
+    }
+    this.loading = false;
+  }
+  private async loadMore(): Promise<void> {
+    if (this.loading || this.loadingMore || !this.hasMore) return;
+    this.loadingMore = true;
+    const nextPage = this.currentPage + 1;
+    try {
+      const nextPosts = await CampusCatApi.list(nextPage, this.pageSize);
+      this.posts = this.posts.concat(nextPosts);
+      this.currentPage = nextPage;
+      this.hasMore = nextPosts.length >= this.pageSize;
+    } catch {
+      promptAction.showToast({ message: '加载更多失败', duration: 1200 });
+    }
+    this.loadingMore = false;
+  }
   private matchScore(post: CampusCatPost): number { const q = this.query.trim().toLowerCase(); if (!q) return 1; const text = `${post.title || ""}${post.content || ""}${post.authorName || ""}`.toLowerCase(); let score = 0; for (let i = 0; i < q.length; i++) { if (text.includes(q.charAt(i))) score++; } return score; }
   private togglePendingTag(tag: string): void {
     this.pendingTags = this.pendingTags.indexOf(tag) >= 0 ?
@@ -52,22 +82,36 @@ struct CampusCatPage {
       if (this.searching) {
         Row() { Text('⌕').fontSize(30).fontColor('#555555'); TextInput({ placeholder: '搜索当前板块', text: this.query }).layoutWeight(1).fontSize(20).onChange((value: string) => { this.query = value; }); Text('×').fontSize(32).fontColor('#777777').onClick(() => { this.query = ''; animateTo({ duration: 260, curve: Curve.EaseInOut }, () => { this.searching = false; }); }); }.width('92%').height(58).padding({ left: 16, right: 14 }).backgroundColor(Color.White).borderRadius(30).margin({ bottom: 12 });
       }
-      Scroll() { Column() {
-        if (this.loading) { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
-        else if (this.posts.length === 0) { Text('暂无校园猫信息').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
-        else if (this.visiblePosts().length === 0) { Text('暂无符合条件的校园猫帖子').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
-        else { ForEach(this.visiblePosts(), (post: CampusCatPost) => Column() {
-          Row() { if (post.authorAvatar) { Image(post.authorAvatar).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.authorName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Column() { Text((post.tags && post.tags.length > 0) ? post.tags.join(' · ') : '日常').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#148D6D').backgroundColor('#E8F8F3').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); Text((post.commentCount || 0) > 0 ? `${post.commentCount} 个回答` : '校园猫动态').fontSize(15).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ top: 6 }); }.alignItems(HorizontalAlign.End); }.width('100%');
-          if (post.title) { this.highlighted(decodeHtmlEntities(post.title), 22, '#222222', true); }
-          this.highlighted(decodeHtmlEntities(post.content || ''), 18, '#333333', false);
-          if (post.images && post.images.length > 0) {
-            ForEach(post.images, (image: string) => {
-              Image(image).width('100%').height(190).objectFit(ImageFit.Cover).borderRadius(10).margin({ top: 12 });
-            }, (image: string) => image)
+      List() {
+        if (this.loading) {
+          ListItem() { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
+        } else if (this.posts.length === 0) {
+          ListItem() { Text('暂无校园猫信息').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
+        } else if (this.visiblePosts().length === 0) {
+          ListItem() { Text('暂无符合条件的校园猫帖子').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
+        } else {
+          ForEach(this.visiblePosts(), (post: CampusCatPost) => {
+            ListItem() {
+              Column() {
+                Row() { if (post.authorAvatar) { Image(post.authorAvatar).width(52).height(52).sourceSize({ width: 104, height: 104 }).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.authorName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Column() { Text((post.tags && post.tags.length > 0) ? post.tags.join(' · ') : '日常').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#148D6D').backgroundColor('#E8F8F3').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); Text((post.commentCount || 0) > 0 ? `${post.commentCount} 个回答` : '校园猫动态').fontSize(15).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ top: 6 }); }.alignItems(HorizontalAlign.End); }.width('100%');
+                if (post.title) { this.highlighted(decodeHtmlEntities(post.title), 22, '#222222', true); }
+                this.highlighted(decodeHtmlEntities(post.content || ''), 18, '#333333', false);
+                if (post.images && post.images.length > 0) {
+                  ForEach(post.images, (image: string) => {
+                    Image(image).width('100%').height(190).sourceSize({ width: 720, height: 380 }).objectFit(ImageFit.Cover).borderRadius(10).margin({ top: 12 });
+                  }, (image: string, imageIndex: number) => `${imageIndex}-${image}`)
+                }
+                Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA');
+              }.width('100%').padding({ left: 34, right: 34, top: 20, bottom: 22 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' });
+            }
+          }, (post: CampusCatPost, index: number) => `${post.id || post.createdAt || 'post'}-${index}`)
+          if (this.loadingMore) {
+            ListItem() { Text('加载更多…').fontSize(16).fontColor('#999999').height(52).textAlign(TextAlign.Center); }
+          } else if (!this.hasMore) {
+            ListItem() { Text('已经到底了').fontSize(15).fontColor('#BBBBBB').height(46).textAlign(TextAlign.Center); }
           }
-          Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA');
-        }.width('100%').padding({ left: 34, right: 34, top: 20, bottom: 22 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }), (post: CampusCatPost) => `${post.id || post.createdAt || post.content}`); }
-      }.width('100%').backgroundColor('#F5F6F8'); }.layoutWeight(1);
+        }
+      }.width('100%').layoutWeight(1).backgroundColor('#F5F6F8').onReachEnd(() => this.loadMore());
       Row() { Image(this.avatarUrl || $r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).margin({ right: 12 }); Text('发布校园猫...').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#999999').layoutWeight(1); Text('+').fontSize(32).onClick(() => router.pushUrl({ url: 'pages/campus/CampusPublishPage', params: { tag: 'cat', label: '发布校园猫帖子' } })).fontColor(Color.White).width(58).height(58).textAlign(TextAlign.Center).backgroundColor('#20C894').borderRadius(29); }.width('88%').height(76).padding({ left: 18, right: 14 }).backgroundColor(Color.White).borderRadius(38).shadow({ radius: 12, color: '#33000000', offsetY: 3 }).margin({ bottom: 18 });
     }.width('100%').height('100%').backgroundColor('#F5F6F8');
   }
