@@ -4,6 +4,7 @@ import { promptAction } from '@kit.ArkUI';
 import { CampusCatApi, CampusCatPost } from '../../net/CampusCatApi';
 import { campusWallRelativeTime } from '../../net/CampusWallApi';
 import { CampusRichText } from '../../components/CampusRichText';
+import { CommunityPostImage } from '../../components/CommunityPostImage';
 
 @Entry @Component
 struct CampusCatPage {
@@ -96,7 +97,7 @@ struct CampusCatPage {
                 CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 });
                 if (post.images && post.images.length > 0) {
                   ForEach(post.images, (image: string) => {
-                    Image(image).width('100%').height(190).sourceSize({ width: 720, height: 380 }).objectFit(ImageFit.Cover).borderRadius(10).margin({ top: 12 });
+                    CommunityPostImage({ src: image }).margin({ top: 12 });
                   }, (image: string, imageIndex: number) => `${imageIndex}-${image}`)
                 }
                 Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA');

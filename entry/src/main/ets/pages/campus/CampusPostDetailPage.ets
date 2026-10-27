@@ -3,6 +3,7 @@ import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi, CampusWallPost, CampusWallReply, decodeHtmlEntities } from '../../net/CampusWallApi';
 import { AppStorage } from '../../store/AppStorage';
 import { CampusRichText } from '../../components/CampusRichText';
+import { CommunityPostImage } from '../../components/CommunityPostImage';
 
 interface DetailParams extends Record<string, string> { id: string; }
 interface FormattedRun {
@@ -218,7 +219,7 @@ struct CampusPostDetailPage {
 
   @Builder
   private postImage(url: string) {
-    Image(url).width('100%').height(280).objectFit(ImageFit.Contain).margin({ top: 14 })
+    CommunityPostImage({ src: url }).margin({ top: 14 })
   }
 
   @Builder

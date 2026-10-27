@@ -3,6 +3,7 @@ import { AppStorage } from '../../store/AppStorage';
 import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi, CampusWallPost, campusWallExtra, campusWallRelativeTime } from '../../net/CampusWallApi';
 import { CampusRichText } from '../../components/CampusRichText';
+import { CommunityPostImage } from '../../components/CommunityPostImage';
 
 @Entry @Component
 struct CampusHelpPage {
@@ -62,7 +63,7 @@ struct CampusHelpPage {
           Row() { if (post.avatarUrl) { Image(post.avatarUrl).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.displayName || post.realName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); Text(post.college || post.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 }); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Column() { Text(this.isResolved(post) ? '已解决' : '待解决').fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.isResolved(post) ? '#3C8B62' : '#B66D16').backgroundColor(this.isResolved(post) ? '#E8F7ED' : '#FFF4DE').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); Text(this.isResolved(post) ? '问题已解决' : ((post.replyCount || 0) > 0 ? `${post.replyCount} 个回答` : '等待回答')).fontSize(15).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ top: 6 }); }.alignItems(HorizontalAlign.End); }.width('100%');
           if (post.title) { CampusRichText({ content: post.title, fontSize: 22, textColor: '#222222', baseBold: true, lineHeight: 30 }); }
           CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 });
-          if (post.images && post.images.length > 0) { ForEach(post.images, (image: string) => { Image(image).width('100%').height(190).objectFit(ImageFit.Cover).borderRadius(10).margin({ top: 12 }); }, (image: string) => image); }
+          if (post.images && post.images.length > 0) { ForEach(post.images, (image: string) => { CommunityPostImage({ src: image }).margin({ top: 12 }); }, (image: string, index: number) => `${index}-${image}`); }
           Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA');
         }.width('100%').padding({ left: 34, right: 34, top: 20, bottom: 22 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => router.pushUrl({ url: 'pages/campus/CampusPostDetailPage', params: { id: String(post.id || 0) } })), (post: CampusWallPost) => `${post.id || post.createdAt || post.content}`); }
       }.width('100%').backgroundColor('#F5F6F8'); }.layoutWeight(1);

@@ -3,6 +3,7 @@ import { AppStorage } from '../../store/AppStorage';
 import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi, CampusWallPost, campusWallRelativeTime } from '../../net/CampusWallApi';
 import { CampusRichText } from '../../components/CampusRichText';
+import { CommunityPostImage } from '../../components/CommunityPostImage';
 
 interface WallReactionOption { type: string; emoji: string; }
 const WALL_REACTIONS: WallReactionOption[] = [
@@ -75,7 +76,7 @@ struct CampusWallPage {
         else { ForEach(this.visiblePosts(), (post: CampusWallPost) => Column() {
           Row() { if (post.avatarUrl) { Image(post.avatarUrl).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.displayName || post.realName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); Text(post.college || post.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 }); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Text((post.replyCount || 0) > 0 ? `${post.replyCount} 个回复` : '暂无回复').fontSize(15).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); }.width('100%');
           if (post.title) { CampusRichText({ content: post.title, fontSize: 22, textColor: '#222222', baseBold: true, lineHeight: 30 }); }
-          CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 }); if (post.images && post.images.length > 0) { ForEach(post.images, (image: string) => { Image(image).width('100%').height(190).objectFit(ImageFit.Cover).borderRadius(10).margin({ top: 12 }); }); }
+          CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 }); if (post.images && post.images.length > 0) { ForEach(post.images, (image: string) => { CommunityPostImage({ src: image }).margin({ top: 12 }); }, (image: string, index: number) => `${index}-${image}`); }
           Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA').margin({ top: 10 });
           Flex({ wrap: FlexWrap.Wrap }) {
             ForEach(WALL_REACTIONS, (option: WallReactionOption) => {
