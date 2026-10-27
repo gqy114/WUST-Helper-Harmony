@@ -33,6 +33,8 @@ struct CampusPublishPage {
   @State private selectedImages: string[] = [];
   @State private selectionStart: number = 0;
   @State private selectionEnd: number = 0;
+  private savedSelectionStart: number = 0;
+  private savedSelectionEnd: number = 0;
   private editorController: RichEditorController = new RichEditorController();
 
   async aboutToAppear(): Promise<void> {
@@ -153,6 +155,8 @@ struct CampusPublishPage {
 
   private syncFormatState(range: RichEditorRange): void {
     if ((range.start || 0) === (range.end || 0)) return;
+    this.savedSelectionStart = range.start || 0;
+    this.savedSelectionEnd = range.end || 0;
     const spans = this.editorController.getSpans(range) as RichEditorTextSpanResult[];
     if (spans.length === 0) return;
     this.bold = spans.every((span: RichEditorTextSpanResult) => span.textStyle.fontWeight >= 600);
@@ -173,7 +177,16 @@ struct CampusPublishPage {
       if (this.strike) this.underline = false;
     }
 
-    if (this.selectionStart === this.selectionEnd) {
+    let rangeStart = this.selectionStart;
+    let rangeEnd = this.selectionEnd;
+    // 点击编辑器外的格式按钮时，系统可能先把可视选区收缩成光标。
+    // 此时继续使用最后一次非空选区，行为与安卓端一致。
+    if (rangeStart === rangeEnd && this.savedSelectionStart !== this.savedSelectionEnd) {
+      rangeStart = this.savedSelectionStart;
+      rangeEnd = this.savedSelectionEnd;
+    }
+
+    if (rangeStart === rangeEnd) {
       const typingStyle: RichEditorTextStyle = {
         fontWeight: this.bold ? FontWeight.Bold : FontWeight.Normal,
         fontStyle: this.italic ? FontStyle.Italic : FontStyle.Normal,
@@ -189,13 +202,29 @@ struct CampusPublishPage {
     if (kind === 'underline') textStyle = { decoration: { type: this.underline ? TextDecorationType.Underline : TextDecorationType.None } };
     if (kind === 'strike') textStyle = { decoration: { type: this.strike ? TextDecorationType.LineThrough : TextDecorationType.None } };
     const options: RichEditorUpdateTextSpanStyleOptions = {
-      start: this.selectionStart,
-      end: this.selectionEnd,
+      start: rangeStart,
+      end: rangeEnd,
       textStyle
     };
     this.editorController.updateSpanStyle(options);
-    this.editorController.setCaretOffset(this.selectionEnd);
+    this.savedSelectionStart = rangeStart;
+    this.savedSelectionEnd = rangeEnd;
+    this.selectionStart = rangeStart;
+    this.selectionEnd = rangeEnd;
+    this.editorController.setSelection(rangeStart, rangeEnd);
     this.syncEditorContent();
+  }
+
+  private clearSavedSelectionAtCaret(): void {
+    const selection: RichEditorSelection = this.editorController.getSelection();
+    const start: number = selection.selection[0];
+    const end: number = selection.selection[1];
+    if (start === end) {
+      this.savedSelectionStart = start;
+      this.savedSelectionEnd = end;
+      this.selectionStart = start;
+      this.selectionEnd = end;
+    }
   }
 
   @Builder
@@ -311,6 +340,7 @@ struct CampusPublishPage {
                   this.selectionEnd = range.end || 0;
                   this.syncFormatState(range);
                 })
+                .onClick(() => { this.clearSavedSelectionAtCaret(); })
                 .onDidChange(() => { this.syncEditorContent(); })
             } else {
               Text(this.content ? this.plainEditorContent(this.content) : (this.tag === 'lost' ? '描述物品特征、时间等信息...' : (this.tag === 'team' ? '说明比赛、方向、需求和联系方式...' : (this.tag === 'help' ? '描述你需要求助的问题...' : '分享校园里的新鲜事...')))).fontSize(18).fontColor(this.content ? '#555555' : '#B4B5B8').maxLines(2).width('100%').height(72).padding({ left: 58, top: 8 })
