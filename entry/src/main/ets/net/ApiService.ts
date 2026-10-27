@@ -13,14 +13,15 @@ import { AppStorage } from '../store/AppStorage';
 
 // 从 WustApi.java 抽取的常量子集
 // 登录接口以 iOS 接口文档为准：本科生换取教务 Cookie，研究生直接返回个人信息。
-export const UG_LOGIN_V2 = 'https://www.lyzyy.love/UnderGraduate/Support/loginGetCookie';
-const UG_LOGIN_V2_BACKUP = 'https://lyzyy.love/UnderGraduate/Support/loginGetCookie';
+// 当前 Go 后端与其余本科教务接口统一部署在 8081 端口；443 反向代理保留为故障回退。
+export const UG_LOGIN_V2 = 'https://lyzyy.love:8081/UnderGraduate/Support/loginGetCookie';
+const UG_LOGIN_V2_BACKUP = 'https://www.lyzyy.love/UnderGraduate/Support/loginGetCookie';
 export const GRADUATE_LOGIN_V2 = 'https://www.lyzyy.love:8009/personal-info';
 const GRADUATE_LOGIN_V2_BACKUP = 'https://lyzyy.love:8009/personal-info';
 export const APP_AUTH_LOGIN = 'https://lyzyy.love:8081/api/v1/auth/login';
 const APP_AUTH_LOGIN_BACKUP = 'https://www.lyzyy.love:8081/api/v1/auth/login';
-const UG_TWO_VERIFY_SEND = 'https://www.lyzyy.love/UnderGraduate/Support/twoVerify/sendCode';
-const UG_TWO_VERIFY_CHECK = 'https://www.lyzyy.love/UnderGraduate/Support/twoVerify/verify';
+const UG_TWO_VERIFY_SEND = 'https://lyzyy.love:8081/UnderGraduate/Support/twoVerify/sendCode';
+const UG_TWO_VERIFY_CHECK = 'https://lyzyy.love:8081/UnderGraduate/Support/twoVerify/verify';
 
 interface UndergradLoginResponse {
   code: number;
@@ -57,23 +58,25 @@ export class ApiService {
         student_type: 'undergrad',
       });
     }
-    let data: UndergradLoginResponse;
-    try {
-      const result = await HttpRequest.postJson<UndergradLoginResponse>(UG_LOGIN_V2, { username: studentId, password });
-      data = result.data;
-      // 旧版教务接口使用 form-urlencoded；JSON 返回非成功码时兼容重试。
-      if (data.code !== 200) {
-        const formResult = await HttpRequest.postForm<UndergradLoginResponse>(UG_LOGIN_V2, { username: studentId, password });
-        if (formResult.data.code === 200) data = formResult.data;
-      }
-    } catch {
+    const endpoints: string[] = [UG_LOGIN_V2, UG_LOGIN_V2_BACKUP];
+    let data: UndergradLoginResponse | undefined = undefined;
+    for (const endpoint of endpoints) {
       try {
-        const result = await HttpRequest.postJson<UndergradLoginResponse>(UG_LOGIN_V2_BACKUP, { username: studentId, password });
-        data = result.data;
-      } catch {
-        const formResult = await HttpRequest.postForm<UndergradLoginResponse>(UG_LOGIN_V2_BACKUP, { username: studentId, password });
-        data = formResult.data;
+        const result = await HttpRequest.postJson<UndergradLoginResponse>(endpoint, { username: studentId, password });
+        const candidate = result.data;
+        // 只有结构化业务响应才停止回退；网关 HTML、空响应等继续尝试备用入口。
+        if (candidate && typeof candidate === 'object' && candidate.code !== undefined) {
+          data = candidate;
+          break;
+        }
+        console.warn('ApiService', `undergrad login returned invalid response from ${endpoint}`);
+      } catch (error) {
+        console.warn('ApiService', `undergrad login endpoint unavailable: ${endpoint}, ${JSON.stringify(error)}`);
       }
+    }
+    if (!data) {
+      // 作为业务失败返回，让登录页展示真实原因，而不是把服务端不可达误报为用户网络故障。
+      return { code: 503, msg: '登录服务暂时无法连接，请稍后重试（不是账号密码错误）' };
     }
     console.info('ApiService', `undergrad login response code=${data.code}, hasData=${data.data !== undefined}, hasDataObject=${data.dataObject !== undefined}`);
     if (typeof data.data === 'string') {
