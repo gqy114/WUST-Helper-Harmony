@@ -1,7 +1,8 @@
 import router from '@ohos.router';
 import { AppStorage } from '../../store/AppStorage';
 import { promptAction } from '@kit.ArkUI';
-import { CampusWallApi, CampusWallPost, campusWallExtra, campusWallRelativeTime, decodeHtmlEntities } from '../../net/CampusWallApi';
+import { CampusWallApi, CampusWallPost, campusWallExtra, campusWallRelativeTime } from '../../net/CampusWallApi';
+import { CampusRichText } from '../../components/CampusRichText';
 
 @Entry @Component
 struct CampusMatchPage {
@@ -48,9 +49,6 @@ struct CampusMatchPage {
     return value === 'member' || value.indexOf('队伍') >= 0 || value.indexOf('join') >= 0 ? '找队伍' : '找队友';
   }
 
-  @Builder private highlighted(value: string, size: number, color: string, bold: boolean) {
-    Text(value).fontSize(size).fontWeight(bold ? FontWeight.Bold : FontWeight.Normal).fontColor(color).width('100%');
-  }
   build() {
     Column() {
       Row() {
@@ -86,8 +84,8 @@ struct CampusMatchPage {
                   }.alignItems(HorizontalAlign.Start).layoutWeight(1);
                   Column() { Text(this.teamLabel(post)).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#2D6E9F').backgroundColor('#E7F4FF').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); Text((post.replyCount || 0) > 0 ? `${post.replyCount} 条回复` : '等待回应').fontSize(15).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ top: 6 }); }.alignItems(HorizontalAlign.End);
                 }.width('100%');
-                if (post.title) { this.highlighted(decodeHtmlEntities(post.title), 22, '#222222', true); }
-                this.highlighted(decodeHtmlEntities(post.content || ''), 18, '#333333', false);
+                if (post.title) { CampusRichText({ content: post.title, fontSize: 22, textColor: '#222222', baseBold: true, lineHeight: 30 }); }
+                CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 });
                 Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA').margin({ top: 18 });
               }.width('100%').padding({ left: 34, right: 34, top: 22, bottom: 24 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => router.pushUrl({ url: 'pages/campus/CampusPostDetailPage', params: { id: String(post.id || 0) } }));
             }, (post: CampusWallPost) => `${post.id || post.createdAt || post.content}`);

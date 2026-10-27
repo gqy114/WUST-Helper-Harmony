@@ -2,7 +2,8 @@ import router from '@ohos.router';
 import { AppStorage } from '../../store/AppStorage';
 import { promptAction } from '@kit.ArkUI';
 import { CampusCatApi, CampusCatPost } from '../../net/CampusCatApi';
-import { campusWallRelativeTime, decodeHtmlEntities } from '../../net/CampusWallApi';
+import { campusWallRelativeTime } from '../../net/CampusWallApi';
+import { CampusRichText } from '../../components/CampusRichText';
 
 @Entry @Component
 struct CampusCatPage {
@@ -61,9 +62,6 @@ struct CampusCatPage {
     return this.posts.filter((post: CampusCatPost) => this.filterMatch(post) && this.matchScore(post) > 0)
       .sort((a: CampusCatPost, b: CampusCatPost) => this.matchScore(b) - this.matchScore(a));
   }
-  @Builder private highlighted(value: string, size: number, color: string, bold: boolean) {
-    Text(value).fontSize(size).fontWeight(bold ? FontWeight.Bold : FontWeight.Normal).fontColor(color).width('100%');
-  }
   build() {
     Column() {
       Row() { Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back()); Text('校园猫').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 }); Blank().layoutWeight(1); Row() { Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }).alignSelf(ItemAlign.Center).onClick(() => { this.pendingTags = this.activeTags.slice(); animateTo({ duration: 260, curve: Curve.EaseInOut }, () => { this.filterOpen = true; }); }); Image($r('app.media.search')).width(24).height(24).margin({ right: 18 }).onClick(() => { animateTo({ duration: 260, curve: Curve.EaseInOut }, () => { this.searching = true; }); }); }.height(48).alignItems(VerticalAlign.Center); Image(this.avatarUrl || $r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover).alignSelf(ItemAlign.Center); }.width('100%').height(96).alignItems(VerticalAlign.Center).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
@@ -94,8 +92,8 @@ struct CampusCatPage {
             ListItem() {
               Column() {
                 Row() { if (post.authorAvatar) { Image(post.authorAvatar).width(52).height(52).sourceSize({ width: 104, height: 104 }).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.authorName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Column() { Text((post.tags && post.tags.length > 0) ? post.tags.join(' · ') : '日常').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#148D6D').backgroundColor('#E8F8F3').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); Text((post.commentCount || 0) > 0 ? `${post.commentCount} 个回答` : '校园猫动态').fontSize(15).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ top: 6 }); }.alignItems(HorizontalAlign.End); }.width('100%');
-                if (post.title) { this.highlighted(decodeHtmlEntities(post.title), 22, '#222222', true); }
-                this.highlighted(decodeHtmlEntities(post.content || ''), 18, '#333333', false);
+                if (post.title) { CampusRichText({ content: post.title, fontSize: 22, textColor: '#222222', baseBold: true, lineHeight: 30 }); }
+                CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 });
                 if (post.images && post.images.length > 0) {
                   ForEach(post.images, (image: string) => {
                     Image(image).width('100%').height(190).sourceSize({ width: 720, height: 380 }).objectFit(ImageFit.Cover).borderRadius(10).margin({ top: 12 });

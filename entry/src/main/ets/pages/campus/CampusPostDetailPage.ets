@@ -2,6 +2,7 @@ import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi, CampusWallPost, CampusWallReply, decodeHtmlEntities } from '../../net/CampusWallApi';
 import { AppStorage } from '../../store/AppStorage';
+import { CampusRichText } from '../../components/CampusRichText';
 
 interface DetailParams extends Record<string, string> { id: string; }
 interface FormattedRun {
@@ -193,14 +194,8 @@ struct CampusPostDetailPage {
 
   @Builder
   private formattedBody() {
-    Text() {
-      ForEach(this.formattedContent(this.post.content), (run: FormattedRun) => {
-        Span(run.text).fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
-          .fontStyle(run.italic ? FontStyle.Italic : FontStyle.Normal)
-          .decoration({ type: run.underline ? TextDecorationType.Underline :
-            (run.strike ? TextDecorationType.LineThrough : TextDecorationType.None) })
-      }, (run: FormattedRun, index: number) => `${index}-${run.text}`)
-    }.width('100%').fontSize(20).fontColor('#444444').lineHeight(32).margin({ top: 18 })
+    CampusRichText({ content: this.post.content || '', fontSize: 20, textColor: '#444444', lineHeight: 32 })
+      .margin({ top: 18 })
   }
 
   @Builder
@@ -247,7 +242,7 @@ struct CampusPostDetailPage {
           Image($r('app.media.more_horiz')).width(24).height(24).onClick(() => this.openReplyActions(reply))
         }.width('100%')
         Text(reply.college || reply.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 })
-        Text(decodeHtmlEntities(reply.content || '')).fontSize(19).fontColor('#333333').lineHeight(29).margin({ top: 16 })
+        CampusRichText({ content: reply.content || '', fontSize: 19, textColor: '#333333', lineHeight: 29 }).margin({ top: 16 })
         ForEach(reply.images || [], (url: string) => {
           this.postImage(url)
         }, (url: string) => url)

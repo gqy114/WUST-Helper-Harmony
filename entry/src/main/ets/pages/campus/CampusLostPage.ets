@@ -1,7 +1,8 @@
 import router from '@ohos.router';
 import { AppStorage } from '../../store/AppStorage';
 import { promptAction } from '@kit.ArkUI';
-import { CampusWallApi, CampusWallPost, campusWallExtra, campusWallRelativeTime, decodeHtmlEntities } from '../../net/CampusWallApi';
+import { CampusWallApi, CampusWallPost, campusWallExtra, campusWallRelativeTime } from '../../net/CampusWallApi';
+import { CampusRichText } from '../../components/CampusRichText';
 
 @Entry @Component
 struct CampusLostPage {
@@ -36,9 +37,6 @@ struct CampusLostPage {
     const value = (campusWallExtra(post).type || post.noticeType || post.type || post.category || '').toLowerCase();
     return value === 'found' || value.indexOf('招领') >= 0 || value.indexOf('拾') >= 0 ? '失物招领' : '寻物启事';
   }
-  @Builder private highlighted(value: string, size: number, color: string, bold: boolean) {
-    Text(value).fontSize(size).fontWeight(bold ? FontWeight.Bold : FontWeight.Normal).fontColor(color).width('100%');
-  }
   build() {
     Column() {
       Row() {
@@ -66,8 +64,8 @@ struct CampusLostPage {
               Column() { Text(post.displayName || post.realName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); Text(post.college || post.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 }); }.alignItems(HorizontalAlign.Start).layoutWeight(1);
               Text(this.noticeLabel(post)).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#B44F70').backgroundColor('#FFF0F2').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 });
             }.width('100%');
-            if (post.title) { this.highlighted(decodeHtmlEntities(post.title), 22, '#222222', true); }
-            this.highlighted(decodeHtmlEntities(post.content || ''), 18, '#333333', false);
+            if (post.title) { CampusRichText({ content: post.title, fontSize: 22, textColor: '#222222', baseBold: true, lineHeight: 30 }); }
+            CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 });
             if (post.images && post.images.length > 0) { Image(post.images[0]).width('100%').height(190).objectFit(ImageFit.Cover).borderRadius(10).margin({ top: 12 }); }
             Row() { Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA').layoutWeight(1); Text(`评论 ${post.replyCount || 0}`).fontSize(16).fontColor('#999999').margin({ left: 20 }); }.margin({ top: 18 });
           }.width('100%').padding({ left: 34, right: 34, top: 22, bottom: 24 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => router.pushUrl({ url: 'pages/campus/CampusPostDetailPage', params: { id: String(post.id || 0) } }));

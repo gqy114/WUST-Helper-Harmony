@@ -1,7 +1,8 @@
 import router from '@ohos.router';
 import { AppStorage } from '../../store/AppStorage';
 import { promptAction } from '@kit.ArkUI';
-import { CampusWallApi, CampusWallPost, campusWallExtra, campusWallRelativeTime, decodeHtmlEntities } from '../../net/CampusWallApi';
+import { CampusWallApi, CampusWallPost, campusWallExtra, campusWallRelativeTime } from '../../net/CampusWallApi';
+import { CampusRichText } from '../../components/CampusRichText';
 
 @Entry @Component
 struct CampusHelpPage {
@@ -41,9 +42,6 @@ struct CampusHelpPage {
       return bTime - aTime;
     });
   }
-  @Builder private highlighted(value: string, size: number, color: string, bold: boolean) {
-    Text(value).fontSize(size).fontWeight(bold ? FontWeight.Bold : FontWeight.Normal).fontColor(color).width('100%');
-  }
   build() {
     Column() {
       Row() { Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back()); Text('求助').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 }); Blank().layoutWeight(1); Row() { Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }).onClick(() => { this.pendingCollegeFilter = this.activeCollegeFilter; this.pendingStatusFilter = this.activeStatusFilter; animateTo({ duration: 260, curve: Curve.EaseInOut }, () => { this.filterOpen = true; }); }); Image($r('app.media.search')).width(24).height(24).margin({ right: 18 }).onClick(() => { animateTo({ duration: 260, curve: Curve.EaseInOut }, () => { this.searching = true; }); }); }.height(48).alignItems(VerticalAlign.Center); Image(this.avatarUrl || $r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover).alignSelf(ItemAlign.Center); }.width('100%').height(96).alignItems(VerticalAlign.Center).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
@@ -62,8 +60,8 @@ struct CampusHelpPage {
         else if (this.posts.length === 0) { Text('暂无求助信息').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
         else { ForEach(this.sortedPosts(), (post: CampusWallPost) => Column() {
           Row() { if (post.avatarUrl) { Image(post.avatarUrl).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.displayName || post.realName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); Text(post.college || post.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 }); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Column() { Text(this.isResolved(post) ? '已解决' : '待解决').fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.isResolved(post) ? '#3C8B62' : '#B66D16').backgroundColor(this.isResolved(post) ? '#E8F7ED' : '#FFF4DE').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); Text(this.isResolved(post) ? '问题已解决' : ((post.replyCount || 0) > 0 ? `${post.replyCount} 个回答` : '等待回答')).fontSize(15).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ top: 6 }); }.alignItems(HorizontalAlign.End); }.width('100%');
-          if (post.title) { this.highlighted(decodeHtmlEntities(post.title), 22, '#222222', true); }
-          this.highlighted(decodeHtmlEntities(post.content || ''), 18, '#333333', false);
+          if (post.title) { CampusRichText({ content: post.title, fontSize: 22, textColor: '#222222', baseBold: true, lineHeight: 30 }); }
+          CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 });
           if (post.images && post.images.length > 0) { ForEach(post.images, (image: string) => { Image(image).width('100%').height(190).objectFit(ImageFit.Cover).borderRadius(10).margin({ top: 12 }); }, (image: string) => image); }
           Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA');
         }.width('100%').padding({ left: 34, right: 34, top: 20, bottom: 22 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => router.pushUrl({ url: 'pages/campus/CampusPostDetailPage', params: { id: String(post.id || 0) } })), (post: CampusWallPost) => `${post.id || post.createdAt || post.content}`); }
