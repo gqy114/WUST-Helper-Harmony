@@ -1,4 +1,4 @@
-import { router, promptAction } from '@kit.ArkUI';
+import { router } from '@kit.ArkUI';
 
 const WIDGET_TABS: string[] = ['倒计时', '每日课表', '每周课表'];
 const WEEK_DAYS: string[] = ['日', '一', '二', '三', '四', '五', '六'];
@@ -9,6 +9,7 @@ const PREVIEW_ROWS: number[] = [1, 2, 3, 4];
 struct WidgetSettingsPage {
   @State private selectedTab: number = 0;
   @State private opacityValue: number = 72;
+  @State private helpOpen: boolean = false;
 
   @Builder
   private toolbarIcon(label: string) {
@@ -126,13 +127,14 @@ struct WidgetSettingsPage {
   }
 
   build() {
+    Stack({ alignContent: Alignment.Center }) {
     Column() {
       Row() {
         Image($r('app.media.ic_arrow_left')).width(27).height(27).fillColor('#222222').onClick(() => router.back())
         Text('小组件设置').fontSize(25).fontWeight(FontWeight.Bold).fontColor('#222222').margin({ left: 17 })
         Blank()
         Image($r('app.media.help')).width(29).height(29).fillColor('#777777')
-          .onClick(() => promptAction.showToast({ message: '小组件帮助功能开发中', duration: 1500 }))
+          .onClick(() => { this.helpOpen = true; })
       }.width('100%').height(70).padding({ left: 18, right: 20 }).backgroundColor('#FFFFFF')
 
       Row() {
@@ -172,5 +174,52 @@ struct WidgetSettingsPage {
         }.width('100%').padding({ left: 16, right: 16, top: 14, bottom: 30 })
       }.layoutWeight(1).width('100%').backgroundColor('#F5F6F8')
     }.width('100%').height('100%').backgroundColor('#FFFFFF')
+
+    if (this.helpOpen) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#66000000')
+        .onClick(() => { this.helpOpen = false; })
+
+      Column() {
+        Text('小组件设置说明')
+          .fontSize(25)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#555555')
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .margin({ bottom: 22 })
+
+        Text('1. 背景图片来自本机，原图被删除后会恢复默认背景。')
+          .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#777777').lineHeight(29)
+          .width('100%').margin({ bottom: 22 })
+        Text('2. 小组件可在桌面调整大小，图片会按显示区域裁剪。')
+          .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#777777').lineHeight(29)
+          .width('100%').margin({ bottom: 22 })
+        Text('3. 图片建议小于 6 MB；加载异常时，请恢复默认主题后重新添加。')
+          .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#777777').lineHeight(29)
+          .width('100%').margin({ bottom: 22 })
+        Text('4. 小组件需要从桌面的“小组件”入口添加。')
+          .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#777777').lineHeight(29)
+          .width('100%').margin({ bottom: 26 })
+
+        Button('知道了')
+          .fontSize(19)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#FFFFFF')
+          .width(150)
+          .height(50)
+          .backgroundColor('#45D600')
+          .borderRadius(7)
+          .onClick(() => { this.helpOpen = false; })
+      }
+      .width('78%')
+      .padding({ left: 34, right: 34, top: 25, bottom: 29 })
+      .backgroundColor('#FFFFFF')
+      .borderRadius(24)
+      .onClick(() => {})
+    }
+    }.width('100%').height('100%')
   }
 }
