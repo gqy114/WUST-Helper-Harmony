@@ -3,7 +3,7 @@ import { AppStorage } from '../../store/AppStorage';
 import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi, CampusWallPost, campusWallExtra, campusWallRelativeTime } from '../../net/CampusWallApi';
 import { CampusRichText } from '../../components/CampusRichText';
-import { CommunityPostImage } from '../../components/CommunityPostImage';
+import { CommunityPostImagePreview } from '../../components/CommunityPostImagePreview';
 
 @Entry @Component
 struct CampusLostPage {
@@ -67,7 +67,7 @@ struct CampusLostPage {
             }.width('100%');
             if (post.title) { CampusRichText({ content: post.title, fontSize: 22, textColor: '#222222', baseBold: true, lineHeight: 30 }); }
             CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 });
-            if (post.images && post.images.length > 0) { ForEach(post.images, (image: string) => { CommunityPostImage({ src: image }).margin({ top: 12 }); }, (image: string, index: number) => `${index}-${image}`); }
+            if (post.images && post.images.length > 0) { CommunityPostImagePreview({ images: post.images }).margin({ top: 12 }); }
             Row() { Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA').layoutWeight(1); Text(`评论 ${post.replyCount || 0}`).fontSize(16).fontColor('#999999').margin({ left: 20 }); }.margin({ top: 18 });
           }.width('100%').padding({ left: 34, right: 34, top: 22, bottom: 24 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => router.pushUrl({ url: 'pages/campus/CampusPostDetailPage', params: { id: String(post.id || 0) } }));
         }, (post: CampusWallPost) => `${post.id || post.createdAt || post.content}`); }
