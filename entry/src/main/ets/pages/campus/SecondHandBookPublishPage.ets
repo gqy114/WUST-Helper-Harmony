@@ -20,6 +20,8 @@ struct SecondHandBookPublishPage {
   @State private campus: string = '';
   @State private major: string = '';
   @State private majors: string[] = [];
+  @State private selectedMajors: string[] = [];
+  @State private pendingSelectedMajors: string[] = [];
   @State private contactType: string = '';
   @State private author: string = '';
   @State private publisher: string = '';
@@ -46,7 +48,7 @@ struct SecondHandBookPublishPage {
       const ordered = this.orderedImages();
       const images = await CommunityImageService.uploadAll(getContext(this) as common.Context, ordered, 'secondhand');
       await SecondHandBookApi.publishManual(this.title.trim(), amount, this.edition.trim(), this.meetingPlace.trim(),
-        this.contact.trim(), this.note.trim(), images, this.condition, this.major, this.campus, this.contactType,
+        this.contact.trim(), this.note.trim(), images, this.condition, this.selectedMajors.join('、'), this.campus, this.contactType,
         this.author.trim(), this.publisher.trim(), this.isbn.trim());
       promptAction.showToast({ message: '发布成功', duration: 1200 });
       router.back();
@@ -103,7 +105,11 @@ struct SecondHandBookPublishPage {
   private selectorField(label: string, value: string, kind: string) {
     Row() { Text(value ? `${label}：${value}` : `${label}：请选择`).fontSize(17).fontWeight(FontWeight.Medium).fontColor(value ? '#44464D' : '#66686F').layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }); Text('▾').fontSize(18).fontColor('#78868A'); }
       .width('100%').height(62).padding({ left: 18, right: 18 }).backgroundColor('#F6F6F9').borderRadius(14)
-      .onClick(() => { this.selectorKind = kind; this.selectorOpen = true; })
+      .onClick(() => {
+        this.selectorKind = kind;
+        if (kind === 'major') this.pendingSelectedMajors = this.selectedMajors.slice();
+        this.selectorOpen = true;
+      })
   }
 
   private selectorTitle(): string {
@@ -124,9 +130,18 @@ struct SecondHandBookPublishPage {
     if (this.selectorKind === 'condition') this.condition = value;
     else if (this.selectorKind === 'campus') this.campus = value;
     else if (this.selectorKind === 'contact') this.contactType = value;
-    else this.major = value;
+    else {
+      if (this.pendingSelectedMajors.indexOf(value) >= 0) {
+        this.pendingSelectedMajors = this.pendingSelectedMajors.filter((item: string) => item !== value);
+      } else {
+        this.pendingSelectedMajors = this.pendingSelectedMajors.concat([value]);
+      }
+      return;
+    }
     this.selectorOpen = false;
   }
+
+  private majorSelected(value: string): boolean { return this.pendingSelectedMajors.indexOf(value) >= 0; }
 
   @Builder
   private inputField(placeholder: string, value: string, change: (value: string) => void) {
@@ -146,7 +161,7 @@ struct SecondHandBookPublishPage {
             Column() { Text('+').fontSize(34).fontColor('#20C894'); Text('添加图片').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#20C894').margin({ top: 4 }); }.width(112).height(112).justifyContent(FlexAlign.Center).backgroundColor('#ECF9F5').borderRadius(16).margin({ top: 18, bottom: 22 }).onClick(() => this.chooseImages())
             this.inputField('书名（必填）', this.title, (value: string) => { this.title = value; })
             Row() { Text('¥').fontSize(23).fontWeight(FontWeight.Bold).fontColor('#D0583B').margin({ right: 8 }); TextInput({ placeholder: '售价', text: this.price }).layoutWeight(1).fontSize(20).fontWeight(FontWeight.Bold).type(InputType.Number).backgroundColor(Color.Transparent).onChange((value: string) => { this.price = value; }); Text('整本 / 整套').fontSize(15).fontColor('#777777'); }.width('100%').height(62).padding({ left: 18, right: 18 }).backgroundColor('#F6F6F9').borderRadius(14).margin({ top: 12 })
-            Column() { this.selectorField('适用专业', this.major, 'major'); }.margin({ top: 12 })
+            Column() { this.selectorField('适用专业（可多选）', this.selectedMajors.join('、'), 'major'); }.margin({ top: 12 })
             Row() { Column() { this.selectorField('品相', this.condition, 'condition'); }.layoutWeight(1).margin({ right: 10 }); Column() { this.selectorField('校区', this.campus, 'campus'); }.layoutWeight(1); }.width('100%').margin({ top: 12 })
             Column() { this.inputField('面交地点（选填）', this.meetingPlace, (value: string) => { this.meetingPlace = value; }); }.margin({ top: 12 })
             Column() { this.inputField('版次 / 版本（选填，如第七版）', this.edition, (value: string) => { this.edition = value; }); }.margin({ top: 12 })
@@ -166,7 +181,7 @@ struct SecondHandBookPublishPage {
       }.width('100%').height('100%').backgroundColor('#F5F6F8')
       if (this.selectorOpen) {
         Stack({ alignContent: Alignment.Center }) {
-        Column().width('100%').height('100%').backgroundColor('#66000000').onClick(() => { this.selectorOpen = false; })
+        Column().width('100%').height('100%').backgroundColor('#66000000').zIndex(1).onClick(() => { this.selectorOpen = false; })
         Column() {
           Text(this.selectorTitle()).fontSize(25).fontWeight(FontWeight.Bold).fontColor('#444444').margin({ bottom: 18 })
           if (this.selectorOptions().length === 0) {
@@ -175,13 +190,30 @@ struct SecondHandBookPublishPage {
             List() {
               ForEach(this.selectorOptions(), (option: string) => {
                 ListItem() {
-                  Text(option).fontSize(21).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').height(58).textAlign(TextAlign.Center).onClick(() => this.chooseSelector(option))
-                }
+                  Row() {
+                    Text(option).fontSize(20).fontWeight(FontWeight.Bold)
+                      .fontColor(this.selectorKind === 'major' && this.majorSelected(option) ? '#20C894' : '#555555')
+                      .layoutWeight(1).textAlign(TextAlign.Center)
+                    if (this.selectorKind === 'major') {
+                      Text(this.majorSelected(option) ? '✓' : '').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#20C894').width(28)
+                    }
+                  }.width('100%').height(58).padding({ left: 20, right: 20 })
+                }.onClick(() => this.chooseSelector(option))
               }, (option: string) => option)
             }.width('100%').height(Math.min(290, this.selectorOptions().length * 58))
           }
+          if (this.selectorKind === 'major') {
+            Button(`确定${this.pendingSelectedMajors.length > 0 ? `（${this.pendingSelectedMajors.length}）` : ''}`)
+              .fontSize(18).fontWeight(FontWeight.Bold).fontColor(Color.White).width(160).height(50)
+              .backgroundColor('#20C894').borderRadius(25).margin({ top: 14 })
+              .onClick(() => {
+                this.selectedMajors = this.pendingSelectedMajors.slice();
+                this.major = this.selectedMajors.join('、');
+                this.selectorOpen = false;
+              })
+          }
           Button('取消').fontSize(19).fontWeight(FontWeight.Bold).fontColor(Color.White).width(160).height(52).backgroundColor('#55D600').borderRadius(9).margin({ top: 18 }).onClick(() => { this.selectorOpen = false; })
-        }.width('78%').padding({ left: 24, right: 24, top: 28, bottom: 28 }).backgroundColor(Color.White).borderRadius(24).alignItems(HorizontalAlign.Center)
+        }.width('78%').padding({ left: 24, right: 24, top: 28, bottom: 28 }).backgroundColor(Color.White).borderRadius(24).alignItems(HorizontalAlign.Center).zIndex(2)
         }.width('100%').height('100%')
       }
     }.width('100%').height('100%')

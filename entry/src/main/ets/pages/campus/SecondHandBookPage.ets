@@ -19,6 +19,8 @@ struct SecondHandBookPage {
   @State private filterOpen: boolean = false;
   @State private activeMajor: string = '全部专业';
   @State private pendingMajor: string = '全部专业';
+  @State private activeMajors: string[] = [];
+  @State private pendingMajors: string[] = [];
   @State private activeCampus: string = '全部校区';
   @State private pendingCampus: string = '全部校区';
   @State private activeSort: string = '默认排序';
@@ -38,8 +40,7 @@ struct SecondHandBookPage {
 
   private async load(): Promise<void> {
     this.loading = true;
-    const requestedMajor = this.activeMajor === '我的专业' ? this.selfMajor : (this.activeMajor === '全部专业' ? '' : this.activeMajor);
-    try { this.listings = await SecondHandBookApi.feed(this.query, '', requestedMajor); }
+    try { this.listings = await SecondHandBookApi.feed(this.query, '', ''); }
     catch { promptAction.showToast({ message: '二手书信息加载失败', duration: 1500 }); }
     this.loading = false;
   }
@@ -53,11 +54,13 @@ struct SecondHandBookPage {
   }
 
   private majorMatches(item: SecondhandListing): boolean {
-    if (this.activeMajor === '全部专业') return true;
-    const itemMajor = (item.major || '').trim();
-    if (itemMajor.length === 0) return true;
-    if (this.activeMajor === '我的专业') return this.selfMajor.length > 0 && itemMajor.indexOf(this.selfMajor) >= 0;
-    return itemMajor.indexOf(this.activeMajor) >= 0;
+    if (this.activeMajorMode === '全部专业') return true;
+    const itemMajor = `${item.major || ''} ${item.note || ''}`.trim().toLowerCase();
+    if (this.activeMajorMode === '我的专业') {
+      return this.selfMajor.length > 0 && itemMajor.indexOf(this.selfMajor.toLowerCase()) >= 0;
+    }
+    if (this.activeMajors.length === 0) return true;
+    return this.activeMajors.some((major: string) => itemMajor.indexOf(major.toLowerCase()) >= 0);
   }
 
   private visibleListings(): SecondhandListing[] {
@@ -70,6 +73,7 @@ struct SecondHandBookPage {
 
   private openFilter(): void {
     this.pendingMajor = this.activeMajor;
+    this.pendingMajors = this.activeMajors.slice();
     this.pendingMajorMode = this.activeMajorMode;
     this.pendingCampus = this.activeCampus;
     this.pendingSort = this.activeSort;
@@ -80,6 +84,7 @@ struct SecondHandBookPage {
 
   private applyFilter(): void {
     this.activeMajor = this.pendingMajor;
+    this.activeMajors = this.pendingMajors.slice();
     this.activeMajorMode = this.pendingMajorMode;
     this.activeCampus = this.pendingCampus;
     this.activeSort = this.pendingSort;
@@ -93,7 +98,6 @@ struct SecondHandBookPage {
       promptAction.showToast({ message: '暂未获取到专业列表', duration: 1500 });
       return;
     }
-    if (this.majors.indexOf(this.pendingMajor) < 0) this.pendingMajor = this.majors[0];
     this.majorPickerOpen = true;
   }
 
@@ -104,6 +108,15 @@ struct SecondHandBookPage {
     }
     this.pendingMajorMode = mode;
     this.pendingMajor = mode;
+    this.pendingMajors = [];
+  }
+
+  private togglePendingMajor(major: string): void {
+    if (this.pendingMajors.indexOf(major) >= 0) {
+      this.pendingMajors = this.pendingMajors.filter((item: string) => item !== major);
+    } else {
+      this.pendingMajors = this.pendingMajors.concat([major]);
+    }
   }
 
   @Builder
@@ -116,14 +129,20 @@ struct SecondHandBookPage {
           Text('选择专业').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333333').layoutWeight(2).textAlign(TextAlign.Center);
           Text('确定').fontSize(18).fontColor('#20C894').layoutWeight(1).textAlign(TextAlign.End).onClick(() => {
             this.pendingMajorMode = '指定专业';
+            this.pendingMajor = this.pendingMajors.join('、');
             this.majorPickerOpen = false;
           });
         }.width('100%').height(56).padding({ left: 20, right: 20 });
-        TextPicker({ range: this.majors, selected: Math.max(0, this.majors.indexOf(this.pendingMajor)) })
-          .width('100%').height(250).onChange((value: string | string[], index: number | number[]) => {
-            const selected = Array.isArray(index) ? index[0] : index;
-            this.pendingMajor = this.majors[selected];
-          });
+        List() {
+          ForEach(this.majors, (major: string) => {
+            ListItem() {
+              Row() {
+                Text(major).fontSize(18).fontColor(this.pendingMajors.indexOf(major) >= 0 ? '#20C894' : '#555555').layoutWeight(1)
+                Text(this.pendingMajors.indexOf(major) >= 0 ? '✓' : '').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#20C894').width(30)
+              }.width('100%').height(52).padding({ left: 22, right: 22 })
+            }.onClick(() => this.togglePendingMajor(major))
+          }, (major: string) => major)
+        }.width('100%').height(280)
       }.width('92%').backgroundColor(Color.White).borderRadius(20).padding({ bottom: 12 }).onClick(() => {});
     }.width('100%').height('100%');
   }
@@ -159,7 +178,9 @@ struct SecondHandBookPage {
             })
           }.width('100%');
           if (this.pendingMajorMode === '指定专业') {
-            Text(`已选：${this.pendingMajor}`).fontSize(15).fontColor('#777777').width('100%').margin({ bottom: 8 });
+            Text(this.pendingMajors.length > 0 ? `已选：${this.pendingMajors.join('、')}` : '尚未选择专业')
+              .fontSize(15).fontColor('#777777').width('100%').maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ bottom: 8 });
           }
           Text('选择校区').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
           Flex({ wrap: FlexWrap.Wrap }) {
