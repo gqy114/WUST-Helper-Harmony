@@ -11,8 +11,8 @@
  *
  * 文件路径：entry/src/main/ets/pages/library/LibraryPage.ets
  */
-import { RouterUtil } from '../../utils/RouterUtil';
 import { AppStorage } from '../../store/AppStorage';
+import { TeachingSessionService } from '../../service/TeachingSessionService';
 import { LibraryApi } from '../../net/LibraryApi';
 import { LibraryStore } from '../../store/LibraryStore';
 import { LibraryLoanItem as LoanItem } from '../../model/LibraryLoanModel';
@@ -39,9 +39,10 @@ struct LibraryPage {
     try {
       const s = AppStorage.getInstance();
       const token = await s.getToken();
-      const isLogin = await s.getIsLogin();
-      if (!token || !isLogin) {
-        RouterUtil.toLogin();
+      if (!token && !(await TeachingSessionService.ensureSession(true))) {
+        this.loading = false;
+        this.sessionExpired = true;
+        this.errorMsg = '教务系统暂不可用，将在后台自动重试';
         return;
       }
       await this.fetchLoans();
@@ -52,7 +53,7 @@ struct LibraryPage {
     }
   }
 
-  private async fetchLoans(): Promise<void> {
+  private async fetchLoans(retried: boolean = false): Promise<void> {
     this.loading = true;
     this.errorMsg = '';
     this.sessionExpired = false;
@@ -69,8 +70,12 @@ struct LibraryPage {
         this.store.loanList = resp.data;
         this.errorMsg = '';
       } else if (resp.code === 401 || resp.code === 403) {
+        if (!retried && await TeachingSessionService.ensureSession(true)) {
+          await this.fetchLoans(true);
+          return;
+        }
         this.sessionExpired = true;
-        this.errorMsg = resp.msg;
+        this.errorMsg = '教务登录已失效，将在后台自动重试';
       } else {
         this.errorMsg = resp.msg || '借阅数据获取失败';
       }

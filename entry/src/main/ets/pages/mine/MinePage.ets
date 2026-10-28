@@ -23,6 +23,7 @@ import { UserStore } from '../../store/UserStore';
 import { UserInfo } from '../../model/UserInfoModel';
 import { HttpRequest } from '../../net/HttpRequest';
 import { CampusWallApi, CampusRedFlowerRank, CampusRedFlowerRanking } from '../../net/CampusWallApi';
+import { TeachingSessionService } from '../../service/TeachingSessionService';
 
 const TAG = 'MinePage';
 interface UpdateItem { title?: string; context?: string; }
@@ -118,19 +119,15 @@ struct MinePage {
     try {
       const s = AppStorage.getInstance();
       this.avatarUrl = await s.getAvatarUrl();
-      const token = await s.getToken();
-      const loginFlag = await s.getIsLogin();
-      if (!token || !loginFlag) {
-        this.isLoggedIn = false;
-        this.loading = false;
-        return;
-      }
-      this.isLoggedIn = true;
       await this.store.restoreFromLocal();
       this.userInfo = this.store.userInfo;
+      const sid = await s.getStudentId();
+      this.isLoggedIn = sid.length > 0;
       this.loading = false;
+      let token = await s.getToken();
+      if (!token && await TeachingSessionService.ensureSession(false)) token = await s.getToken();
       // 后台拉取 API 更新用户信息
-      this.fetchUserInfo(token);
+      if (token) this.fetchUserInfo(token);
       this.refreshAvatar();
       this.loadFlowerRanking(false);
     } catch {
@@ -195,7 +192,7 @@ struct MinePage {
     promptAction.showToast({ message: '检查更新失败，请稍后重试', duration: 1500 });
   }
 
-  private async fetchUserInfo(token: string): Promise<void> {
+  private async fetchUserInfo(token: string, retried: boolean = false): Promise<void> {
     try {
       const resp = await UserApi.getUserInfo(token, await AppStorage.getInstance().getStudentId());
       if (resp.code === 200 || resp.code === 0 || resp.code === 10000) {
@@ -219,8 +216,10 @@ struct MinePage {
           this.userInfo = this.store.userInfo;
         }
       } else if (resp.code === 401 || resp.code === 403) {
-        this.errorMsg = '登录已过期';
-        setTimeout(() => RouterUtil.toLogin(), 1500);
+        if (!retried && await TeachingSessionService.ensureSession(true)) {
+          const refreshedToken = await AppStorage.getInstance().getToken();
+          if (refreshedToken) await this.fetchUserInfo(refreshedToken, true);
+        }
       }
       console.info(TAG, 'userInfo loaded from API');
     } catch {
