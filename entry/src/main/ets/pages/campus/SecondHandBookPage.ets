@@ -243,7 +243,7 @@ struct SecondHandBookPage {
                 Column() {
                   Text(item.bookTitle || '未命名书籍').fontSize(21).fontWeight(FontWeight.Bold).fontColor('#857A25').maxLines(2);
                   if (item.bookAuthor) { Text(item.bookAuthor).fontSize(15).fontColor('#888888'); }
-                  Text(item.condition || '成色未知').fontSize(16).fontColor('#555555').margin({ top: 8 });
+                  Text(SecondHandBookApi.conditionLabel(item.condition) || '成色未知').fontSize(16).fontColor('#555555').margin({ top: 8 });
                   if (item.note) { Text(item.note).fontSize(15).fontColor('#777777').maxLines(2); }
                   Text(this.money(item.price)).fontSize(21).fontWeight(FontWeight.Bold).fontColor('#B26E2A').margin({ top: 8 });
                 }.layoutWeight(1);

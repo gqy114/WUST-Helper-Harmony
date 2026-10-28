@@ -15,6 +15,7 @@ export interface CampusWallPost {
   createdAt?: string;
   likeCount?: number;
   replyCount?: number;
+  redFlowers?: number;
   images?: string[];
   status?: string;
   resolved?: boolean;
@@ -117,7 +118,7 @@ export class CampusWallApi {
     return { id: post.id, studentId: post.studentId, title: post.title, content: post.content, tag: post.tag,
       displayName: post.displayName, realName: post.realName, avatarUrl: CampusWallApi.fullAssetUrl(post.avatarUrl || ''),
       college: post.college, major: post.major, createdAt: post.createdAt,
-      likeCount: post.likeCount, replyCount: post.replyCount, images: fullImages,
+      likeCount: post.likeCount, replyCount: post.replyCount, redFlowers: post.redFlowers || 0, images: fullImages,
       status: post.status, resolved: post.resolved, isResolved: post.isResolved,
       type: post.type, category: post.category, noticeType: post.noticeType, address: post.address, extra: post.extra,
       replies: (post.replies || []).map((reply: CampusWallReply) => CampusWallApi.normalizeReply(reply)),

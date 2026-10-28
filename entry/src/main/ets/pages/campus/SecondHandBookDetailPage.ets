@@ -82,6 +82,9 @@ struct SecondHandBookDetailPage {
   private title(): string { return this.book.title || this.listing.bookTitle || '未命名书籍'; }
   private author(): string { return this.book.author || this.listing.bookAuthor || ''; }
   private major(): string { return this.book.category || this.listing.major || this.metadata('适用专业'); }
+  private majorItems(): string[] {
+    return this.major().split(/[、,，]/).map((value: string) => value.trim()).filter((value: string) => value.length > 0);
+  }
   private campus(): string { return this.listing.campusName || this.listing.campus || this.metadata('面交校区'); }
   private sellerName(): string { return this.listing.displayName || this.listing.sellerName || this.listing.realName || this.listing.sellerId || '同学'; }
   private sellerAvatar(): string { return this.listing.avatarUrl || this.listing.sellerAvatar || ''; }
@@ -191,7 +194,10 @@ struct SecondHandBookDetailPage {
       Column() {
         Row() {
           Text(reply.displayName || reply.realName || reply.studentId || '同学').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#655C86')
-          if ((reply.redFlowers || 0) > 0) { Text(` 🌼 ${reply.redFlowers}`).fontSize(16).fontColor('#B83D5B').margin({ left: 6 }) }
+          if ((reply.redFlowers || 0) > 0) {
+            Image($r('app.media.flower')).width(18).height(18).objectFit(ImageFit.Contain).margin({ left: 7 })
+            Text(`${reply.redFlowers}`).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#B83D5B').margin({ left: 4 })
+          }
         }.width('100%')
         if (reply.college || reply.major) { Text(reply.college || reply.major || '').fontSize(14).fontColor('#999999').margin({ top: 2 }) }
         Text(reply.content || '').fontSize(18).fontColor('#333333').lineHeight(28).margin({ top: 12 })
@@ -217,7 +223,10 @@ struct SecondHandBookDetailPage {
               Column() {
                 Row() {
                   Text(this.sellerName()).fontSize(21).fontWeight(FontWeight.Bold).fontColor('#655C86')
-                  if ((this.listing.redFlowers || 0) > 0) { Text(` 🌼 ${this.listing.redFlowers}`).fontSize(16).fontColor('#B83D5B').margin({ left: 6 }) }
+                  if ((this.listing.redFlowers || 0) > 0) {
+                    Image($r('app.media.flower')).width(18).height(18).objectFit(ImageFit.Contain).margin({ left: 7 })
+                    Text(`${this.listing.redFlowers}`).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#B83D5B').margin({ left: 4 })
+                  }
                 }
                 if (this.listing.college || this.listing.major) { Text(this.listing.college || this.listing.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 }) }
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
@@ -227,13 +236,19 @@ struct SecondHandBookDetailPage {
             Text(this.title()).fontSize(27).fontWeight(FontWeight.Bold).fontColor('#222222').width('100%').margin({ top: 28 })
             Row() {
               Column() { Text('价格').fontSize(16).fontColor('#AAAAAA'); Text(`¥${this.listing.price || 0}`).fontSize(23).fontWeight(FontWeight.Bold).fontColor('#D75C3E').margin({ top: 9 }); }.layoutWeight(1).alignItems(HorizontalAlign.Start)
-              if ((this.listing.condition || '').trim()) { Column() { Text('品相').fontSize(16).fontColor('#AAAAAA'); Text(this.listing.condition || '').fontSize(20).fontWeight(FontWeight.Bold).margin({ top: 9 }); }.layoutWeight(1).alignItems(HorizontalAlign.Start) }
+              if ((this.listing.condition || '').trim()) { Column() { Text('品相').fontSize(16).fontColor('#AAAAAA'); Text(SecondHandBookApi.conditionLabel(this.listing.condition)).fontSize(20).fontWeight(FontWeight.Bold).margin({ top: 9 }); }.layoutWeight(1).alignItems(HorizontalAlign.Start) }
               if (this.campus()) { Column() { Text('面交校区').fontSize(16).fontColor('#AAAAAA'); Text(this.campus()).fontSize(20).fontWeight(FontWeight.Bold).margin({ top: 9 }); }.layoutWeight(1).alignItems(HorizontalAlign.Start) }
             }.width('100%').padding({ top: 24, bottom: 26 }).border({ width: { bottom: 1 }, color: '#EEEEEE' })
 
             if (this.major()) {
               Text('适用专业').fontSize(22).fontWeight(FontWeight.Bold).width('100%').margin({ top: 26, bottom: 14 })
-              Text(this.major()).fontSize(17).fontWeight(FontWeight.Medium).fontColor('#555555').padding({ left: 16, right: 16, top: 10, bottom: 10 }).backgroundColor('#F6F6F9').borderRadius(8).alignSelf(ItemAlign.Start)
+              Flex({ wrap: FlexWrap.Wrap }) {
+                ForEach(this.majorItems(), (major: string) => {
+                  Text(major).fontSize(17).fontWeight(FontWeight.Medium).fontColor('#555555')
+                    .padding({ left: 16, right: 16, top: 10, bottom: 10 }).backgroundColor('#F6F6F9')
+                    .borderRadius(8).margin({ right: 8, bottom: 8 })
+                }, (major: string) => major)
+              }.width('100%')
             }
             if (this.author() || this.book.publisher || this.book.edition || this.book.isbn) {
               Text('书籍资料').fontSize(22).fontWeight(FontWeight.Bold).width('100%').margin({ top: 28 })
