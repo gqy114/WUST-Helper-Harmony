@@ -34,6 +34,14 @@ export class CampusCatApi {
     const items: CampusCatPost[] = Array.isArray(result.data.data) ? result.data.data : (result.data.data?.posts || result.data.data?.list || []);
     return items.map((post: CampusCatPost) => CampusCatApi.normalizePost(post));
   }
+  static async detail(id: number): Promise<CampusCatPost> {
+    const token = await AppStorage.getInstance().getAppAuthAccessToken();
+    const headers: CatHeaders = { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' };
+    const result = await HttpRequest.get<CatResponse>(`https://lyzyy.love/api/v1/campus-cat/posts/${id}`, headers);
+    const post = result.data.data as CampusCatPost;
+    if (!post || !post.id) throw new Error(result.data.message || 'post not found');
+    return CampusCatApi.normalizePost(post);
+  }
   static async publish(title: string, content: string, tags: string[], images: string[] = []): Promise<void> {
     const token = await AppStorage.getInstance().getAppAuthAccessToken();
     const headers: CatHeaders = { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' };

@@ -63,6 +63,22 @@ struct CampusCatPage {
     return this.posts.filter((post: CampusCatPost) => this.filterMatch(post) && this.matchScore(post) > 0)
       .sort((a: CampusCatPost, b: CampusCatPost) => this.matchScore(b) - this.matchScore(a));
   }
+  @Builder
+  private imagePreview(post: CampusCatPost) {
+    Stack({ alignContent: Alignment.BottomEnd }) {
+      CommunityPostImage({ src: (post.images || [])[0] })
+      if ((post.images || []).length > 1) {
+        Text(`共 ${(post.images || []).length} 张`)
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Color.White)
+          .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+          .backgroundColor('#99000000')
+          .borderRadius(18)
+          .margin({ right: 10, bottom: 10 })
+      }
+    }.width('100%').margin({ top: 12 })
+  }
   build() {
     Column() {
       Row() { Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back()); Text('校园猫').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ left: 12 }); Blank().layoutWeight(1); Row() { Image($r('app.media.filter')).width(24).height(24).margin({ right: 14 }).alignSelf(ItemAlign.Center).onClick(() => { this.pendingTags = this.activeTags.slice(); animateTo({ duration: 260, curve: Curve.EaseInOut }, () => { this.filterOpen = true; }); }); Image($r('app.media.search')).width(24).height(24).margin({ right: 18 }).onClick(() => { animateTo({ duration: 260, curve: Curve.EaseInOut }, () => { this.searching = true; }); }); }.height(48).alignItems(VerticalAlign.Center); Image(this.avatarUrl || $r('app.media.ic_default_avatar')).width(44).height(44).borderRadius(22).objectFit(ImageFit.Cover).alignSelf(ItemAlign.Center); }.width('100%').height(96).alignItems(VerticalAlign.Center).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
@@ -96,12 +112,12 @@ struct CampusCatPage {
                 if (post.title) { CampusRichText({ content: post.title, fontSize: 22, textColor: '#222222', baseBold: true, lineHeight: 30 }); }
                 CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 });
                 if (post.images && post.images.length > 0) {
-                  ForEach(post.images, (image: string) => {
-                    CommunityPostImage({ src: image }).margin({ top: 12 });
-                  }, (image: string, imageIndex: number) => `${imageIndex}-${image}`)
+                  this.imagePreview(post)
                 }
                 Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA');
-              }.width('100%').padding({ left: 34, right: 34, top: 20, bottom: 22 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' });
+              }.width('100%').padding({ left: 34, right: 34, top: 20, bottom: 22 }).backgroundColor(Color.White)
+                .border({ width: { bottom: 1 }, color: '#EEEEEE' })
+                .onClick(() => router.pushUrl({ url: 'pages/campus/CampusCatDetailPage', params: { id: String(post.id || 0) } }));
             }
           }, (post: CampusCatPost, index: number) => `${post.id || post.createdAt || 'post'}-${index}`)
           if (this.loadingMore) {

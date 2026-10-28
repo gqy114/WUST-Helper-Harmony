@@ -33,6 +33,7 @@
     "pages/campus/CampusLostPage",
     "pages/campus/CampusMatchPage",
     "pages/campus/CampusCatPage",
+    "pages/campus/CampusCatDetailPage",
     "pages/campus/CampusPublishPage",
     "pages/campus/CommunityNotificationsPage",
     "pages/campus/CampusPostDetailPage",
