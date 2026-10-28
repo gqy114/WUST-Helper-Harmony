@@ -9,8 +9,8 @@
  *
  * 文件路径：entry/src/main/ets/pages/campus/grade/GradePage.ets
  */
-import { RouterUtil } from '../../../utils/RouterUtil';
 import { AppStorage } from '../../../store/AppStorage';
+import { TeachingSessionService } from '../../../service/TeachingSessionService';
 import { GradeApi } from '../../../net/GradeApi';
 import { GradeStore } from '../../../store/GradeStore';
 import { GradeBean, calcGradeSummary, GradeStatSummary } from '../../../model/GradeModel';
@@ -172,28 +172,29 @@ struct GradePage {
 
     try {
       const appStorage = AppStorage.getInstance();
+      await this.restoreCachedGrades();
       const token = await appStorage.getToken();
-      const isLogin = await appStorage.getIsLogin();
-      if (!token || !isLogin) {
-        RouterUtil.toLogin();
+      if (!token && !(await TeachingSessionService.ensureSession(true))) {
+        this.loading = false;
+        if (this.gradeList.length === 0) this.errorMsg = '教务系统暂不可用，暂无本地成绩';
         return;
       }
       await this.fetchGrades();
     } catch {
       console.error(TAG, 'verify error');
       this.loading = false;
-      this.errorMsg = '登录状态校验失败';
+      if (this.gradeList.length === 0) this.errorMsg = '教务系统暂不可用，暂无本地成绩';
     }
   }
 
-  private async fetchGrades(): Promise<void> {
+  private async fetchGrades(retried: boolean = false): Promise<void> {
     this.loading = true;
     this.errorMsg = '';
     try {
       const appStorage = AppStorage.getInstance();
       const token = await appStorage.getToken();
       if (!token) {
-        this.errorMsg = '登录已失效';
+        if (this.gradeList.length === 0) this.errorMsg = '教务系统暂不可用，暂无本地成绩';
         return;
       }
       const resp = await GradeApi.getGrade(token);
@@ -207,19 +208,49 @@ struct GradePage {
         this.gradeList = list;
         this.filteredGradeList = list;
         this.summary = calcGradeSummary(list);
+        await appStorage.setCachedGrades(JSON.stringify(list));
         this.errorMsg = '';
         console.info(TAG, `loaded ${list.length} grades`);
       } else if (resp.code === 401 || resp.code === 403) {
-        this.errorMsg = '登录已过期，正在跳转...';
-        setTimeout(() => RouterUtil.toLogin(), 1500);
+        if (!retried && await TeachingSessionService.ensureSession(true)) {
+          await this.fetchGrades(true);
+          return;
+        }
+        if (this.gradeList.length === 0) this.errorMsg = '教务登录已失效，将在后台自动重试';
       } else {
         this.errorMsg = resp.msg || '成绩获取失败';
       }
     } catch {
       console.warn(TAG, 'fetchGrades error');
-      this.errorMsg = '网络请求失败，请检查网络后重试';
+      if (this.gradeList.length === 0) {
+        this.errorMsg = '网络请求失败，暂无本地成绩';
+      } else {
+        this.errorMsg = '';
+      }
     } finally {
       this.loading = false;
+    }
+  }
+
+  private async restoreCachedGrades(): Promise<void> {
+    try {
+      const raw = await AppStorage.getInstance().getCachedGrades();
+      if (!raw) return;
+      const cached = JSON.parse(raw) as GradeBean[];
+      if (!Array.isArray(cached) || cached.length === 0) return;
+      const list = this.sortGradesByTerm(cached);
+      this.store.allGradeList = list;
+      this.store.gradeList = list;
+      this.store.extractTerms(list);
+      this.termOptions = this.store.termOptions;
+      this.selectedTerm = '全部成绩';
+      this.gradeList = list;
+      this.filteredGradeList = list;
+      this.summary = calcGradeSummary(list);
+      this.loading = false;
+      this.errorMsg = '';
+    } catch {
+      console.warn(TAG, 'restoreCachedGrades error');
     }
   }
 

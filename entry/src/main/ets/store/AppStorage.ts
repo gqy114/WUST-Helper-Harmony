@@ -245,6 +245,9 @@ export class AppStorage {
     return this.putStr('currentCourses', JSON.stringify(value));
   }
 
+  async getCachedGrades(): Promise<string> { return this.getStr('cachedGrades', ''); }
+  async setCachedGrades(value: string): Promise<void> { return this.putStr('cachedGrades', value); }
+
   async getSettingBool(key: string, defaultValue: boolean): Promise<boolean> {
     return this.getBool(key, defaultValue);
   }

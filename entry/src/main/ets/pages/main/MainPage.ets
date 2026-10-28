@@ -15,6 +15,7 @@ import { ApiService } from '../../net/ApiService';
 import { promptAction } from '@kit.ArkUI';
 import router from '@ohos.router';
 import { HomeBanner, HomeContentApi, HomeNotice } from '../../net/HomeContentApi';
+import { TeachingSessionService } from '../../service/TeachingSessionService';
 
 // ═══════════════════════════════════════════════ 常量 ═══════════════════════════════════════════════
 
@@ -102,6 +103,7 @@ struct MainPage {
   // ── 非 @State 内部变量 ──
   private lastBackTime: number = 0;
   private tabsController: TabsController = new TabsController();
+  private teachingRetryTimer: number = -1;
 
   // ═══════════════════════════════════════════════ 生命周期 ═══════════════════════════════════════════════
 
@@ -113,6 +115,7 @@ struct MainPage {
     this.loadToolLayout();
     this.loadHomeContent();
     this.updateCatState();
+    this.startTeachingSessionRetry();
     console.info(TAG, `[module-debug] toolList.length=${toolList.length}`);
     console.info(TAG, `[module-debug] campusWallItem.title=${campusWallItem.title}, desc=${campusWallItem.desc}, route=${campusWallItem.route}`);
   }
@@ -136,6 +139,22 @@ struct MainPage {
     this.loadToolLayout();
     this.refreshCatEasterEgg();
     this.verifyLoginState();
+  }
+
+  aboutToDisappear(): void {
+    if (this.teachingRetryTimer !== -1) {
+      clearInterval(this.teachingRetryTimer);
+      this.teachingRetryTimer = -1;
+    }
+  }
+
+  private startTeachingSessionRetry(): void {
+    if (this.teachingRetryTimer !== -1) return;
+    this.teachingRetryTimer = setInterval(() => {
+      TeachingSessionService.ensureSession(true).then((ok: boolean) => {
+        if (ok) console.info(TAG, 'teaching session restored in background');
+      });
+    }, 60_000);
   }
 
   private async loadToolLayout(): Promise<void> {
@@ -185,37 +204,14 @@ struct MainPage {
 
   // ═══════════════════════════════════════════════ 登录校验 + 会话失效═══════════════════════════════════════════════
 
-  /** 校验 Token，失效则跳转 LoginPage */
+  /** 教务失效不退出 App，仅在后台尝试恢复。 */
   private async verifyLoginState(): Promise<void> {
     try {
-      const s = AppStorage.getInstance();
-      let token = await s.getToken();
-      let isLogin = await s.getIsLogin();
-      if (!token || token.trim().length === 0 || !isLogin) {
-        const sid = await s.getStudentId();
-        const pwd = await s.getPassword();
-        if (sid && pwd) {
-          const graduate = await s.getIsGraduate();
-          const refreshed = graduate
-            ? await ApiService.refreshGraduateToken(s, sid, pwd)
-            : await ApiService.refreshUndergradToken(s, sid, pwd);
-          if (refreshed) {
-            token = await s.getToken();
-            isLogin = true;
-            await s.setIsLogin(true);
-          }
-        }
-      }
-      if (!token || token.trim().length === 0 || !isLogin) {
-        console.warn(TAG, 'token invalid and silent login failed → redirect to login');
-        RouterUtil.toLogin();
-        return;
-      }
+      await TeachingSessionService.ensureSession(false);
       // Token 有效，后台静默刷新 AppAuth
       this.silentRefreshAppAuth();
     } catch {
       console.error(TAG, 'verifyLoginState error');
-      RouterUtil.toLogin();
     }
   }
 
@@ -228,9 +224,9 @@ struct MainPage {
     }
   }
 
-  /** 会话失效 — 清除登录态并跳转 */
+  /** 教务会话失效时保留本地数据和 App 登录态。 */
   private onSessionExpired(): void {
-    this.clearLoginState().then(() => RouterUtil.toLogin());
+    TeachingSessionService.ensureSession(true);
   }
 
   private async clearLoginState(): Promise<void> {
@@ -252,35 +248,13 @@ struct MainPage {
       const s = AppStorage.getInstance();
       const sid = await s.getStudentId();
       const pwd = await s.getPassword();
-      if (!sid || !pwd) {
-        this.onSessionExpired();
-        return false;
-      }
-
-      const isGrad = await s.getIsGraduate();
-      let newToken = '';
-      if (isGrad) {
-        const resp = await ApiService.loginGraduate(sid, pwd);
-        if (resp?.code !== 200) {
-          this.onSessionExpired();
-          return false;
-        }
-        newToken = 'grad_' + sid;
-      } else {
-        const resp = await ApiService.loginUndergrad(sid, pwd);
-        if (!resp?.data?.token) {
-          this.onSessionExpired();
-          return false;
-        }
-        newToken = resp.data.token;
-      }
-      await s.setToken(newToken);
-      await s.setTokenUpdateTime(Date.now());
+      if (!sid || !pwd) return false;
+      const restored = await TeachingSessionService.ensureSession(true);
+      if (!restored) return false;
       if (retryFunc) await retryFunc();
       return true;
     } catch {
       console.error(TAG, 'onApiAuthFailure');
-      this.onSessionExpired();
       return false;
     }
   }

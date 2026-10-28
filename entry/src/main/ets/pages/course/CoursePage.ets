@@ -3,8 +3,8 @@
  *
  * 文件路径：entry/src/main/ets/pages/course/CoursePage.ets
  */
-import { RouterUtil } from '../../utils/RouterUtil';
 import { AppStorage as PreferenceStorage } from '../../store/AppStorage';
+import { TeachingSessionService } from '../../service/TeachingSessionService';
 import { CourseApi } from '../../net/CourseApi';
 import { CourseStore } from '../../store/CourseStore';
 import { WeekSelector } from '../../components/WeekSelector';
@@ -220,7 +220,7 @@ export struct CoursePage {
     }
   }
 
-  /** 校验登录态，失效跳转 */
+  /** 优先恢复本地课表；教务不可用时不离开当前页面。 */
   private async verifyAndLoad(): Promise<void> {
     console.info(TAG, `isUseMockData=${this.isUseMockData}`);
 
@@ -257,13 +257,8 @@ export struct CoursePage {
 
     try {
       const s = PreferenceStorage.getInstance();
-      const token = await s.getToken();
-      const isLogin = await s.getIsLogin();
-      if (!token || !isLogin) {
-        RouterUtil.toLogin();
-        return;
-      }
       await this.store.restoreFromStorage();
+      this.showCachedCourses();
       this.currentSemester = this.store.semester || this.calcSemesterFallback();
       const adjustedWeek = AppStorage.get<number>('adjustedCurrentWeek');
       if (adjustedWeek !== undefined && adjustedWeek >= 1 && adjustedWeek <= 25) {
@@ -275,22 +270,30 @@ export struct CoursePage {
       }
       this.updateWeekDates();
       this.loading = true;
+      const token = await s.getToken();
+      if (!token && !(await TeachingSessionService.ensureSession(true))) {
+        this.loading = false;
+        if (this.store.courses.length === 0) this.errorMsg = '教务系统暂不可用，暂无本地课表';
+        return;
+      }
       await this.fetchCourses();
       this.loading = false;
     } catch {
       console.error(TAG, 'verifyAndLoad error');
       this.loading = false;
-      this.errorMsg = '登录状态校验失败';
+      this.showCachedCourses();
+      if (this.store.courses.length === 0) this.errorMsg = '教务系统暂不可用，暂无本地课表';
     }
   }
 
   /** 调用真实 API 获取课表 */
-  private async fetchCourses(): Promise<void> {
+  private async fetchCourses(retried: boolean = false): Promise<void> {
     try {
       const s = PreferenceStorage.getInstance();
       const token = await s.getToken();
       if (!token) {
-        this.errorMsg = '登录已失效，请重新登录';
+        this.showCachedCourses();
+        if (this.store.courses.length === 0) this.errorMsg = '教务系统暂不可用，暂无本地课表';
         return;
       }
 
@@ -330,9 +333,12 @@ export struct CoursePage {
 
         console.info(TAG, `loaded ${list.length} courses`);
       } else if (resp.code === 401 || resp.code === 403 || resp.code === 10001 || resp.code === 30001) {
-        // Token 失效 → 跳转登录
-        this.errorMsg = '登录已过期，正在跳转...';
-        setTimeout(() => RouterUtil.toLogin(), 1500);
+        if (!retried && await TeachingSessionService.ensureSession(true)) {
+          await this.fetchCourses(true);
+          return;
+        }
+        this.showCachedCourses();
+        if (this.store.courses.length === 0) this.errorMsg = '教务登录已失效，将在后台自动重试';
       } else {
         this.errorMsg = resp.msg || '课表获取失败';
         // 有缓存数据时仍展示
@@ -357,6 +363,16 @@ export struct CoursePage {
         this.errorMsg = '网络请求失败，请检查网络后重试';
       }
     }
+  }
+
+  private showCachedCourses(): void {
+    const cached = this.store.courses;
+    if (cached.length === 0) return;
+    this.allCourseList = [...cached];
+    this.applyOnlyThisWeekFilter();
+    this.empty = false;
+    this.filterVisibleCourses();
+    this.errorMsg = '';
   }
 
   /** 按当前周次过滤可见课程 */

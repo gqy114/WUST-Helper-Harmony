@@ -9,6 +9,7 @@
 import { AppStorage } from '../../store/AppStorage';
 import { ApiService } from '../../net/ApiService';
 import { RouterUtil } from '../../utils/RouterUtil';
+import { TeachingSessionService } from '../../service/TeachingSessionService';
 
 const TAG = 'LaunchPage';
 
@@ -59,25 +60,13 @@ struct LaunchPage {
     this.navigationStarted = true;
     try {
       const storage = AppStorage.getInstance();
-      let isLogin = await storage.getIsLogin();
+      const isLogin = await storage.getIsLogin();
+      const hasSavedIdentity = await TeachingSessionService.hasSavedIdentity();
 
       // After a reboot or an app update the persisted teaching-system token
       // may be empty/expired, while the saved credentials are still present.
       // Re-establish the session before deciding to show the login page.
-      if (!isLogin || !(await storage.getToken())) {
-        const sid = await storage.getStudentId();
-        const pwd = await storage.getPassword();
-        if (sid && pwd) {
-          const graduate = await storage.getIsGraduate();
-          const refreshed = graduate
-            ? await ApiService.refreshGraduateToken(storage, sid, pwd)
-            : await ApiService.refreshUndergradToken(storage, sid, pwd);
-          isLogin = refreshed;
-          if (refreshed) await storage.setIsLogin(true);
-        }
-      }
-
-      if (isLogin) {
+      if (isLogin || hasSavedIdentity) {
         // ① 恢复内存 Token
         await this.restoreToken();
         // ② 跳主页（先跳，不阻塞）
@@ -90,7 +79,9 @@ struct LaunchPage {
       }
     } catch (err) {
       console.error(TAG, `handleNavigation error: ${err}`);
-      RouterUtil.toLogin();
+      const storage = AppStorage.getInstance();
+      const sid = await storage.getStudentId();
+      if (sid) RouterUtil.toMain(); else RouterUtil.toLogin();
     }
   }
 
