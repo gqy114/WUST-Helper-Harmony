@@ -14,6 +14,7 @@ import { CampusPage } from '../campus/CampusPage';
 import { ApiService } from '../../net/ApiService';
 import { promptAction } from '@kit.ArkUI';
 import router from '@ohos.router';
+import { HomeBanner, HomeContentApi, HomeNotice } from '../../net/HomeContentApi';
 
 // ═══════════════════════════════════════════════ 常量 ═══════════════════════════════════════════════
 
@@ -94,6 +95,8 @@ struct MainPage {
   @State private showVolunteerTab: boolean = true;
   @State private showCampusTab: boolean = true;
   @State private visibleToolTitles: string[] = [];
+  @State private homeBanners: HomeBanner[] = [];
+  @State private homeNoticeText: string = '欢迎使用武科大助手，随时随地开启校园之旅';
   /** 底部导航栏是否隐藏 */
   @State private barHidden: boolean = false;
   // ── 非 @State 内部变量 ──
@@ -108,6 +111,7 @@ struct MainPage {
     this.loadCatVisibility();
     this.loadNavigationVisibility();
     this.loadToolLayout();
+    this.loadHomeContent();
     this.updateCatState();
     console.info(TAG, `[module-debug] toolList.length=${toolList.length}`);
     console.info(TAG, `[module-debug] campusWallItem.title=${campusWallItem.title}, desc=${campusWallItem.desc}, route=${campusWallItem.route}`);
@@ -143,6 +147,23 @@ struct MainPage {
       this.visibleToolTitles = defaults.filter((title: string) => saved.indexOf(title) >= 0)
         .sort((a: string, b: string) => saved.indexOf(a) - saved.indexOf(b));
     } catch { this.visibleToolTitles = defaults; }
+  }
+
+  private async loadHomeContent(): Promise<void> {
+    try {
+      this.homeBanners = await HomeContentApi.banners();
+    } catch (error) {
+      console.warn(TAG, `load home banners failed: ${JSON.stringify(error)}`);
+    }
+    try {
+      const notices: HomeNotice[] = await HomeContentApi.notices();
+      if (notices.length > 0) {
+        const latest = notices[notices.length - 1];
+        this.homeNoticeText = latest.content || latest.title || this.homeNoticeText;
+      }
+    } catch (error) {
+      console.warn(TAG, `load home notices failed: ${JSON.stringify(error)}`);
+    }
   }
 
   private async loadCatVisibility(): Promise<void> {
@@ -441,22 +462,26 @@ struct MainPage {
 
         // ── Banner ──
         Swiper() {
-          Row() {
-            Column() {
-              Text('武科大助手').fontSize(24).fontWeight(FontWeight.Bold).fontColor(Color.White)
-              Text('校园生活 一手掌握').fontSize(14).fontColor('#FFFFFF').opacity(0.8).margin({ top: 6 })
-            }.alignItems(HorizontalAlign.Start)
-
-            Blank()
+          if (this.homeBanners.length > 0) {
+            ForEach(this.homeBanners, (banner: HomeBanner) => {
+              Image(banner.imageUrl).width('100%').height('100%').objectFit(ImageFit.Cover)
+            }, (banner: HomeBanner, index: number) => `${banner.id || index}-${banner.imageUrl}`)
+          } else {
+            Row() {
+              Column() {
+                Text('武科大助手').fontSize(24).fontWeight(FontWeight.Bold).fontColor(Color.White)
+                Text('校园生活 一手掌握').fontSize(14).fontColor('#FFFFFF').opacity(0.8).margin({ top: 6 })
+              }.alignItems(HorizontalAlign.Start)
+              Blank()
+            }.padding(20).width('100%').height('100%').alignItems(VerticalAlign.Center)
+              .linearGradient({ angle: 135, colors: [['#667eea', 0], ['#764ba2', 1]] })
           }
-          .padding(20)
-          .width('100%')
-          .height('100%')
-          .alignItems(VerticalAlign.Center)
-          .linearGradient({ angle: 135, colors: [['#667eea', 0], ['#764ba2', 1]] })
         }
         .width('100%')
         .height(150)
+        .autoPlay(this.homeBanners.length > 1)
+        .interval(4500)
+        .loop(this.homeBanners.length > 1)
         .borderRadius(16)
         .clip(true)
         .margin({ left: 16, right: 16 })
@@ -465,7 +490,8 @@ struct MainPage {
         Row() {
           // 使用矢量资源替代 emoji，避免鸿蒙设备缺少 emoji 字体时显示黑方块。
           Image($r('app.media.notifications')).width(20).height(20).objectFit(ImageFit.Contain).margin({ right: 8 })
-          Text('欢迎使用武科大助手，随时随地开启校园之旅').fontSize(13).fontColor('#666666')
+          Text(this.homeNoticeText).fontSize(13).fontColor('#666666').maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
         }
         .width('100%')
         .padding({
