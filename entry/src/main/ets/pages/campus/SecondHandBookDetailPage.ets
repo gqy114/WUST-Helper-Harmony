@@ -5,8 +5,9 @@ import { common, Want } from '@kit.AbilityKit';
 import { call } from '@kit.TelephonyKit';
 import { AppStorage } from '../../store/AppStorage';
 import { SecondHandBookApi, SecondhandBook, SecondhandDetail, SecondhandListing, SecondhandReply } from '../../net/SecondHandBookApi';
+import { CampusWallApi, CampusWallPost } from '../../net/CampusWallApi';
 
-interface DetailParams { listing?: string; }
+interface DetailParams { listing?: string; postId?: string; source?: string; }
 
 @Entry
 @Component
@@ -23,12 +24,14 @@ struct SecondHandBookDetailPage {
   @State private myStudentId: string = '';
   @State private myName: string = '';
   @State private myCollege: string = '';
+  private communityPostId: number = 0;
 
   aboutToAppear(): void {
     const params = router.getParams() as DetailParams;
     if (params.listing) {
       try { this.listing = JSON.parse(params.listing) as SecondhandListing; } catch { this.listing = {}; }
     }
+    this.communityPostId = Number(params.postId || this.listing.communityPostId || 0);
     this.loadProfile();
     this.load();
   }
@@ -44,6 +47,17 @@ struct SecondHandBookDetailPage {
   private async load(): Promise<void> {
     this.loading = true;
     try {
+      if (this.communityPostId > 0 || this.listing.source === 'community') {
+        const post: CampusWallPost = await CampusWallApi.detail(this.communityPostId || this.listing.id || 0);
+        this.listing = SecondHandBookApi.fromCommunityPost(post);
+        this.communityPostId = post.id || this.communityPostId;
+        this.book = { title: this.listing.bookTitle, author: this.listing.bookAuthor,
+          publisher: this.listing.bookPublisher, edition: this.listing.bookEdition,
+          isbn: this.listing.bookIsbn, category: this.listing.major, coverUrl: this.listing.bookCover };
+        this.replies = this.listing.replies || [];
+        this.loading = false;
+        return;
+      }
       const detail: SecondhandDetail = await SecondHandBookApi.detail(this.listing);
       this.book = detail.book || {};
       this.listing = detail.listing || this.listing;
@@ -60,7 +74,9 @@ struct SecondHandBookDetailPage {
 
   private plainNote(): string {
     return (this.listing.note || '').split('\n').filter((line: string) =>
-      !line.startsWith('适用专业：') && !line.startsWith('面交校区：') && !line.startsWith('面交地点：')).join('\n').trim();
+      !line.startsWith('适用专业：') && !line.startsWith('面交校区：') && !line.startsWith('面交地点：') &&
+      !line.startsWith('作者：') && !line.startsWith('出版社：') && !line.startsWith('版次：') &&
+      !line.startsWith('ISBN：')).join('\n').trim();
   }
 
   private title(): string { return this.book.title || this.listing.bookTitle || '未命名书籍'; }
@@ -146,7 +162,8 @@ struct SecondHandBookDetailPage {
     if (!content || this.sending || !(this.listing.id || 0)) return;
     this.sending = true;
     try {
-      await SecondHandBookApi.reply(this.listing.id || 0, content);
+      if (this.communityPostId > 0) await CampusWallApi.reply(this.communityPostId, content);
+      else await SecondHandBookApi.reply(this.listing.id || 0, content);
       this.replies.push({ studentId: this.myStudentId, displayName: this.myName, avatarUrl: this.myAvatar,
         college: this.myCollege, content, createdAt: Date.now() });
       this.replies = this.replies.slice();

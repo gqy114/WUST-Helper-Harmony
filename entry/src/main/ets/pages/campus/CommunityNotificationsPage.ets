@@ -59,10 +59,27 @@ struct CommunityNotificationsPage {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
-  private openNotification(item: CampusWallNotification): void {
+  private isBookTag(value?: string): boolean {
+    const tag = (value || '').toLowerCase().replace(/-/g, '_');
+    return tag === 'book_trade' || tag === 'book' || tag === 'secondhand' || tag === 'second_hand_book';
+  }
+
+  private async openNotification(item: CampusWallNotification): Promise<void> {
     if (item.targetType === 'cat_reply') {
       router.pushUrl({ url: 'pages/campus/CampusCatPage' });
     } else if ((item.postId || 0) > 0) {
+      let bookPost = this.isBookTag(item.postTag);
+      if (!bookPost && !item.postTag) {
+        try {
+          const post = await CampusWallApi.detail(item.postId || 0);
+          bookPost = this.isBookTag(post.tag) || this.isBookTag(post.category) || this.isBookTag(post.type);
+        } catch {}
+      }
+      if (bookPost) {
+        router.pushUrl({ url: 'pages/campus/SecondHandBookDetailPage',
+          params: { postId: String(item.postId), source: 'community' } });
+        return;
+      }
       router.pushUrl({ url: 'pages/campus/CampusPostDetailPage', params: { id: String(item.postId) } });
     }
   }

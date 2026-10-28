@@ -40,8 +40,20 @@ struct SecondHandBookPage {
 
   private async load(): Promise<void> {
     this.loading = true;
-    try { this.listings = await SecondHandBookApi.feed(this.query, '', ''); }
-    catch { promptAction.showToast({ message: '二手书信息加载失败', duration: 1500 }); }
+    let listings: SecondhandListing[] = [];
+    let community: SecondhandListing[] = [];
+    try {
+      listings = await SecondHandBookApi.feed(this.query, '', '');
+      listings.forEach((item: SecondhandListing) => { if (!item.source) item.source = 'secondhand'; });
+    } catch {}
+    try { community = await SecondHandBookApi.communityFeed(); } catch {}
+    const keyword = this.query.trim().toLowerCase();
+    const matched = keyword.length === 0 ? community : community.filter((item: SecondhandListing) =>
+      `${item.bookTitle || ''} ${item.note || ''} ${item.bookAuthor || ''}`.toLowerCase().indexOf(keyword) >= 0);
+    this.listings = listings.concat(matched);
+    if (this.listings.length === 0 && listings.length === 0 && community.length === 0) {
+      promptAction.showToast({ message: '暂无二手书信息', duration: 1200 });
+    }
     this.loading = false;
   }
 
@@ -65,10 +77,16 @@ struct SecondHandBookPage {
 
   private visibleListings(): SecondhandListing[] {
     const result = this.listings.filter((item: SecondhandListing) => this.majorMatches(item) && this.campusMatches(item));
-    if (this.activeSort === '最新发布') return result.sort((a: SecondhandListing, b: SecondhandListing) => (b.createdAt || 0) - (a.createdAt || 0));
+    if (this.activeSort === '最新发布') return result.sort((a: SecondhandListing, b: SecondhandListing) => this.createdStamp(b.createdAt) - this.createdStamp(a.createdAt));
     if (this.activeSort === '价格升序') return result.sort((a: SecondhandListing, b: SecondhandListing) => (a.price || 0) - (b.price || 0));
     if (this.activeSort === '价格降序') return result.sort((a: SecondhandListing, b: SecondhandListing) => (b.price || 0) - (a.price || 0));
     return result;
+  }
+
+  private createdStamp(value?: number | string): number {
+    if (typeof value === 'number') return value < 100000000000 ? value * 1000 : value;
+    const stamp = Date.parse(value || '');
+    return isNaN(stamp) ? 0 : stamp;
   }
 
   private openFilter(): void {
@@ -232,7 +250,7 @@ struct SecondHandBookPage {
               }.width('92%').padding(16).backgroundColor(Color.White).borderRadius(16).margin({ top: 10 })
                 .onClick(() => router.pushUrl({ url: 'pages/campus/SecondHandBookDetailPage',
                   params: { listing: JSON.stringify(item) } }));
-            }, (item: SecondhandListing) => `${item.id || item.bookId || item.bookTitle}`)
+            }, (item: SecondhandListing) => `${item.source || 'secondhand'}-${item.id || item.bookId || item.bookTitle}`)
           }
         }.width('100%').padding({ bottom: 24 }).backgroundColor('#F5F6F8');
       }.layoutWeight(1);

@@ -1,7 +1,8 @@
 import { HttpRequest } from './HttpRequest';
 import { AppStorage } from '../store/AppStorage';
+import { CampusWallApi, CampusWallPost, CampusWallReply } from './CampusWallApi';
 export interface SecondhandReply { id?: number; studentId?: string; displayName?: string; realName?: string; avatarUrl?: string; college?: string; major?: string; content?: string; createdAt?: string | number; redFlowers?: number; }
-export interface SecondhandListing { id?: number; bookId?: number; sellerId?: string; price?: number; condition?: string; note?: string; images?: string[]; contact?: string; status?: string; createdAt?: number; bookTitle?: string; bookAuthor?: string; bookCover?: string; campus?: string; campusName?: string; major?: string; sellerName?: string; displayName?: string; realName?: string; sellerAvatar?: string; avatarUrl?: string; college?: string; redFlowers?: number; replies?: SecondhandReply[]; }
+export interface SecondhandListing { id?: number; bookId?: number; sellerId?: string; price?: number; condition?: string; note?: string; images?: string[]; contact?: string; status?: string; createdAt?: number | string; bookTitle?: string; bookAuthor?: string; bookPublisher?: string; bookEdition?: string; bookIsbn?: string; bookCover?: string; campus?: string; campusName?: string; major?: string; sellerName?: string; displayName?: string; realName?: string; sellerAvatar?: string; avatarUrl?: string; college?: string; redFlowers?: number; replies?: SecondhandReply[]; source?: string; communityPostId?: number; }
 export interface SecondhandBook { id?: number; isbn?: string; title?: string; author?: string; publisher?: string; edition?: string; category?: string; coverUrl?: string; listingCount?: number; priceMin?: number; priceMax?: number; priceAvg?: number; }
 export interface SecondhandDetail { book?: SecondhandBook; listing?: SecondhandListing; replies?: SecondhandReply[]; }
 interface Response<T> { data?: T; code?: number; message?: string; }
@@ -13,10 +14,87 @@ interface MajorItem { name?: string; label?: string; value?: string; title?: str
 type MajorValue = string | MajorItem;
 interface MajorPage { items?: MajorValue[]; list?: MajorValue[]; majors?: MajorValue[]; records?: MajorValue[]; data?: MajorValue[]; }
 interface BookDetailData { book?: SecondhandBook; listings?: SecondhandListing[]; listing?: SecondhandListing; replies?: SecondhandReply[]; }
+interface BookTradeExtra {
+  price?: number | string; condition?: string; campus?: string; campusName?: string; major?: string;
+  majors?: string[] | string; meetingPlace?: string; address?: string; contact?: string; contactType?: string;
+  author?: string; publisher?: string; edition?: string; isbn?: string; note?: string; bookTitle?: string; title?: string;
+  book_author?: string; book_publisher?: string; book_edition?: string; book_isbn?: string;
+  salePrice?: number | string; sale_price?: number | string; bookCondition?: string; book_condition?: string;
+  applicableMajors?: string[] | string; applicable_majors?: string[] | string;
+  tradeCampus?: string; trade_campus?: string; tradePlace?: string; trade_place?: string;
+  contactValue?: string; contact_value?: string; contact_type?: string;
+}
 export class SecondHandBookApi {
   private static async headers(): Promise<Headers> { const token = await AppStorage.getInstance().getAppAuthAccessToken(); return { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' }; }
   static async feed(keyword: string = '', category: string = '', major: string = ''): Promise<SecondhandListing[]> { const query = `?page=1&limit=50&keyword=${encodeURIComponent(keyword)}&category=${encodeURIComponent(category)}${major.length > 0 ? `&major=${encodeURIComponent(major)}` : ''}`; const response = await HttpRequest.get<Response<SecondhandListing[]>>(`https://lyzyy.love:8081/api/v1/secondhand/listings${query}`, await SecondHandBookApi.headers()); const data = response.data.data; return Array.isArray(data) ? data : []; }
   static async categories(): Promise<string[]> { const response = await HttpRequest.get<Response<string[]>>('https://lyzyy.love:8081/api/v1/secondhand/categories', await SecondHandBookApi.headers()); return Array.isArray(response.data.data) ? response.data.data : []; }
+
+  private static bookTradeExtra(post: CampusWallPost): BookTradeExtra {
+    if (!post.extra) return {};
+    try { return JSON.parse(post.extra) as BookTradeExtra; } catch { return {}; }
+  }
+
+  private static numberValue(value?: number | string): number {
+    if (typeof value === 'number') return value;
+    const parsed = Number((value || '').replace(/[^0-9.]/g, ''));
+    return isNaN(parsed) ? 0 : parsed;
+  }
+
+  static fromCommunityPost(post: CampusWallPost): SecondhandListing {
+    const extra = SecondHandBookApi.bookTradeExtra(post);
+    const majorValue = extra.majors || extra.applicableMajors || extra.applicable_majors || extra.major || '';
+    const majors = Array.isArray(majorValue) ? majorValue.join('、') : majorValue;
+    const details: string[] = [];
+    if (majors) details.push(`适用专业：${majors}`);
+    const campus = extra.campusName || extra.campus || extra.tradeCampus || extra.trade_campus || '';
+    if (campus) details.push(`面交校区：${campus}`);
+    const place = extra.meetingPlace || extra.tradePlace || extra.trade_place || extra.address || '';
+    if (place) details.push(`面交地点：${place}`);
+    const author = extra.author || extra.book_author || '';
+    const publisher = extra.publisher || extra.book_publisher || '';
+    const edition = extra.edition || extra.book_edition || '';
+    const isbn = extra.isbn || extra.book_isbn || '';
+    if (author) details.push(`作者：${author}`);
+    if (publisher) details.push(`出版社：${publisher}`);
+    if (edition) details.push(`版次：${edition}`);
+    if (isbn) details.push(`ISBN：${isbn}`);
+    if (extra.note) details.push(extra.note);
+    if (post.content) details.push(post.content);
+    const replies: SecondhandReply[] = (post.replies || []).map((reply: CampusWallReply): SecondhandReply => ({
+      id: reply.id, studentId: reply.studentId, displayName: reply.displayName, realName: reply.realName,
+      avatarUrl: reply.avatarUrl, college: reply.college, major: reply.major, content: reply.content,
+      createdAt: reply.createdAt, redFlowers: reply.redFlowers
+    }));
+    const contactValue = extra.contact || extra.contactValue || extra.contact_value || '';
+    const contactType = extra.contactType || extra.contact_type || '';
+    const contact = contactType && contactValue ? `${contactType}：${contactValue}` : contactValue;
+    return { id: post.id, communityPostId: post.id, source: 'community', sellerId: post.studentId,
+      price: SecondHandBookApi.numberValue(extra.price || extra.salePrice || extra.sale_price),
+      condition: extra.condition || extra.bookCondition || extra.book_condition || '', note: details.join('\n'),
+      images: post.images || [], contact, createdAt: post.createdAt, bookTitle: extra.bookTitle || extra.title || post.title,
+      bookAuthor: author, bookPublisher: publisher, bookEdition: edition, bookIsbn: isbn,
+      bookCover: (post.images || [])[0] || '', campus, campusName: campus, major: majors,
+      sellerName: post.displayName || post.realName, displayName: post.displayName, realName: post.realName,
+      sellerAvatar: post.avatarUrl, avatarUrl: post.avatarUrl, college: post.college, replies };
+  }
+
+  static async communityFeed(): Promise<SecondhandListing[]> {
+    const tags: string[] = ['book_trade', 'book-trade', 'book', 'secondhand', 'second_hand_book'];
+    const result: SecondhandListing[] = [];
+    const seen: Set<number> = new Set<number>();
+    for (const tag of tags) {
+      try {
+        const posts = await CampusWallApi.listPages(tag, 3);
+        posts.forEach((post: CampusWallPost) => {
+          const id = post.id || 0;
+          if (id <= 0 || seen.has(id)) return;
+          seen.add(id);
+          result.push(SecondHandBookApi.fromCommunityPost(post));
+        });
+      } catch {}
+    }
+    return result;
+  }
   static async detail(listing: SecondhandListing): Promise<SecondhandDetail> {
     const headers = await SecondHandBookApi.headers();
     let current: SecondhandListing = listing;
