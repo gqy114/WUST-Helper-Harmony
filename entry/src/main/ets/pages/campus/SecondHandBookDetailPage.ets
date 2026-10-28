@@ -2,6 +2,7 @@ import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { common, Want } from '@kit.AbilityKit';
+import { call } from '@kit.TelephonyKit';
 import { AppStorage } from '../../store/AppStorage';
 import { SecondHandBookApi, SecondhandBook, SecondhandDetail, SecondhandListing, SecondhandReply } from '../../net/SecondHandBookApi';
 
@@ -116,14 +117,17 @@ struct SecondHandBookDetailPage {
       promptAction.showToast({ message: '复制失败，请长按号码复制', duration: 1400 });
       return;
     }
-    let want: Want;
     if (type.indexOf('手机') >= 0 || type.indexOf('电话') >= 0 || type.indexOf('phone') >= 0) {
-      want = { action: 'ohos.want.action.dial', uri: `tel:${value}` };
-    } else if (type.indexOf('微信') >= 0 || type.indexOf('wechat') >= 0) {
-      want = { action: 'ohos.want.action.viewData', uri: 'weixin://' };
-    } else if (type.indexOf('qq') >= 0) {
-      want = { action: 'ohos.want.action.viewData', uri: 'mqq://' };
-    } else {
+      try {
+        await call.makeCall(value);
+        this.contactOpen = false;
+      } catch { promptAction.showToast({ message: '号码已复制，未能打开拨号界面', duration: 1800 }); }
+      return;
+    }
+    let want: Want;
+    if (type.indexOf('微信') >= 0 || type.indexOf('wechat') >= 0) want = { action: 'ohos.want.action.viewData', uri: 'weixin://' };
+    else if (type.indexOf('qq') >= 0) want = { action: 'ohos.want.action.viewData', uri: 'mqq://' };
+    else {
       promptAction.showToast({ message: '联系方式已复制，请打开对应应用搜索', duration: 1800 });
       this.contactOpen = false;
       return;

@@ -1,6 +1,5 @@
-import { router } from '@kit.ArkUI';
-import { Want } from '@kit.AbilityKit';
-import { common } from '@kit.AbilityKit';
+import { promptAction, router } from '@kit.ArkUI';
+import { call } from '@kit.TelephonyKit';
 
 interface YellowPageEntry {
   name: string;
@@ -62,18 +61,13 @@ export struct YellowPagesPage {
     this.groups = next;
   }
 
-  private dial(phone: string): void {
-    const want: Want = {
-      action: 'ohos.want.action.dial',
-      uri: `tel:${phone}`
-    };
+  private async dial(phone: string): Promise<void> {
+    const normalized = phone.trim();
+    if (!normalized) return;
     try {
-      const context = getContext(this) as common.UIAbilityContext;
-      context.startAbility(want).catch(() => {
-        console.warn('YellowPagesPage', `无法打开拨号界面: ${phone}`);
-      });
+      await call.makeCall(normalized);
     } catch {
-      console.warn('YellowPagesPage', `拨号调用失败: ${phone}`);
+      promptAction.showToast({ message: '无法打开拨号界面', duration: 1500 });
     }
   }
 
