@@ -38,6 +38,9 @@ struct CampusLostPage {
     const value = (campusWallExtra(post).type || post.noticeType || post.type || post.category || '').toLowerCase();
     return value === 'found' || value.indexOf('招领') >= 0 || value.indexOf('拾') >= 0 ? '失物招领' : '寻物启事';
   }
+  private addressLabel(post: CampusWallPost): string {
+    return (campusWallExtra(post).address || post.address || '').trim();
+  }
   build() {
     Column() {
       Row() {
@@ -63,7 +66,18 @@ struct CampusLostPage {
             Row() {
               if (post.avatarUrl) { Image(post.avatarUrl).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); }
               Column() { Text(post.displayName || post.realName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); Text(post.college || post.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 }); }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-              Text(this.noticeLabel(post)).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#B44F70').backgroundColor('#FFF0F2').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 });
+              Column() {
+                Text(this.noticeLabel(post)).fontSize(16).fontWeight(FontWeight.Bold)
+                  .fontColor(this.noticeLabel(post) === '失物招领' ? '#27865D' : '#B44F70')
+                  .backgroundColor(this.noticeLabel(post) === '失物招领' ? '#E7F8E9' : '#FFF0F2')
+                  .borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 });
+                if (this.addressLabel(post)) {
+                  Text(this.addressLabel(post)).fontSize(15).fontWeight(FontWeight.Medium).fontColor('#666666')
+                    .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width(150)
+                    .backgroundColor('#F4F4F5').borderRadius(18)
+                    .padding({ left: 14, right: 14, top: 7, bottom: 7 }).margin({ top: 7 });
+                }
+              }.alignItems(HorizontalAlign.End);
             }.width('100%');
             if (post.title) { CampusRichText({ content: post.title, fontSize: 22, textColor: '#222222', baseBold: true, lineHeight: 30 }); }
             CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 });

@@ -1,6 +1,6 @@
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
-import { CampusWallApi, CampusWallPost, CampusWallReply, decodeHtmlEntities } from '../../net/CampusWallApi';
+import { CampusWallApi, CampusWallPost, CampusWallReply, campusWallExtra, decodeHtmlEntities } from '../../net/CampusWallApi';
 import { AppStorage } from '../../store/AppStorage';
 import { CampusRichText } from '../../components/CampusRichText';
 import { CommunityPostImage } from '../../components/CommunityPostImage';
@@ -238,6 +238,21 @@ struct CampusPostDetailPage {
       .margin({ top: 18 })
   }
 
+  private lostNoticeLabel(): string {
+    const value = (campusWallExtra(this.post).type || this.post.noticeType || this.post.type || this.post.category || '').toLowerCase();
+    return value === 'found' || value.indexOf('招领') >= 0 || value.indexOf('拾') >= 0 ? '失物招领' : '寻物启事';
+  }
+
+  private lostAddress(): string {
+    return (campusWallExtra(this.post).address || this.post.address || '').trim();
+  }
+
+  private isLostFoundPost(): boolean {
+    const tag = (this.post.tag || '').toLowerCase();
+    const value = `${tag} ${this.post.type || ''} ${this.post.category || ''} ${this.post.noticeType || ''}`.toLowerCase();
+    return value.indexOf('lost') >= 0 || value.indexOf('found') >= 0 || value.indexOf('寻物') >= 0 || value.indexOf('招领') >= 0 || this.lostAddress().length > 0;
+  }
+
   @Builder
   private authorHeader() {
     Row() {
@@ -312,6 +327,19 @@ struct CampusPostDetailPage {
               Text(decodeHtmlEntities(this.post.title || ''))
                 .fontSize(25).fontWeight(FontWeight.Bold).fontColor('#222222').lineHeight(36).margin({ top: 26 })
               this.formattedBody()
+              if (this.isLostFoundPost()) {
+                Flex({ wrap: FlexWrap.Wrap }) {
+                  if (this.lostAddress()) {
+                    Text(this.lostAddress()).fontSize(17).fontWeight(FontWeight.Bold).fontColor('#18B98C')
+                      .backgroundColor('#E9FAF5').borderRadius(20)
+                      .padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ right: 10, bottom: 8 });
+                  }
+                  Text(this.lostNoticeLabel()).fontSize(17).fontWeight(FontWeight.Bold)
+                    .fontColor(this.lostNoticeLabel() === '失物招领' ? '#27865D' : '#B44F70')
+                    .backgroundColor(this.lostNoticeLabel() === '失物招领' ? '#E7F8E9' : '#FFF0F2')
+                    .borderRadius(20).padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ bottom: 8 });
+                }.width('100%').margin({ top: 16 })
+              }
               ForEach(this.post.images || [], (url: string) => {
                 this.postImage(url)
               }, (url: string) => url)

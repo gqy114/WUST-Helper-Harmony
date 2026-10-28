@@ -22,6 +22,7 @@ export interface CampusWallPost {
   type?: string;
   category?: string;
   noticeType?: string;
+  address?: string;
   extra?: string;
   replies?: CampusWallReply[];
   reactions?: Record<string, number>;
@@ -118,7 +119,7 @@ export class CampusWallApi {
       college: post.college, major: post.major, createdAt: post.createdAt,
       likeCount: post.likeCount, replyCount: post.replyCount, images: fullImages,
       status: post.status, resolved: post.resolved, isResolved: post.isResolved,
-      type: post.type, category: post.category, noticeType: post.noticeType, extra: post.extra,
+      type: post.type, category: post.category, noticeType: post.noticeType, address: post.address, extra: post.extra,
       replies: (post.replies || []).map((reply: CampusWallReply) => CampusWallApi.normalizeReply(reply)),
       reactions: post.reactions || {}, myReactions: post.myReactions || [] };
   }
