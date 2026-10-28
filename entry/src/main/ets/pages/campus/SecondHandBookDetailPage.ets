@@ -1,6 +1,7 @@
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
+import { common, Want } from '@kit.AbilityKit';
 import { AppStorage } from '../../store/AppStorage';
 import { SecondHandBookApi, SecondhandBook, SecondhandDetail, SecondhandListing, SecondhandReply } from '../../net/SecondHandBookApi';
 
@@ -93,6 +94,47 @@ struct SecondHandBookDetailPage {
       promptAction.showToast({ message: '联系方式已复制', duration: 1200 });
       this.contactOpen = false;
     } catch { promptAction.showToast({ message: '复制失败，请长按复制', duration: 1400 }); }
+  }
+
+  private contactActionLabel(): string {
+    const type = this.contactParts()[0].toLowerCase();
+    if (type.indexOf('qq') >= 0) return '复制并打开 QQ';
+    if (type.indexOf('微信') >= 0 || type.indexOf('wechat') >= 0) return '复制并打开微信';
+    if (type.indexOf('手机') >= 0 || type.indexOf('电话') >= 0 || type.indexOf('phone') >= 0) return '复制并打开拨号';
+    return '复制并打开对应应用';
+  }
+
+  private async copyAndOpenContact(): Promise<void> {
+    const parts = this.contactParts();
+    const type = parts[0].toLowerCase();
+    const value = parts[1];
+    if (!value) return;
+    try {
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, value);
+      await pasteboard.getSystemPasteboard().setData(data);
+    } catch {
+      promptAction.showToast({ message: '复制失败，请长按号码复制', duration: 1400 });
+      return;
+    }
+    let want: Want;
+    if (type.indexOf('手机') >= 0 || type.indexOf('电话') >= 0 || type.indexOf('phone') >= 0) {
+      want = { action: 'ohos.want.action.dial', uri: `tel:${value}` };
+    } else if (type.indexOf('微信') >= 0 || type.indexOf('wechat') >= 0) {
+      want = { action: 'ohos.want.action.viewData', uri: 'weixin://' };
+    } else if (type.indexOf('qq') >= 0) {
+      want = { action: 'ohos.want.action.viewData', uri: 'mqq://' };
+    } else {
+      promptAction.showToast({ message: '联系方式已复制，请打开对应应用搜索', duration: 1800 });
+      this.contactOpen = false;
+      return;
+    }
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      await context.startAbility(want);
+      this.contactOpen = false;
+    } catch {
+      promptAction.showToast({ message: '号码已复制，未能打开对应应用', duration: 1800 });
+    }
   }
 
   private async sendReply(): Promise<void> {
@@ -231,6 +273,8 @@ struct SecondHandBookDetailPage {
               Button('关闭').width(132).height(52).fontSize(19).fontWeight(FontWeight.Bold).backgroundColor('#E86B55').onClick(() => { this.contactOpen = false; })
               Button('复制').width(132).height(52).fontSize(19).fontWeight(FontWeight.Bold).backgroundColor('#55D600').onClick(() => this.copyContact())
             }
+            Button(this.contactActionLabel()).width('100%').height(52).fontSize(18).fontWeight(FontWeight.Bold)
+              .backgroundColor('#20C894').margin({ top: 16 }).onClick(() => this.copyAndOpenContact())
           }.width('78%').padding({ left: 26, right: 26, top: 30, bottom: 30 }).backgroundColor(Color.White).borderRadius(24).alignItems(HorizontalAlign.Center)
         }.width('100%').height('100%')
       }
