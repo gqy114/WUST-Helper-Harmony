@@ -1,5 +1,5 @@
 import router from '@ohos.router';
-import { promptAction } from '@kit.ArkUI';
+import { KeyboardAvoidMode, promptAction } from '@kit.ArkUI';
 import { CampusWallApi } from '../../net/CampusWallApi';
 import { CampusCatApi } from '../../net/CampusCatApi';
 import { AppStorage } from '../../store/AppStorage';
@@ -36,8 +36,11 @@ struct CampusPublishPage {
   private savedSelectionStart: number = 0;
   private savedSelectionEnd: number = 0;
   private editorController: RichEditorController = new RichEditorController();
+  private previousKeyboardAvoidMode: KeyboardAvoidMode = KeyboardAvoidMode.OFFSET;
 
   async aboutToAppear(): Promise<void> {
+    this.previousKeyboardAvoidMode = this.getUIContext().getKeyboardAvoidMode();
+    this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE_WITH_CARET);
     const params = router.getParams() as PublishParams;
     if (params) {
       this.tag = params.tag || 'wall';
@@ -47,6 +50,10 @@ struct CampusPublishPage {
     this.avatarUrl = await storage.getAvatarUrl();
     this.displayName = await storage.getUserName() || await storage.getRealName() || '同学';
     this.college = await storage.getCollege();
+  }
+
+  aboutToDisappear(): void {
+    this.getUIContext().setKeyboardAvoidMode(this.previousKeyboardAvoidMode);
   }
 
   private pageTitle(routeLabel: string): string {
@@ -279,6 +286,27 @@ struct CampusPublishPage {
       .onClick(click)
   }
 
+  @Builder
+  private composerActions() {
+    Row() {
+      Column() {
+        Row() {
+          this.formatButton($r('app.media.bold'), this.bold, () => { this.applyFormat('bold'); })
+          this.formatButton($r('app.media.italic'), this.italic, () => { this.applyFormat('italic'); })
+          this.formatButton($r('app.media.underlined'), this.underline, () => { this.applyFormat('underline'); })
+          this.formatButton($r('app.media.strikethrough'), this.strike, () => { this.applyFormat('strike'); })
+          Text(this.selectedImages.length > 0 ? `图片 ${this.selectedImages.length}` : '图片').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#20C894').textAlign(TextAlign.Center).width(72).height(42).backgroundColor('#ECFAF6').borderRadius(16).onClick(() => this.chooseImages())
+        }.width('100%').justifyContent(FlexAlign.SpaceBetween)
+
+        Row() {
+          Text(this.editorExpanded ? '收起' : '展开').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#666666').padding({ left: 24, right: 24, top: 12, bottom: 12 }).onClick(() => { this.editorExpanded = !this.editorExpanded; })
+          Button(this.submitting ? '发布中…' : '发布').width(126).height(50).fontSize(20).fontWeight(FontWeight.Bold).fontColor(Color.White).backgroundColor(this.submitting ? '#A9DED0' : '#20C894').borderRadius(25).onClick(() => this.submit())
+        }.width('100%').justifyContent(FlexAlign.End).margin({ top: 12 })
+      }.width('92%').padding({ left: 18, right: 18, top: 14, bottom: 14 }).backgroundColor(Color.White).borderRadius(22)
+        .shadow({ radius: 14, color: '#24000000', offsetX: 0, offsetY: 4 })
+    }.width('100%').justifyContent(FlexAlign.Center).padding({ top: 6, bottom: 10 }).backgroundColor('#F5F6F8')
+  }
+
   build() {
     if (this.tag === 'cat') {
       this.catComposer()
@@ -366,21 +394,10 @@ struct CampusPublishPage {
 
             this.imageChooser()
 
-            Row() {
-              this.formatButton($r('app.media.bold'), this.bold, () => { this.applyFormat('bold'); })
-              this.formatButton($r('app.media.italic'), this.italic, () => { this.applyFormat('italic'); })
-              this.formatButton($r('app.media.underlined'), this.underline, () => { this.applyFormat('underline'); })
-              this.formatButton($r('app.media.strikethrough'), this.strike, () => { this.applyFormat('strike'); })
-              Text(this.selectedImages.length > 0 ? `图片 ${this.selectedImages.length}` : '图片').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#20C894').textAlign(TextAlign.Center).width(72).height(42).backgroundColor('#ECFAF6').borderRadius(16).onClick(() => this.chooseImages())
-            }.width('100%').justifyContent(FlexAlign.SpaceBetween).margin({ top: 14 })
-
-            Row() {
-              Text(this.editorExpanded ? '收起' : '展开').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#666666').padding({ left: 24, right: 24, top: 12, bottom: 12 }).onClick(() => { this.editorExpanded = !this.editorExpanded; })
-              Button(this.submitting ? '发布中…' : '发布').width(126).height(50).fontSize(20).fontWeight(FontWeight.Bold).fontColor(Color.White).backgroundColor(this.submitting ? '#A9DED0' : '#20C894').borderRadius(25).onClick(() => this.submit())
-            }.width('100%').justifyContent(FlexAlign.End).margin({ top: 14 })
           }.width('100%').padding({ left: 18, right: 18, top: 18, bottom: 16 }).backgroundColor(Color.White).borderRadius(22).shadow({ radius: 14, color: '#24000000', offsetX: 0, offsetY: 4 })
         }.width('100%').padding({ left: 20, right: 20, top: 22, bottom: 32 }).alignItems(HorizontalAlign.Start)
       }.layoutWeight(1).width('100%').scrollBar(BarState.Off)
+      this.composerActions()
     }.width('100%').height('100%').backgroundColor('#F5F6F8')
     }
   }
