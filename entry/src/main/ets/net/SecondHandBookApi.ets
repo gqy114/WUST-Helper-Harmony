@@ -201,6 +201,13 @@ export class SecondHandBookApi {
     const code = response.data.code;
     if (code !== undefined && code !== 0 && code !== 200) throw new Error(response.data.message || 'reply failed');
   }
+  static async removeListing(listingId: number): Promise<void> {
+    const response = await HttpRequest.postJson<Response<Object>>(
+      `https://lyzyy.love:8081/api/v1/secondhand/listings/${listingId}/status`,
+      { status: 'removed' }, await SecondHandBookApi.headers());
+    const code = response.data.code;
+    if (code !== undefined && code !== 0 && code !== 200) throw new Error(response.data.message || 'remove listing failed');
+  }
   static async majors(): Promise<string[]> {
     // 专业数据来自校园社区二手书接口。旧的 /secondhand/majors 路由未部署，
     // 请求它只会得到 404，页面随后把异常吞掉并表现为专业列表为空。

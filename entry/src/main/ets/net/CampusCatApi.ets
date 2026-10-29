@@ -47,6 +47,13 @@ export class CampusCatApi {
     const items: CampusCatPost[] = Array.isArray(result.data.data) ? result.data.data : (result.data.data?.posts || result.data.data?.list || []);
     return items.map((post: CampusCatPost) => CampusCatApi.normalizePost(post));
   }
+  static async mine(): Promise<CampusCatPost[]> {
+    const token = await AppStorage.getInstance().getAppAuthAccessToken();
+    const headers: CatHeaders = { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' };
+    const result = await HttpRequest.get<CatResponse>('https://lyzyy.love:8081/api/v1/campus-cat/mine?limit=200&offset=0', headers);
+    const items: CampusCatPost[] = Array.isArray(result.data.data) ? result.data.data : (result.data.data?.posts || result.data.data?.list || []);
+    return items.map((post: CampusCatPost) => CampusCatApi.normalizePost(post));
+  }
   static async detail(id: number): Promise<CampusCatPost> {
     const token = await AppStorage.getInstance().getAppAuthAccessToken();
     const headers: CatHeaders = { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' };
@@ -70,6 +77,15 @@ export class CampusCatApi {
       `https://lyzyy.love/api/v1/campus-cat/posts/${id}/comments`, request, headers);
     if (result.data.code !== undefined && result.data.code !== 0 && result.data.code !== 200) {
       throw new Error(result.data.message || 'reply failed');
+    }
+  }
+  static async deletePost(id: number): Promise<void> {
+    const token = await AppStorage.getInstance().getAppAuthAccessToken();
+    const headers: CatHeaders = { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' };
+    const result = await HttpRequest.postJson<CatReplyResponse>(
+      `https://lyzyy.love:8081/api/v1/campus-cat/posts/${id}/delete`, {}, headers);
+    if (result.data.code !== undefined && result.data.code !== 0 && result.data.code !== 200) {
+      throw new Error(result.data.message || 'delete post failed');
     }
   }
   static async publish(title: string, content: string, tags: string[], images: string[] = []): Promise<void> {

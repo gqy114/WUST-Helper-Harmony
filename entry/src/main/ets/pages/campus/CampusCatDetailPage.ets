@@ -17,6 +17,10 @@ struct CampusCatDetailPage {
   @State private replyText: string = '';
   @State private sending: boolean = false;
   @State private myAvatar: string = '';
+  @State private isMine: boolean = false;
+  @State private actionOpen: boolean = false;
+  @State private deleteDialogOpen: boolean = false;
+  @State private deleting: boolean = false;
   private postId: number = 0;
 
   aboutToAppear(): void {
@@ -24,10 +28,30 @@ struct CampusCatDetailPage {
     this.postId = Number(params?.id || 0);
     this.load(this.postId);
     this.loadAvatar();
+    this.loadOwnership();
   }
 
   private async loadAvatar(): Promise<void> {
     this.myAvatar = await AppStorage.getInstance().getAvatarUrl();
+  }
+
+  private async loadOwnership(): Promise<void> {
+    try {
+      const mine = await CampusCatApi.mine();
+      this.isMine = mine.some((post: CampusCatPost) => (post.id || 0) === this.postId);
+    } catch { this.isMine = false; }
+  }
+
+  private async confirmDelete(): Promise<void> {
+    if (this.deleting || !this.isMine || this.postId <= 0) return;
+    this.deleting = true;
+    try {
+      await CampusCatApi.deletePost(this.postId);
+      this.deleteDialogOpen = false;
+      promptAction.showToast({ message: '帖子已删除', duration: 1200 });
+      router.back();
+    } catch { promptAction.showToast({ message: '删除失败，请稍后重试', duration: 1500 }); }
+    this.deleting = false;
   }
 
   private async load(id: number): Promise<void> {
@@ -81,6 +105,7 @@ struct CampusCatDetailPage {
   }
 
   build() {
+    Stack({ alignContent: Alignment.Bottom }) {
     Column() {
       Row() {
         Text('‹').fontSize(42).fontColor('#333333').width(48).textAlign(TextAlign.Center).onClick(() => router.back())
@@ -104,6 +129,10 @@ struct CampusCatDetailPage {
                 if ((this.post.tags || []).length > 0) {
                   Text((this.post.tags || []).join(' · ')).fontSize(15).fontColor('#148D6D')
                     .backgroundColor('#E8F8F3').borderRadius(18).padding({ left: 12, right: 12, top: 7, bottom: 7 })
+                }
+                if (this.isMine) {
+                  Image($r('app.media.more_horiz')).width(28).height(28).margin({ left: 10 })
+                    .onClick(() => { this.actionOpen = true; })
                 }
               }.width('100%')
               if (this.post.title) {
@@ -142,5 +171,44 @@ struct CampusCatDetailPage {
           .shadow({ radius: 8, color: '#22000000', offsetY: 2 })
       }
     }.width('100%').height('100%').backgroundColor('#F5F6F8')
+    if (this.actionOpen) {
+      Column().width('100%').height('100%').backgroundColor('#66000000')
+      Column() {
+        Row() {
+          Text('操作').fontSize(24).fontWeight(FontWeight.Bold).fontColor('#222222').layoutWeight(1)
+          Text('×').fontSize(32).fontWeight(FontWeight.Bold).fontColor('#555555').width(52).height(52)
+            .textAlign(TextAlign.Center).backgroundColor('#F5F5F5').borderRadius(26)
+            .onClick(() => { this.actionOpen = false; })
+        }.width('100%')
+        Column() {
+          Image($r('app.media.delete')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
+            .backgroundColor('#F7F7F7').borderRadius(18)
+          Text('删除').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#D9534F').margin({ top: 10 })
+        }.margin({ top: 24 }).onClick(() => {
+          this.actionOpen = false;
+          this.deleteDialogOpen = true;
+        })
+      }.width('100%').height(290).padding({ left: 28, right: 28, top: 28 }).backgroundColor(Color.White)
+        .borderRadius({ topLeft: 28, topRight: 28 })
+    }
+    if (this.deleteDialogOpen) {
+      Stack({ alignContent: Alignment.Center }) {
+        Column().width('100%').height('100%').backgroundColor('#66000000')
+        Column() {
+          Text('删除这条帖子？').fontSize(25).fontWeight(FontWeight.Bold).fontColor('#333333')
+          Text('删除后无法恢复').fontSize(17).fontColor('#999999').margin({ top: 14, bottom: 28 })
+          Row() {
+            Button('取消').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#555555')
+              .width('42%').height(54).backgroundColor('#F0F0F0').borderRadius(9)
+              .onClick(() => { this.deleteDialogOpen = false; })
+            Button(this.deleting ? '删除中' : '删除').fontSize(19).fontWeight(FontWeight.Bold).fontColor(Color.White)
+              .width('42%').height(54).backgroundColor('#E35D5B').borderRadius(9).margin({ left: 18 })
+              .enabled(!this.deleting).onClick(() => this.confirmDelete())
+          }.justifyContent(FlexAlign.Center)
+        }.width('82%').padding({ left: 24, right: 24, top: 30, bottom: 28 })
+          .backgroundColor(Color.White).borderRadius(24).alignItems(HorizontalAlign.Center)
+      }.width('100%').height('100%')
+    }
+    }
   }
 }
