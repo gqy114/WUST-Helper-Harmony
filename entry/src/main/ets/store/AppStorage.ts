@@ -228,8 +228,8 @@ export class AppStorage {
     return this.putStr('currentArchiveId', value);
   }
 
-  async getCurrentCourses(): Promise<CourseData[]> {
-    const raw = await this.getStr('currentCourses', '');
+  private async getStoredCourses(key: string): Promise<CourseData[]> {
+    const raw = await this.getStr(key, '');
     if (!raw) {
       return [];
     }
@@ -241,8 +241,99 @@ export class AppStorage {
     }
   }
 
+  private isPhysicalExperimentCourse(course: CourseData): boolean {
+    return course.isPhysicalExperiment === true || course.courseName.indexOf('物理实验') >= 0 ||
+      /^实验\d+-\d+/.test(course.courseName);
+  }
+
+  private normalizePhysicalExperiment(course: CourseData): CourseData {
+    return {
+      courseName: course.courseName,
+      teacher: course.teacher,
+      location: course.location,
+      dayOfWeek: course.dayOfWeek,
+      startPeriod: course.startPeriod,
+      endPeriod: course.endPeriod,
+      weekRanges: course.weekRanges,
+      color: course.color,
+      isPhysicalExperiment: true,
+      physicalDate: course.physicalDate
+    };
+  }
+
+  private isSamePhysicalExperiment(left: CourseData, right: CourseData): boolean {
+    if (left.courseName !== right.courseName) return false;
+    if (left.physicalDate && right.physicalDate) return left.physicalDate === right.physicalDate;
+    return left.dayOfWeek === right.dayOfWeek && left.startPeriod === right.startPeriod &&
+      left.endPeriod === right.endPeriod && left.weekRanges === right.weekRanges && left.location === right.location;
+  }
+
+  private mergePhysicalExperiments(courses: CourseData[], experiments: CourseData[]): CourseData[] {
+    const merged: CourseData[] = [];
+    for (let i = 0; i < courses.length; i++) {
+      merged.push(this.isPhysicalExperimentCourse(courses[i]) ?
+        this.normalizePhysicalExperiment(courses[i]) : courses[i]);
+    }
+    for (let i = 0; i < experiments.length; i++) {
+      const experiment = this.normalizePhysicalExperiment(experiments[i]);
+      let duplicate = false;
+      for (let j = 0; j < merged.length; j++) {
+        if (this.isPhysicalExperimentCourse(merged[j]) && this.isSamePhysicalExperiment(merged[j], experiment)) {
+          duplicate = true;
+          break;
+        }
+      }
+      if (!duplicate) merged.push(experiment);
+    }
+    return merged;
+  }
+
+  /**
+   * 物理实验使用独立缓存，避免普通课表刷新或切换存档时将它们覆盖。
+   * 首次读取时会自动迁移旧版本中混存在 currentCourses 里的实验课。
+   */
+  async getPhysicalExperimentCourses(): Promise<CourseData[]> {
+    const saved = await this.getStoredCourses('physicalExperimentCourses');
+    const current = await this.getStoredCourses('currentCourses');
+    const legacy: CourseData[] = [];
+    for (let i = 0; i < current.length; i++) {
+      if (this.isPhysicalExperimentCourse(current[i])) legacy.push(current[i]);
+    }
+    const merged = this.mergePhysicalExperiments(saved, legacy);
+    if (merged.length !== saved.length) {
+      await this.putStr('physicalExperimentCourses', JSON.stringify(merged));
+    }
+    return merged;
+  }
+
+  async setPhysicalExperimentCourses(value: CourseData[]): Promise<void> {
+    const experiments: CourseData[] = [];
+    for (let i = 0; i < value.length; i++) {
+      if (this.isPhysicalExperimentCourse(value[i])) experiments.push(this.normalizePhysicalExperiment(value[i]));
+    }
+    await this.putStr('physicalExperimentCourses', JSON.stringify(experiments));
+  }
+
+  async getCurrentCourses(): Promise<CourseData[]> {
+    const current = await this.getStoredCourses('currentCourses');
+    const experiments = await this.getPhysicalExperimentCourses();
+    const merged = this.mergePhysicalExperiments(current, experiments);
+    if (merged.length !== current.length) {
+      await this.putStr('currentCourses', JSON.stringify(merged));
+    }
+    return merged;
+  }
+
   async setCurrentCourses(value: CourseData[]): Promise<void> {
-    return this.putStr('currentCourses', JSON.stringify(value));
+    const savedExperiments = await this.getPhysicalExperimentCourses();
+    const incomingExperiments: CourseData[] = [];
+    for (let i = 0; i < value.length; i++) {
+      if (this.isPhysicalExperimentCourse(value[i])) incomingExperiments.push(value[i]);
+    }
+    const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
+    await this.setPhysicalExperimentCourses(experiments);
+    const merged = this.mergePhysicalExperiments(value, experiments);
+    await this.putStr('currentCourses', JSON.stringify(merged));
   }
 
   async getCachedGrades(): Promise<string> { return this.getStr('cachedGrades', ''); }
