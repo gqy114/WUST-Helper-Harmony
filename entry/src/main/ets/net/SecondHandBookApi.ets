@@ -1,9 +1,9 @@
 import { HttpRequest } from './HttpRequest';
 import { AppStorage } from '../store/AppStorage';
-import { CampusWallApi, CampusWallPost, CampusWallReply, decodeHtmlEntities } from './CampusWallApi';
+import { CampusWallApi, CampusWallBookTrade, CampusWallPost, CampusWallReply, decodeHtmlEntities } from './CampusWallApi';
 export interface SecondhandReply { id?: number; studentId?: string; displayName?: string; realName?: string; avatarUrl?: string; college?: string; major?: string; content?: string; createdAt?: string | number; redFlowers?: number; }
-export interface SecondhandListing { id?: number; bookId?: number; sellerId?: string; price?: number; condition?: string; note?: string; images?: string[]; contact?: string; status?: string; createdAt?: number | string; bookTitle?: string; bookAuthor?: string; bookPublisher?: string; bookEdition?: string; bookIsbn?: string; bookCover?: string; campus?: string; campusName?: string; major?: string; sellerName?: string; displayName?: string; realName?: string; sellerAvatar?: string; avatarUrl?: string; college?: string; redFlowers?: number; replies?: SecondhandReply[]; source?: string; communityPostId?: number; }
 export interface SecondhandBook { id?: number; isbn?: string; title?: string; author?: string; publisher?: string; edition?: string; category?: string; coverUrl?: string; listingCount?: number; priceMin?: number; priceMax?: number; priceAvg?: number; }
+export interface SecondhandListing { id?: number; bookId?: number; sellerId?: string; price?: number; sellPrice?: number | string; salePrice?: number | string; bookPrice?: number | string; amount?: number | string; condition?: string; bookCondition?: string; note?: string; images?: string[]; contact?: string; status?: string; createdAt?: number | string; bookTitle?: string; bookAuthor?: string; bookPublisher?: string; bookEdition?: string; bookIsbn?: string; bookCover?: string; campus?: string; campusName?: string; major?: string; majors?: string[] | string; sellerName?: string; displayName?: string; realName?: string; sellerAvatar?: string; avatarUrl?: string; college?: string; redFlowers?: number; replies?: SecondhandReply[]; source?: string; communityPostId?: number; book?: SecondhandBook; }
 export interface SecondhandDetail { book?: SecondhandBook; listing?: SecondhandListing; replies?: SecondhandReply[]; }
 interface Response<T> { data?: T; code?: number; message?: string; }
 interface Headers extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
@@ -13,8 +13,11 @@ interface ListingRequest { bookId: number; price: number; condition: string; not
 interface MajorItem { name?: string; label?: string; value?: string; title?: string; major?: string; majorName?: string; }
 type MajorValue = string | MajorItem;
 interface MajorPage { items?: MajorValue[]; list?: MajorValue[]; majors?: MajorValue[]; records?: MajorValue[]; data?: MajorValue[]; }
+interface ListingPage { items?: SecondhandListing[]; list?: SecondhandListing[]; listings?: SecondhandListing[]; records?: SecondhandListing[]; content?: SecondhandListing[]; data?: SecondhandListing[]; }
 interface BookDetailData { book?: SecondhandBook; listings?: SecondhandListing[]; listing?: SecondhandListing; replies?: SecondhandReply[]; }
 interface BookTradeExtra {
+  id?: number; listingId?: number; listing_id?: number; bookId?: number; book_id?: number;
+  bookTrade?: CampusWallBookTrade; bookTradeInfo?: CampusWallBookTrade;
   price?: number | string; condition?: string; campus?: string; campusName?: string; major?: string;
   majors?: string[] | string; meetingPlace?: string; address?: string; contact?: string; contactType?: string;
   author?: string; publisher?: string; edition?: string; isbn?: string; note?: string; bookTitle?: string; title?: string;
@@ -35,7 +38,13 @@ interface BookTradeExtra {
 }
 export class SecondHandBookApi {
   private static async headers(): Promise<Headers> { const token = await AppStorage.getInstance().getAppAuthAccessToken(); return { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' }; }
-  static async feed(keyword: string = '', category: string = '', major: string = ''): Promise<SecondhandListing[]> { const query = `?page=1&limit=50&keyword=${encodeURIComponent(keyword)}&category=${encodeURIComponent(category)}${major.length > 0 ? `&major=${encodeURIComponent(major)}` : ''}`; const response = await HttpRequest.get<Response<SecondhandListing[]>>(`https://lyzyy.love:8081/api/v1/secondhand/listings${query}`, await SecondHandBookApi.headers()); const data = response.data.data; return Array.isArray(data) ? data.map((item: SecondhandListing) => SecondHandBookApi.normalizeListing(item)) : []; }
+  static async feed(keyword: string = '', category: string = '', major: string = ''): Promise<SecondhandListing[]> {
+    const query = `?page=1&limit=50&keyword=${encodeURIComponent(keyword)}&category=${encodeURIComponent(category)}${major.length > 0 ? `&major=${encodeURIComponent(major)}` : ''}`;
+    const response = await HttpRequest.get<Response<SecondhandListing[] | ListingPage>>(`https://lyzyy.love:8081/api/v1/secondhand/listings${query}`, await SecondHandBookApi.headers());
+    const data = response.data.data;
+    const values: SecondhandListing[] = Array.isArray(data) ? data : (data?.items || data?.list || data?.listings || data?.records || data?.content || data?.data || []);
+    return values.map((item: SecondhandListing) => SecondHandBookApi.normalizeListing(item));
+  }
   static async categories(): Promise<string[]> { const response = await HttpRequest.get<Response<string[]>>('https://lyzyy.love:8081/api/v1/secondhand/categories', await SecondHandBookApi.headers()); return Array.isArray(response.data.data) ? response.data.data : []; }
 
   private static bookTradeExtra(post: CampusWallPost): BookTradeExtra {
@@ -61,6 +70,20 @@ export class SecondHandBookApi {
   }
 
   static normalizeListing(item: SecondhandListing): SecondhandListing {
+    const book = item.book;
+    if (book) {
+      item.bookId = item.bookId || book.id;
+      item.bookTitle = item.bookTitle || book.title;
+      item.bookAuthor = item.bookAuthor || book.author;
+      item.bookPublisher = item.bookPublisher || book.publisher;
+      item.bookEdition = item.bookEdition || book.edition;
+      item.bookIsbn = item.bookIsbn || book.isbn;
+      item.bookCover = item.bookCover || book.coverUrl;
+    }
+    item.price = SecondHandBookApi.numberValue(item.price ?? item.sellPrice ?? item.salePrice ?? item.bookPrice ?? item.amount);
+    item.condition = item.condition || item.bookCondition;
+    const majorValue = item.majors || item.major;
+    item.major = Array.isArray(majorValue) ? majorValue.join('、') : majorValue;
     item.bookTitle = SecondHandBookApi.decoded(item.bookTitle);
     item.bookAuthor = SecondHandBookApi.decoded(item.bookAuthor);
     item.bookPublisher = SecondHandBookApi.decoded(item.bookPublisher);
@@ -77,36 +100,39 @@ export class SecondHandBookApi {
 
   static fromCommunityPost(post: CampusWallPost): SecondhandListing {
     const extra = SecondHandBookApi.bookTradeExtra(post);
-    const majorValue = extra.majors || extra.bookMajors || extra.book_majors || extra.applicableMajors || extra.applicable_majors || extra.major || '';
+    const trade: CampusWallBookTrade = post.bookTrade || post.bookTradeInfo || extra.bookTrade || extra.bookTradeInfo || {};
+    const listingId = trade.listingId || trade.id || post.listingId || extra.listingId || extra.listing_id || 0;
+    const bookId = trade.bookId || post.bookId || extra.bookId || extra.book_id || 0;
+    const majorValue = trade.majors || post.majors || extra.majors || extra.bookMajors || extra.book_majors || extra.applicableMajors || extra.applicable_majors || extra.major || '';
     const majors = Array.isArray(majorValue) ? majorValue.join('、') : majorValue;
     const details: string[] = [];
     if (majors) details.push(`适用专业：${majors}`);
-    const campus = extra.campusName || extra.campus || extra.bookCampus || extra.book_campus || extra.tradeCampus || extra.trade_campus || '';
+    const campus = trade.campusName || trade.campus || post.campusName || post.campus || extra.campusName || extra.campus || extra.bookCampus || extra.book_campus || extra.tradeCampus || extra.trade_campus || '';
     if (campus) details.push(`面交校区：${campus}`);
-    const place = extra.meetingPlace || extra.bookLocation || extra.book_location || extra.tradePlace || extra.trade_place || extra.tradeLocation || extra.trade_location || extra.address || '';
+    const place = trade.meetingPlace || trade.location || post.meetingPlace || post.location || extra.meetingPlace || extra.bookLocation || extra.book_location || extra.tradePlace || extra.trade_place || extra.tradeLocation || extra.trade_location || extra.address || '';
     if (place) details.push(`面交地点：${place}`);
-    const author = extra.author || extra.book_author || '';
-    const publisher = extra.publisher || extra.bookPublisher || extra.book_publisher || extra.publisherName || '';
-    const edition = extra.edition || extra.bookEdition || extra.book_edition || extra.editionInfo || '';
-    const isbn = extra.isbn || extra.bookIsbn || extra.book_isbn || extra.isbn13 || '';
+    const author = trade.bookAuthor || trade.author || post.bookAuthor || post.author || extra.author || extra.book_author || '';
+    const publisher = trade.bookPublisher || trade.publisher || post.bookPublisher || post.publisher || extra.publisher || extra.bookPublisher || extra.book_publisher || extra.publisherName || '';
+    const edition = trade.bookEdition || trade.edition || post.bookEdition || post.edition || extra.edition || extra.bookEdition || extra.book_edition || extra.editionInfo || '';
+    const isbn = trade.bookIsbn || trade.isbn || post.bookIsbn || post.isbn || extra.isbn || extra.bookIsbn || extra.book_isbn || extra.isbn13 || '';
     if (author) details.push(`作者：${author}`);
     if (publisher) details.push(`出版社：${publisher}`);
     if (edition) details.push(`版次：${edition}`);
     if (isbn) details.push(`ISBN：${isbn}`);
-    if (extra.note || extra.description) details.push(extra.note || extra.description || '');
+    if (trade.note || post.note || extra.note || extra.description) details.push(trade.note || post.note || extra.note || extra.description || '');
     if (post.content) details.push(post.content);
     const replies: SecondhandReply[] = (post.replies || []).map((reply: CampusWallReply): SecondhandReply => ({
       id: reply.id, studentId: reply.studentId, displayName: reply.displayName, realName: reply.realName,
       avatarUrl: reply.avatarUrl, college: reply.college, major: reply.major, content: SecondHandBookApi.decoded(reply.content),
       createdAt: reply.createdAt, redFlowers: reply.redFlowers
     }));
-    const contactValue = extra.contact || extra.bookContact || extra.book_contact || extra.contactValue || extra.contact_value || extra.contactAccount || extra.contact_account || '';
-    const contactType = extra.contactType || extra.bookContactType || extra.book_contact_type || extra.contact_type || extra.contactMethod || extra.contact_method || '';
+    const contactValue = trade.contact || post.contact || extra.contact || extra.bookContact || extra.book_contact || extra.contactValue || extra.contact_value || extra.contactAccount || extra.contact_account || '';
+    const contactType = trade.contactType || post.contactType || extra.contactType || extra.bookContactType || extra.book_contact_type || extra.contact_type || extra.contactMethod || extra.contact_method || '';
     const contact = contactType && contactValue ? `${contactType}：${contactValue}` : contactValue;
-    return SecondHandBookApi.normalizeListing({ id: post.id, communityPostId: post.id, source: 'community', sellerId: post.studentId,
-      price: SecondHandBookApi.numberValue(extra.price || extra.bookPrice || extra.book_price || extra.sellPrice || extra.sell_price || extra.salePrice || extra.sale_price || extra.sellingPrice || extra.selling_price || extra.priceYuan || extra.price_yuan || extra.amount),
-      condition: extra.condition || extra.bookCondition || extra.book_condition || '', note: details.join('\n'),
-      images: post.images || [], contact, createdAt: post.createdAt, bookTitle: extra.bookTitle || extra.title || post.title,
+    return SecondHandBookApi.normalizeListing({ id: listingId || post.id, bookId, communityPostId: post.id, source: 'community', sellerId: post.studentId,
+      price: SecondHandBookApi.numberValue(trade.price ?? trade.sellPrice ?? trade.salePrice ?? trade.bookPrice ?? post.price ?? post.sellPrice ?? post.salePrice ?? post.bookPrice ?? post.sellingPrice ?? extra.price ?? extra.bookPrice ?? extra.book_price ?? extra.sellPrice ?? extra.sell_price ?? extra.salePrice ?? extra.sale_price ?? extra.sellingPrice ?? extra.selling_price ?? extra.priceYuan ?? extra.price_yuan ?? extra.amount),
+      condition: trade.condition || trade.bookCondition || post.condition || extra.condition || extra.bookCondition || extra.book_condition || '', note: details.join('\n'),
+      images: post.images || [], contact, createdAt: post.createdAt, bookTitle: trade.bookTitle || trade.title || post.bookTitle || extra.bookTitle || extra.title || post.title,
       bookAuthor: author, bookPublisher: publisher, bookEdition: edition, bookIsbn: isbn,
       bookCover: (post.images || [])[0] || '', campus, campusName: campus, major: majors,
       sellerName: post.displayName || post.realName, displayName: post.displayName, realName: post.realName,

@@ -1,6 +1,15 @@
 import { HttpRequest } from './HttpRequest';
 import { AppStorage } from '../store/AppStorage';
 export interface CampusWallReply { id?: number; studentId?: string; displayName?: string; realName?: string; avatarUrl?: string; college?: string; major?: string; content?: string; createdAt?: string; images?: string[]; redFlowers?: number; }
+export interface CampusWallBookTrade {
+  id?: number; listingId?: number; bookId?: number;
+  price?: number | string; sellPrice?: number | string; salePrice?: number | string; bookPrice?: number | string;
+  condition?: string; bookCondition?: string; title?: string; bookTitle?: string;
+  author?: string; bookAuthor?: string; publisher?: string; bookPublisher?: string;
+  edition?: string; bookEdition?: string; isbn?: string; bookIsbn?: string; majors?: string[] | string;
+  campus?: string; campusName?: string; meetingPlace?: string; location?: string; note?: string;
+  contact?: string; contactType?: string;
+}
 export interface CampusWallPost {
   id?: number;
   studentId?: string;
@@ -25,6 +34,33 @@ export interface CampusWallPost {
   noticeType?: string;
   address?: string;
   extra?: string;
+  price?: number | string;
+  sellPrice?: number | string;
+  salePrice?: number | string;
+  bookPrice?: number | string;
+  sellingPrice?: number | string;
+  condition?: string;
+  bookTitle?: string;
+  bookAuthor?: string;
+  bookPublisher?: string;
+  bookEdition?: string;
+  bookIsbn?: string;
+  author?: string;
+  publisher?: string;
+  edition?: string;
+  isbn?: string;
+  campus?: string;
+  campusName?: string;
+  majors?: string[] | string;
+  meetingPlace?: string;
+  location?: string;
+  note?: string;
+  contact?: string;
+  contactType?: string;
+  bookTrade?: CampusWallBookTrade;
+  bookTradeInfo?: CampusWallBookTrade;
+  listingId?: number;
+  bookId?: number;
   replies?: CampusWallReply[];
   reactions?: Record<string, number>;
   myReactions?: string[];
@@ -114,15 +150,16 @@ export class CampusWallApi {
         images = Array.isArray(parsed) ? parsed : [rawImages];
       } catch { images = rawImages.trim() ? [rawImages] : []; }
     }
-    const fullImages: string[] = images.map((url: string) => CampusWallApi.fullAssetUrl(url));
-    return { id: post.id, studentId: post.studentId, title: post.title, content: post.content, tag: post.tag,
-      displayName: post.displayName, realName: post.realName, avatarUrl: CampusWallApi.fullAssetUrl(post.avatarUrl || ''),
-      college: post.college, major: post.major, createdAt: post.createdAt,
-      likeCount: post.likeCount, replyCount: post.replyCount, redFlowers: post.redFlowers || 0, images: fullImages,
-      status: post.status, resolved: post.resolved, isResolved: post.isResolved,
-      type: post.type, category: post.category, noticeType: post.noticeType, address: post.address, extra: post.extra,
-      replies: (post.replies || []).map((reply: CampusWallReply) => CampusWallApi.normalizeReply(reply)),
-      reactions: post.reactions || {}, myReactions: post.myReactions || [] };
+    // Keep the original response object instead of rebuilding a generic wall post.
+    // Book-trade fields are extended independently by the backend; rebuilding the
+    // object here used to silently discard price, publisher, edition and ISBN.
+    post.images = images.map((url: string) => CampusWallApi.fullAssetUrl(url));
+    post.avatarUrl = CampusWallApi.fullAssetUrl(post.avatarUrl || '');
+    post.redFlowers = post.redFlowers || 0;
+    post.replies = (post.replies || []).map((reply: CampusWallReply) => CampusWallApi.normalizeReply(reply));
+    post.reactions = post.reactions || {};
+    post.myReactions = post.myReactions || [];
+    return post;
   }
   private static async headers(): Promise<WallHeaders> {
     const token = await AppStorage.getInstance().getAppAuthAccessToken();

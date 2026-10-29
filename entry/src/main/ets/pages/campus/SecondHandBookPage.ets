@@ -121,7 +121,9 @@ struct SecondHandBookPage {
 
   private chooseMajorMode(mode: string): void {
     if (mode === '指定专业') {
-      this.openMajorPicker();
+      this.pendingMajorMode = mode;
+      this.pendingMajor = this.pendingMajors.join('、');
+      if (this.majors.length === 0) this.loadMajors();
       return;
     }
     this.pendingMajorMode = mode;
@@ -196,9 +198,21 @@ struct SecondHandBookPage {
             })
           }.width('100%');
           if (this.pendingMajorMode === '指定专业') {
-            Text(this.pendingMajors.length > 0 ? `已选：${this.pendingMajors.join('、')}` : '尚未选择专业')
-              .fontSize(15).fontColor('#777777').width('100%').maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ bottom: 8 });
+            if (this.majors.length === 0) {
+              Text('专业列表加载中…').fontSize(15).fontColor('#999999').width('100%').margin({ bottom: 8 })
+            } else {
+              Scroll() {
+                Flex({ wrap: FlexWrap.Wrap }) {
+                  ForEach(this.majors, (major: string) => {
+                    Column() { this.optionTag(major, this.pendingMajors.indexOf(major) >= 0); }
+                      .onClick(() => {
+                        this.togglePendingMajor(major);
+                        this.pendingMajor = this.pendingMajors.join('、');
+                      })
+                  }, (major: string) => major)
+                }.width('100%')
+              }.width('100%').height(176).scrollBar(BarState.Auto).margin({ bottom: 8 })
+            }
           }
           Text('选择校区').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
           Flex({ wrap: FlexWrap.Wrap }) {
@@ -260,7 +274,6 @@ struct SecondHandBookPage {
           .textAlign(TextAlign.Center).width('88%').height(54).backgroundColor('#857A25').borderRadius(27);
       }.margin({ bottom: 16 }).onClick(() => router.pushUrl({ url: 'pages/campus/SecondHandBookPublishPage' }));
     }.width('100%').height('100%').backgroundColor('#F5F6F8');
-      if (this.majorPickerOpen) { this.majorPickerOverlay(); }
     }.width('100%').height('100%');
   }
 }
