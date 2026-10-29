@@ -181,26 +181,34 @@ struct SecondHandBookPublishPage {
       }.width('100%').height('100%').backgroundColor('#F5F6F8')
       if (this.selectorOpen) {
         Stack({ alignContent: Alignment.Center }) {
-        Column().width('100%').height('100%').backgroundColor('#66000000').zIndex(1).onClick(() => { this.selectorOpen = false; })
         Column() {
           Text(this.selectorTitle()).fontSize(25).fontWeight(FontWeight.Bold).fontColor('#444444').margin({ bottom: 18 })
           if (this.selectorOptions().length === 0) {
             Text(this.selectorKind === 'major' ? '专业列表加载失败，请稍后重试' : '暂无可选项').fontSize(17).fontColor('#999999').height(70).textAlign(TextAlign.Center)
-          } else {
+          } else if (this.selectorKind === 'major') {
             List() {
               ForEach(this.selectorOptions(), (option: string) => {
                 ListItem() {
-                  Row() {
-                    Text(option).fontSize(20).fontWeight(FontWeight.Bold)
-                      .fontColor(this.selectorKind === 'major' && this.majorSelected(option) ? '#20C894' : '#555555')
-                      .layoutWeight(1).textAlign(TextAlign.Center)
-                    if (this.selectorKind === 'major') {
+                  Button() {
+                    Row() {
+                      Text(option).fontSize(20).fontWeight(FontWeight.Bold)
+                        .fontColor(this.majorSelected(option) ? '#20C894' : '#555555')
+                        .layoutWeight(1).textAlign(TextAlign.Center)
                       Text(this.majorSelected(option) ? '✓' : '').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#20C894').width(28)
-                    }
-                  }.width('100%').height(58).padding({ left: 20, right: 20 })
-                }.onClick(() => this.chooseSelector(option))
+                    }.width('100%').height('100%').padding({ left: 20, right: 20 })
+                  }.width('100%').height(58).backgroundColor(Color.Transparent).borderRadius(0)
+                    .stateEffect(true).onClick(() => this.chooseSelector(option))
+                }
               }, (option: string) => option)
             }.width('100%').height(Math.min(290, this.selectorOptions().length * 58))
+          } else {
+            Column() {
+              ForEach(this.selectorOptions(), (option: string) => {
+                Button(option).fontSize(20).fontWeight(FontWeight.Bold).fontColor('#555555')
+                  .width('100%').height(58).backgroundColor(Color.Transparent).borderRadius(0).stateEffect(true)
+                  .onClick(() => this.chooseSelector(option))
+              }, (option: string) => option)
+            }.width('100%')
           }
           if (this.selectorKind === 'major') {
             Button(`确定${this.pendingSelectedMajors.length > 0 ? `（${this.pendingSelectedMajors.length}）` : ''}`)
@@ -213,8 +221,8 @@ struct SecondHandBookPublishPage {
               })
           }
           Button('取消').fontSize(19).fontWeight(FontWeight.Bold).fontColor(Color.White).width(160).height(52).backgroundColor('#55D600').borderRadius(9).margin({ top: 18 }).onClick(() => { this.selectorOpen = false; })
-        }.width('78%').padding({ left: 24, right: 24, top: 28, bottom: 28 }).backgroundColor(Color.White).borderRadius(24).alignItems(HorizontalAlign.Center).zIndex(2)
-        }.width('100%').height('100%')
+        }.width('78%').padding({ left: 24, right: 24, top: 28, bottom: 28 }).backgroundColor(Color.White).borderRadius(24).alignItems(HorizontalAlign.Center)
+        }.width('100%').height('100%').backgroundColor('#66000000')
       }
     }.width('100%').height('100%')
   }
