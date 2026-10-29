@@ -67,7 +67,7 @@ struct CampusPublishPage {
   private async submit(): Promise<void> {
     if (this.submitting) return;
     if (this.tag !== 'cat') this.syncEditorContent();
-    if (this.title.trim().length === 0 || this.content.trim().length === 0) {
+    if (this.title.trim().length === 0 || this.plainEditorContent(this.content).trim().length === 0) {
       promptAction.showToast({ message: '请填写标题和内容', duration: 1200 });
       return;
     }
@@ -108,7 +108,7 @@ struct CampusPublishPage {
     this.submitting = true;
     try {
       const images = await CommunityImageService.uploadAll(getContext(this) as common.Context, this.selectedImages, 'cat');
-      await CampusCatApi.publish(this.title.trim(), this.content.trim(), this.catTags, images);
+      await CampusCatApi.publish(this.title.trim(), this.escapeHtml(this.content.trim()), this.catTags, images);
       promptAction.showToast({ message: '发布成功', duration: 1200 });
       router.back();
     } catch {
@@ -137,7 +137,8 @@ struct CampusPublishPage {
 
   private escapeHtml(value: string): string {
     return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+      .replace(/\r\n|\r|\n|\u2028|\u2029/g, '<br>');
   }
 
   private plainEditorContent(value: string): string {
