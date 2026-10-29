@@ -27,6 +27,7 @@ interface BookTradeExtra {
   tradeCampus?: string; trade_campus?: string; tradePlace?: string; trade_place?: string;
   contactValue?: string; contact_value?: string; contact_type?: string;
   sellingPrice?: number | string; selling_price?: number | string; priceYuan?: number | string; price_yuan?: number | string;
+  priceCents?: number | string; price_cents?: number | string;
   amount?: number | string; bookPublisher?: string; bookEdition?: string; bookIsbn?: string;
   publisherName?: string; editionInfo?: string; isbn13?: string; description?: string;
   tradeLocation?: string; trade_location?: string; contactMethod?: string; contact_method?: string;
@@ -129,8 +130,11 @@ export class SecondHandBookApi {
     const contactValue = trade.contact || post.contact || extra.contact || extra.bookContact || extra.book_contact || extra.contactValue || extra.contact_value || extra.contactAccount || extra.contact_account || '';
     const contactType = trade.contactType || post.contactType || extra.contactType || extra.bookContactType || extra.book_contact_type || extra.contact_type || extra.contactMethod || extra.contact_method || '';
     const contact = contactType && contactValue ? `${contactType}：${contactValue}` : contactValue;
+    const cents = trade.priceCents ?? post.priceCents ?? extra.priceCents ?? extra.price_cents;
+    const price = cents !== undefined ? SecondHandBookApi.numberValue(cents) / 100 :
+      SecondHandBookApi.numberValue(trade.price ?? trade.sellPrice ?? trade.salePrice ?? trade.bookPrice ?? post.price ?? post.sellPrice ?? post.salePrice ?? post.bookPrice ?? post.sellingPrice ?? extra.price ?? extra.bookPrice ?? extra.book_price ?? extra.sellPrice ?? extra.sell_price ?? extra.salePrice ?? extra.sale_price ?? extra.sellingPrice ?? extra.selling_price ?? extra.priceYuan ?? extra.price_yuan ?? extra.amount);
     return SecondHandBookApi.normalizeListing({ id: listingId || post.id, bookId, communityPostId: post.id, source: 'community', sellerId: post.studentId,
-      price: SecondHandBookApi.numberValue(trade.price ?? trade.sellPrice ?? trade.salePrice ?? trade.bookPrice ?? post.price ?? post.sellPrice ?? post.salePrice ?? post.bookPrice ?? post.sellingPrice ?? extra.price ?? extra.bookPrice ?? extra.book_price ?? extra.sellPrice ?? extra.sell_price ?? extra.salePrice ?? extra.sale_price ?? extra.sellingPrice ?? extra.selling_price ?? extra.priceYuan ?? extra.price_yuan ?? extra.amount),
+      price,
       condition: trade.condition || trade.bookCondition || post.condition || extra.condition || extra.bookCondition || extra.book_condition || '', note: details.join('\n'),
       images: post.images || [], contact, createdAt: post.createdAt, bookTitle: trade.bookTitle || trade.title || post.bookTitle || extra.bookTitle || extra.title || post.title,
       bookAuthor: author, bookPublisher: publisher, bookEdition: edition, bookIsbn: isbn,

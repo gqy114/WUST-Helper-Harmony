@@ -4,6 +4,7 @@ export interface CampusWallReply { id?: number; studentId?: string; displayName?
 export interface CampusWallBookTrade {
   id?: number; listingId?: number; bookId?: number;
   price?: number | string; sellPrice?: number | string; salePrice?: number | string; bookPrice?: number | string;
+  priceCents?: number | string;
   condition?: string; bookCondition?: string; title?: string; bookTitle?: string;
   author?: string; bookAuthor?: string; publisher?: string; bookPublisher?: string;
   edition?: string; bookEdition?: string; isbn?: string; bookIsbn?: string; majors?: string[] | string;
@@ -38,6 +39,7 @@ export interface CampusWallPost {
   sellPrice?: number | string;
   salePrice?: number | string;
   bookPrice?: number | string;
+  priceCents?: number | string;
   sellingPrice?: number | string;
   condition?: string;
   bookTitle?: string;

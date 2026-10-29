@@ -80,7 +80,10 @@ struct SecondHandBookDetailPage {
   }
 
   private title(): string { return this.book.title || this.listing.bookTitle || '未命名书籍'; }
-  private author(): string { return this.book.author || this.listing.bookAuthor || ''; }
+  private author(): string { return this.book.author || this.listing.bookAuthor || this.metadata('作者'); }
+  private publisher(): string { return this.book.publisher || this.listing.bookPublisher || this.metadata('出版社'); }
+  private edition(): string { return this.book.edition || this.listing.bookEdition || this.metadata('版次'); }
+  private isbn(): string { return this.book.isbn || this.listing.bookIsbn || this.metadata('ISBN'); }
   private major(): string { return this.book.category || this.listing.major || this.metadata('适用专业'); }
   private majorItems(): string[] {
     return this.major().split(/[、,，]/).map((value: string) => value.trim()).filter((value: string) => value.length > 0);
@@ -250,12 +253,12 @@ struct SecondHandBookDetailPage {
                 }, (major: string) => major)
               }.width('100%')
             }
-            if (this.author() || this.book.publisher || this.book.edition || this.book.isbn) {
+            if (this.author() || this.publisher() || this.edition() || this.isbn()) {
               Text('书籍资料').fontSize(22).fontWeight(FontWeight.Bold).width('100%').margin({ top: 28 })
               this.infoRow('作者', this.author())
-              this.infoRow('出版社', this.book.publisher || '')
-              this.infoRow('版次', this.book.edition || '')
-              this.infoRow('ISBN', this.book.isbn || '')
+              this.infoRow('出版社', this.publisher())
+              this.infoRow('版次', this.edition())
+              this.infoRow('ISBN', this.isbn())
             }
             if (this.metadata('面交地点')) {
               Text('面交地点').fontSize(22).fontWeight(FontWeight.Bold).width('100%').margin({ top: 30 })
