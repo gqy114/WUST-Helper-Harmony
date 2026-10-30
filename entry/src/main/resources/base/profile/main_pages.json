@@ -3,6 +3,8 @@
     "pages/splash/LaunchPage",
     "pages/login/LoginPage",
     "pages/main/MainPage",
+    "pages/main/HomeNoticePage",
+    "pages/main/HomeNoticeDetailPage",
     "pages/campus/grade/GradePage",
     "pages/library/LibraryPage",
     "pages/mine/MinePage",

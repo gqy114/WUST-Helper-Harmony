@@ -97,7 +97,7 @@ struct MainPage {
   @State private showCampusTab: boolean = true;
   @State private visibleToolTitles: string[] = [];
   @State private homeBanners: HomeBanner[] = [];
-  @State private homeNoticeText: string = '欢迎使用武科大助手，随时随地开启校园之旅';
+  @State private homeNoticeText: string = '公告：欢迎使用武科大助手，随时随地开启校园之旅';
   /** 底部导航栏是否隐藏 */
   @State private barHidden: boolean = false;
   // ── 非 @State 内部变量 ──
@@ -178,7 +178,8 @@ struct MainPage {
       const notices: HomeNotice[] = await HomeContentApi.notices();
       if (notices.length > 0) {
         const latest = notices[notices.length - 1];
-        this.homeNoticeText = latest.content || latest.title || this.homeNoticeText;
+        const noticeText = latest.title || latest.content;
+        if (noticeText) this.homeNoticeText = `公告：${noticeText}`;
       }
     } catch (error) {
       console.warn(TAG, `load home notices failed: ${JSON.stringify(error)}`);
@@ -477,6 +478,7 @@ struct MainPage {
         .backgroundColor('#FFFFFF')
         .borderRadius(12)
         .margin({ left: 16, right: 16, top: 12 })
+        .onClick(() => router.pushUrl({ url: 'pages/main/HomeNoticePage' }))
 
           // ── 热门功能标题 ──
           Text('热门功能')
