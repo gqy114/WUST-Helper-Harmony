@@ -1,6 +1,10 @@
 import { HttpRequest } from './HttpRequest';
 import { AppStorage } from '../store/AppStorage';
-export interface CampusWallReply { id?: number; studentId?: string; displayName?: string; realName?: string; avatarUrl?: string; college?: string; major?: string; content?: string; createdAt?: string; images?: string[]; redFlowers?: number; }
+export interface CampusWallReply {
+  id?: number; studentId?: string; displayName?: string; realName?: string; avatarUrl?: string;
+  college?: string; major?: string; content?: string; createdAt?: string; images?: string[];
+  redFlowers?: number; accepted?: boolean; isAccepted?: boolean; is_accepted?: boolean;
+}
 export interface CampusWallBookTrade {
   id?: number; listingId?: number; bookId?: number;
   price?: number | string; sellPrice?: number | string; salePrice?: number | string; bookPrice?: number | string;
@@ -30,6 +34,8 @@ export interface CampusWallPost {
   status?: string;
   resolved?: boolean;
   isResolved?: boolean;
+  acceptedReplyId?: number | string;
+  accepted_reply_id?: number | string;
   type?: string;
   category?: string;
   noticeType?: string;
@@ -129,6 +135,7 @@ interface ReactionResponse { data?: ReactionData; }
 interface PublishResponse { code?: number; message?: string; }
 interface ReportResponse { code?: number; message?: string; }
 interface DeleteResponse { code?: number; message?: string; }
+interface AcceptReplyResponse { code?: number; message?: string; data?: Record<string, number | string>; }
 interface NotificationResponse { code?: number; message?: string; data?: CampusWallNotificationPage; }
 interface WallHeaders extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
 export class CampusWallApi {
@@ -138,9 +145,12 @@ export class CampusWallApi {
   }
   private static normalizeReply(reply: CampusWallReply): CampusWallReply {
     const images: string[] = Array.isArray(reply.images) ? reply.images.map((url: string) => CampusWallApi.fullAssetUrl(url)) : [];
-    return { id: reply.id, studentId: reply.studentId, displayName: reply.displayName, realName: reply.realName,
-      avatarUrl: CampusWallApi.fullAssetUrl(reply.avatarUrl || ''), college: reply.college,
-      major: reply.major, content: reply.content, createdAt: reply.createdAt, images, redFlowers: reply.redFlowers || 0 };
+    // Preserve fields added by the backend (for example accepted flags) instead
+    // of rebuilding a smaller reply object and silently discarding them.
+    reply.avatarUrl = CampusWallApi.fullAssetUrl(reply.avatarUrl || '');
+    reply.images = images;
+    reply.redFlowers = reply.redFlowers || 0;
+    return reply;
   }
   private static normalizePost(post: CampusWallPost): CampusWallPost {
     let images: string[] = [];
@@ -273,6 +283,14 @@ export class CampusWallApi {
       await CampusWallApi.headers());
     const code = response.data.code;
     if (code !== undefined && code !== 0 && code !== 200) throw new Error(response.data.message || 'delete reply failed');
+  }
+
+  static async acceptReply(postId: number, replyId: number): Promise<void> {
+    const response = await HttpRequest.postJson<AcceptReplyResponse>(
+      `https://lyzyy.love:8081/api/v1/campus-wall/posts/${postId}/accepted-reply`,
+      { replyId: String(replyId) }, await CampusWallApi.headers());
+    const code = response.data.code;
+    if (code !== undefined && code !== 0 && code !== 200) throw new Error(response.data.message || 'accept reply failed');
   }
 
   static async publish(title: string, content: string, tag: string = 'wall', extra: string = '{}', images: string[] = []): Promise<void> {

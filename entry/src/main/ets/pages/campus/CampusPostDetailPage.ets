@@ -40,6 +40,7 @@ struct CampusPostDetailPage {
   @State private myStudentId: string = '';
   @State private deleteDialogOpen: boolean = false;
   @State private deleting: boolean = false;
+  @State private accepting: boolean = false;
 
   aboutToAppear(): void {
     const params = router.getParams() as DetailParams;
@@ -120,6 +121,47 @@ struct CampusPostDetailPage {
   private replyToSelected(): void {
     this.replyText = `@${this.actionReplyName} `;
     this.actionOpen = false;
+  }
+
+  private isHelpPost(): boolean {
+    const value = `${this.post.tag || ''} ${this.post.type || ''} ${this.post.category || ''}`.toLowerCase();
+    return value.indexOf('help') >= 0 || value.indexOf('ask') >= 0 || value.indexOf('求助') >= 0;
+  }
+
+  private acceptedReplyId(): number {
+    const extraId = campusWallExtra(this.post).acceptedReplyId;
+    return Number(extraId || this.post.acceptedReplyId || this.post.accepted_reply_id || 0);
+  }
+
+  private isResolvedHelpPost(): boolean {
+    const status = (this.post.status || '').toLowerCase();
+    return this.acceptedReplyId() > 0 || this.post.resolved === true || this.post.isResolved === true ||
+      status === 'resolved' || status === 'solved' || status === 'accepted' || status === '已解决';
+  }
+
+  private isAcceptedReply(reply: CampusWallReply): boolean {
+    const acceptedReplyId = this.acceptedReplyId();
+    return (acceptedReplyId > 0 && acceptedReplyId === Number(reply.id || 0)) || reply.accepted === true ||
+      reply.isAccepted === true || reply.is_accepted === true;
+  }
+
+  private canAcceptSelectedReply(): boolean {
+    return this.actionTarget === 'reply' && this.isHelpPost() && !this.isResolvedHelpPost() &&
+      this.actionReplyId > 0 && this.myStudentId.length > 0 && this.post.studentId === this.myStudentId;
+  }
+
+  private async acceptSelectedReply(): Promise<void> {
+    if (!this.canAcceptSelectedReply() || this.accepting) return;
+    this.accepting = true;
+    this.actionOpen = false;
+    try {
+      await CampusWallApi.acceptReply(this.postId, this.actionReplyId);
+      await this.load();
+      promptAction.showToast({ message: '回答已采纳', duration: 1200 });
+    } catch {
+      promptAction.showToast({ message: '采纳失败，请稍后重试', duration: 1500 });
+    }
+    this.accepting = false;
   }
 
   private openReportDialog(): void {
@@ -294,6 +336,11 @@ struct CampusPostDetailPage {
               }.height(28).padding({ left: 7, right: 8 }).backgroundColor('#FFF0F2').borderRadius(14).margin({ left: 8 })
             }
           }.layoutWeight(1)
+          if (this.isAcceptedReply(reply)) {
+            Text('已采纳').fontSize(15).fontWeight(FontWeight.Bold).fontColor('#16B889')
+              .backgroundColor('#E9FAF5').borderRadius(16)
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 }).margin({ right: 10 })
+          }
           Image($r('app.media.more_horiz')).width(24).height(24).onClick(() => this.openReplyActions(reply))
         }.width('100%')
         Text(reply.college || reply.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 })
@@ -339,6 +386,12 @@ struct CampusPostDetailPage {
                     .backgroundColor(this.lostNoticeLabel() === '失物招领' ? '#E7F8E9' : '#FFF0F2')
                     .borderRadius(20).padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ bottom: 8 });
                 }.width('100%').margin({ top: 16 })
+              }
+              if (this.isHelpPost()) {
+                Text(this.isResolvedHelpPost() ? '已采纳答案' : '等待答案')
+                  .fontSize(17).fontWeight(FontWeight.Bold).fontColor('#18B98C')
+                  .backgroundColor('#E9FAF5').borderRadius(20)
+                  .padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ top: 16 })
               }
               ForEach(this.post.images || [], (url: string) => {
                 this.postImage(url)
@@ -399,6 +452,12 @@ struct CampusPostDetailPage {
                 .backgroundColor('#F7F7F7').borderRadius(18)
               Text(this.favorited ? '取消收藏' : '收藏').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
             }.margin({ right: 22 }).onClick(() => this.toggleFavorite())
+          } else if (this.canAcceptSelectedReply()) {
+            Column() {
+              Image($r('app.media.checked_circle')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
+                .backgroundColor('#F7F7F7').borderRadius(18)
+              Text(this.accepting ? '采纳中' : '采纳').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
+            }.margin({ right: 22 }).onClick(() => this.acceptSelectedReply())
           } else {
             Column() {
               Image($r('app.media.reply')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
@@ -406,18 +465,18 @@ struct CampusPostDetailPage {
               Text('回复').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
             }.margin({ right: 22 }).onClick(() => this.replyToSelected())
           }
-          Column() {
-            Image($r('app.media.flag')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
-              .backgroundColor('#F7F7F7').borderRadius(18)
-            Text('举报').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
-          }.margin({ right: this.isOwnTarget() ? 22 : 0 }).onClick(() => this.openReportDialog())
           if (this.isOwnTarget()) {
             Column() {
               Image($r('app.media.delete')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
                 .backgroundColor('#F7F7F7').borderRadius(18)
               Text('删除').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#D9534F').margin({ top: 10 })
-            }.onClick(() => this.openDeleteDialog())
+            }.margin({ right: 22 }).onClick(() => this.openDeleteDialog())
           }
+          Column() {
+            Image($r('app.media.flag')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
+              .backgroundColor('#F7F7F7').borderRadius(18)
+            Text('举报').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
+          }.onClick(() => this.openReportDialog())
         }.width('100%').margin({ top: 24 })
       }.width('100%').height(310).padding({ left: 28, right: 28, top: 28 }).backgroundColor(Color.White)
         .borderRadius({ topLeft: 28, topRight: 28 })
