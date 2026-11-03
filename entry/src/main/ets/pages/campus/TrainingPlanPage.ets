@@ -1,23 +1,137 @@
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
-import { TrainingPlanApi, TrainingPlanSummary } from '../../net/TrainingPlanApi';
+import webview from '@ohos.web.webview';
+import { CultivationPlanApi } from '../../net/CultivationPlanApi';
 
-@Entry @Component
+@Entry
+@Component
 struct TrainingPlanPage {
   @State private loading: boolean = true;
-  @State private data: TrainingPlanSummary = { credits: 0, courseCount: 0, failedCount: 0, missingRequired: 0, missingCredits: 0, categories: 0, planCourseCount: 0 };
-  aboutToAppear(): void { this.load(); }
-  private async load(): Promise<void> { this.loading = true; try { this.data = await TrainingPlanApi.fetchSummary(); } catch { promptAction.showToast({ message: '培养方案加载失败', duration: 1500 }); } this.loading = false; }
+  @State private loadFailed: boolean = false;
+  @State private errorText: string = '';
+  @State private html: string = '';
+  private webController: webview.WebviewController = new webview.WebviewController();
+  private controllerAttached: boolean = false;
+
+  aboutToAppear(): void {
+    this.load();
+  }
+
+  private async load(): Promise<void> {
+    this.loading = true;
+    this.loadFailed = false;
+    this.errorText = '';
+    this.html = '';
+    try {
+      this.html = await CultivationPlanApi.fetchHtml();
+    } catch (error) {
+      this.loadFailed = true;
+      this.errorText = error instanceof Error ? error.message : '培养方案加载失败';
+      promptAction.showToast({ message: this.errorText, duration: 1800 });
+    }
+    this.loading = false;
+  }
+
+  private documentHtml(source: string): string {
+    const additions = `<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
+<style>
+  html, body { max-width: 100%; min-height: 100%; box-sizing: border-box; }
+  body { margin: 0; padding: 14px; overflow-x: auto; font-size: 16px; line-height: 1.65; color: #333; background: #fff; }
+  img { max-width: 100%; height: auto; }
+  table { max-width: 100%; border-collapse: collapse; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>`;
+    if (/<head(?:\s[^>]*)?>/i.test(source)) {
+      return source.replace(/<head(?:\s[^>]*)?>/i, (head: string) => `${head}${additions}`);
+    }
+    if (/<html(?:\s[^>]*)?>/i.test(source)) {
+      return source.replace(/<html(?:\s[^>]*)?>/i, (htmlTag: string) => `${htmlTag}<head>${additions}</head>`);
+    }
+    return `<!DOCTYPE html><html><head>${additions}</head><body>${source}</body></html>`;
+  }
+
+  private renderHtml(): void {
+    if (!this.controllerAttached || this.html.trim().length === 0) return;
+    try {
+      this.webController.loadData(
+        this.documentHtml(this.html),
+        'text/html',
+        'UTF-8',
+        'https://www.lyzyy.love/',
+        'https://www.lyzyy.love/UnderGraduate/Support/getTrainingPlanPage'
+      );
+    } catch (error) {
+      console.error('TrainingPlanPage', `render html failed: ${JSON.stringify(error)}`);
+    }
+  }
+
   build() {
     Column() {
-      Row() { Text('‹').fontSize(42).width(48).textAlign(TextAlign.Center).onClick(() => router.back()); Text('培养方案').fontSize(26).fontWeight(FontWeight.Bold).margin({ left: 12 }); Blank().layoutWeight(1); Text('刷新').fontSize(17).fontColor('#20B984').onClick(() => this.load()); }.width('100%').height(76).padding({ left: 14, right: 20 }).backgroundColor(Color.White);
-      Scroll() { Column() {
-        Column() { Text('培养方案完成情况').fontSize(22).fontWeight(FontWeight.Bold).fontColor('#555555'); Text(this.loading ? '加载中…' : `${this.data.credits} 分`).fontSize(44).fontWeight(FontWeight.Bold).fontColor('#F57C00').margin({ top: 18 }); Text(`已修课程 ${this.data.courseCount} 门`).fontSize(18).fontColor('#666666').margin({ top: 10 }); }.width('100%').padding(26).backgroundColor(Color.White).borderRadius(20);
-        Column() { Text('修读概览').fontSize(22).fontWeight(FontWeight.Bold).width('100%'); Row() { this.stat(`${this.data.courseCount} 门`, '已修课程'); this.stat(`${this.data.failedCount} 门`, '不及格'); }.margin({ top: 24 }); Row() { this.stat(`${this.data.missingRequired} 门`, '必修未获'); this.stat(`${this.data.missingCredits} 分`, '未选学分'); }.margin({ top: 22 }); }.width('100%').padding(26).backgroundColor(Color.White).borderRadius(20).margin({ top: 16 });
-        Column() { Text('培养方案统计').fontSize(22).fontWeight(FontWeight.Bold).width('100%'); this.line('课程类别', `${this.data.categories} 个类别`); this.line('方案课程总数', `${this.data.planCourseCount} 门课程`); this.line('学习状态', this.data.missingRequired > 0 || this.data.missingCredits > 0 ? '仍有课程待完成' : '当前进度正常'); }.width('100%').padding(26).backgroundColor(Color.White).borderRadius(20).margin({ top: 16 });
-      }.width('100%').padding(16).backgroundColor('#F5F6F7'); }.layoutWeight(1);
-    }.width('100%').height('100%').backgroundColor('#F5F6F7');
+      Row() {
+        Text('‹')
+          .fontSize(42)
+          .width(48)
+          .textAlign(TextAlign.Center)
+          .onClick(() => router.back())
+        Text('培养方案')
+          .fontSize(26)
+          .fontWeight(FontWeight.Bold)
+          .margin({ left: 12 })
+        Blank().layoutWeight(1)
+        Text('刷新')
+          .fontSize(17)
+          .fontColor('#20B984')
+          .onClick(() => this.load())
+      }
+      .width('100%')
+      .height(76)
+      .padding({ left: 14, right: 20 })
+      .backgroundColor(Color.White)
+
+      if (this.loading) {
+        Column() {
+          LoadingProgress().width(48).height(48).color('#20B984')
+          Text('正在获取培养方案…').fontSize(18).fontColor('#777777').margin({ top: 18 })
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+      } else if (this.loadFailed) {
+        Column() {
+          Text('培养方案获取失败').fontSize(24).fontWeight(FontWeight.Bold).fontColor('#444444')
+          Text(this.errorText || '请检查网络或登录状态')
+            .fontSize(17)
+            .fontColor('#888888')
+            .textAlign(TextAlign.Center)
+            .margin({ top: 14 })
+          Button('重新加载')
+            .width(150)
+            .height(50)
+            .fontSize(18)
+            .fontColor(Color.White)
+            .backgroundColor('#20B984')
+            .margin({ top: 26 })
+            .onClick(() => this.load())
+        }
+        .width('88%')
+        .padding(28)
+        .backgroundColor(Color.White)
+        .borderRadius(22)
+        .margin({ top: 26 })
+      } else {
+        Web({ src: 'about:blank', controller: this.webController })
+          .width('100%')
+          .layoutWeight(1)
+          .javaScriptAccess(false)
+          .domStorageAccess(false)
+          .onControllerAttached(() => {
+            this.controllerAttached = true;
+            this.renderHtml();
+          })
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#F5F6F7')
   }
-  @Builder private stat(value: string, label: string) { Column() { Text(value).fontSize(28).fontWeight(FontWeight.Bold).fontColor('#20B984'); Text(label).fontSize(15).fontColor('#777777').margin({ top: 6 }); }.layoutWeight(1); }
-  @Builder private line(label: string, value: string) { Row() { Text(label).fontSize(17).fontColor('#555555').layoutWeight(1); Text(value).fontSize(17).fontWeight(FontWeight.Bold).fontColor('#20B984'); }.width('100%').padding({ top: 16, bottom: 16 }); }
 }

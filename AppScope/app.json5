@@ -1,7 +1,7 @@
 {
   "app": {
     "bundleName": "wust.linghang.wusthelper",
-    "vendor": "example",
+    "vendor": "武汉科技大学领航工作室",
     "versionCode": 1000001,
     "versionName": "1.0.1",
     "buildVersion": "1",

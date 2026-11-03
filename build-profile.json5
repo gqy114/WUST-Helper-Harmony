@@ -1,10 +1,24 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "release",
+        "type": "HarmonyOS",
+        "material": {
+          "storeFile": "C:/Users/juneg/hmkeys/release-keystore.p12",
+          "storePassword": "0000001C42986556C2C817A64D3CCC4E478E6E18321CDAFB26254AD656031F7577E87640E70A28C8FC9E55B9",
+          "keyAlias": "jspvkey",
+          "keyPassword": "0000001C5CC609CE58C8087405171B5B5C07765E212AAEF2EBC13B0A13120874E975EE20DA3DA92F0EAAD572",
+          "signAlg": "SHA256withECDSA",
+          "profile": "C:/Users/juneg/Desktop/1/release-profile-v2.0.0.p7b",
+          "certpath": "C:/Users/juneg/Desktop/1/release-cert-chain.cer"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
-        "signingConfig": "default",
+        "signingConfig": "release",
         "targetSdkVersion": "6.1.1(24)",
         "compatibleSdkVersion": "6.1.1(24)",
         "runtimeOS": "HarmonyOS",

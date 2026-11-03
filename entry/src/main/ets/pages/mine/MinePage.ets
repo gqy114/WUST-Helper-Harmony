@@ -15,7 +15,7 @@ import { common } from '@kit.AbilityKit';
 import { systemShare } from '@kit.ShareKit';
 import uniformTypeDescriptor from '@ohos.data.uniformTypeDescriptor';
 import { RouterUtil } from '../../utils/RouterUtil';
-import { AppStorage } from '../../store/AppStorage';
+import { AppStorage as PreferenceStorage } from '../../store/AppStorage';
 import { StorageUtil } from '../../utils/StorageUtil';
 import { UserApi } from '../../net/UserApi';
 import { ApiService } from '../../net/ApiService';
@@ -26,6 +26,7 @@ import { CampusWallApi, CampusRedFlowerRank, CampusRedFlowerRanking } from '../.
 import { TeachingSessionService } from '../../service/TeachingSessionService';
 
 const TAG = 'MinePage';
+AppStorage.setOrCreate<number>('profileVersion', 0);
 interface UpdateItem { title?: string; context?: string; }
 interface UpdateResponse { data?: UpdateItem[]; }
 interface UpdateHeaders extends Record<string, string> { Accept: string; }
@@ -93,6 +94,7 @@ struct AboutDialog {
 @Entry
 @Component
 struct MinePage {
+  @StorageLink('profileVersion') @Watch('onProfileVersionChanged') private profileVersion: number = 0;
   private readonly shareText: string = '武科大助手 by 武科大领航工作室，随时随地开启校园之旅\nhttp://wusthelper.happylandmc.cc/';
   @State private userInfo: UserInfo = { studentId: '', userName: '' };
   @State private avatarUrl: string = '';
@@ -111,13 +113,27 @@ struct MinePage {
 
   private store: UserStore = UserStore.getInstance();
 
+  private onProfileVersionChanged(): void {
+    this.verifyAndLoad();
+  }
+
+  private openInfoSettings(): void {
+    router.pushUrl({
+      url: 'pages/profile/InfoSettingsPage',
+      params: {
+        name: this.userInfo.userName || this.userInfo.realName || '',
+        studentId: this.userInfo.studentId
+      }
+    });
+  }
+
   aboutToAppear(): void {
     this.verifyAndLoad();
   }
 
   private async verifyAndLoad(): Promise<void> {
     try {
-      const s = AppStorage.getInstance();
+      const s = PreferenceStorage.getInstance();
       this.avatarUrl = await s.getAvatarUrl();
       await this.store.restoreFromLocal();
       this.userInfo = this.store.userInfo;
@@ -137,7 +153,7 @@ struct MinePage {
   }
 
   private async refreshAvatar(): Promise<void> {
-    const storage = AppStorage.getInstance();
+    const storage = PreferenceStorage.getInstance();
     try {
       await ApiService.loginAppAuthFromSavedCredentials(storage);
       this.avatarUrl = await storage.getAvatarUrl();
@@ -176,7 +192,7 @@ struct MinePage {
       'https://www.lyzyy.love:8081/mywustBasic/operationLog/list/publishedButIos',
       'https://lyzyy.love:8081/operationLog/list/publishedButIos'
     ];
-    const token = await AppStorage.getInstance().getToken();
+    const token = await PreferenceStorage.getInstance().getToken();
     const headers: UpdateHeaders = { Accept: 'application/json' };
     if (token) { headers['Authorization'] = `Wuster ${token}`; }
     for (const url of urls) {
@@ -194,17 +210,17 @@ struct MinePage {
 
   private async fetchUserInfo(token: string, retried: boolean = false): Promise<void> {
     try {
-      const resp = await UserApi.getUserInfo(token, await AppStorage.getInstance().getStudentId());
+      const resp = await UserApi.getUserInfo(token, await PreferenceStorage.getInstance().getStudentId());
       if (resp.code === 200 || resp.code === 0 || resp.code === 10000) {
         const data = resp.data;
         if (data) {
-          const s = AppStorage.getInstance();
+          const s = PreferenceStorage.getInstance();
           const realName = data.stuName || data.name || '';
           const studentId = data.stuNum || data.studentNumber || data.studentId || '';
           if (realName) {
             await s.setRealName(realName);
             const nick = await s.getUserName();
-            if (!nick || nick === '木有设置') {
+            if (!nick?.trim() || nick === '木有设置' || nick === '未设置昵称') {
               await s.setUserName(realName);
             }
           }
@@ -217,7 +233,7 @@ struct MinePage {
         }
       } else if (resp.code === 401 || resp.code === 403) {
         if (!retried && await TeachingSessionService.ensureSession(true)) {
-          const refreshedToken = await AppStorage.getInstance().getToken();
+          const refreshedToken = await PreferenceStorage.getInstance().getToken();
           if (refreshedToken) await this.fetchUserInfo(refreshedToken, true);
         }
       }
@@ -252,7 +268,7 @@ struct MinePage {
   }
 
   private async clearLoginState(): Promise<void> {
-    const s = AppStorage.getInstance();
+    const s = PreferenceStorage.getInstance();
     await s.setToken('');
     await s.setTokenUpdateTime(0);
     await s.setTokenLastUseTime(0);
@@ -422,12 +438,7 @@ struct MinePage {
                   .borderRadius(10)
                   .backgroundColor(Color.White)
               }
-              .onClick(() => {
-                router.pushUrl({
-                  url: 'pages/profile/InfoSettingsPage',
-                  params: { name: this.userInfo.userName || this.userInfo.realName || '', studentId: this.userInfo.studentId }
-                });
-              })
+              .onClick(() => this.openInfoSettings())
 
               Column() {
                 Text(this.userInfo.userName || this.userInfo.realName || '未获取姓名')
@@ -446,6 +457,7 @@ struct MinePage {
               .alignItems(HorizontalAlign.Start)
               .layoutWeight(1)
               .margin({ left: 12 })
+              .onClick(() => this.openInfoSettings())
 
               Text('注销')
                 .fontSize(13)

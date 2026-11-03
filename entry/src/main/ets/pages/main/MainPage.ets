@@ -59,9 +59,14 @@ const toolList: CardItem[] = [
   { title: "学校校历", desc: "了解假期安排", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_schoolcalendar'), route: "pages/campus/SchoolCalendarPage" },
   { title: "物理实验", desc: "导入实验课表", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_physical'), route: "pages/course/PhysicalExperimentPage" },
   { title: "校园黄页", desc: "号码通讯录", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.ic_yellow_page'), route: "pages/campus/YellowPagesPage" },
-  { title: "饮水机", desc: "扫码取水与结算", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.water_dispenser'), route: "pages/main/WaterDispenserPage" },
-  { title: "查电费", desc: "寝室剩余电量", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.electricity_bill'), route: "pages/main/ElectricityPage" }
+  { title: "查电费", desc: "寝室剩余电量", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.electricity_bill'), route: "pages/main/ElectricityPage" },
+  { title: "第二课堂", desc: "素质发展学分", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.second_classroom'), route: "pages/main/SecondClassroomPage" },
+  { title: "饮水机", desc: "扫码取水与结算", bgColor: "#ffffff", titleColor: "#333333", icon: $r('app.media.water_dispenser'), route: "pages/main/WaterDispenserPage" }
 ]
+
+/** 新安装默认显示的工具。饮水机仍保留在工具管理中，但不再默认占用首页位置。 */
+const defaultToolTitles: string[] = ['校车时刻', '学校校历', '物理实验', '校园黄页', '查电费', '第二课堂'];
+const legacyDefaultToolTitles: string[] = ['校车时刻', '学校校历', '物理实验', '校园黄页', '饮水机', '查电费'];
 
 //校园墙单独通栏对象
 const campusWallItem: CardItem = {
@@ -158,12 +163,22 @@ struct MainPage {
   }
 
   private async loadToolLayout(): Promise<void> {
-    const raw = await AppStorage.getInstance().getSettingString('toolLayout', '');
-    const defaults: string[] = toolList.map((item: CardItem) => item.title);
+    const storage = AppStorage.getInstance();
+    const raw = await storage.getSettingString('toolLayout', '');
+    const allTitles: string[] = toolList.map((item: CardItem) => item.title);
+    const defaults: string[] = defaultToolTitles;
     if (raw.length === 0) { this.visibleToolTitles = defaults; return; }
     try {
       const saved = JSON.parse(raw) as string[];
-      this.visibleToolTitles = defaults.filter((title: string) => saved.indexOf(title) >= 0)
+      // 只迁移完全等同旧版默认布局的用户；用户手动调整过的布局继续原样保留。
+      const isLegacyDefault = saved.length === legacyDefaultToolTitles.length &&
+        legacyDefaultToolTitles.every((title: string) => saved.indexOf(title) >= 0);
+      if (isLegacyDefault) {
+        this.visibleToolTitles = defaults;
+        await storage.setSettingString('toolLayout', JSON.stringify(defaults));
+        return;
+      }
+      this.visibleToolTitles = allTitles.filter((title: string) => saved.indexOf(title) >= 0)
         .sort((a: string, b: string) => saved.indexOf(a) - saved.indexOf(b));
     } catch { this.visibleToolTitles = defaults; }
   }

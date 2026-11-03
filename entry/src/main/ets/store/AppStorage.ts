@@ -84,11 +84,6 @@ export class AppStorage {
     await this.kvStore?.flush();
   }
 
-  // ── 隐私协议确认 ──
-
-  async getIsConfirmPolicy(): Promise<boolean> { return this.getBool('isConfirmPolicy'); }
-  async setIsConfirmPolicy(v: boolean): Promise<void> { return this.putBool('isConfirmPolicy', v); }
-
   // ── Mock 模拟开关 ──
 
   async getUseMock(): Promise<boolean> { return this.getBool('useMock', false); }

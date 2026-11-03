@@ -2,7 +2,7 @@ import { router, promptAction } from '@kit.ArkUI';
 import { PhysicalExperimentApi, PhysicalExperimentCourse } from '../../net/PhysicalExperimentApi';
 import { CourseStore } from '../../store/CourseStore';
 import { CourseData, CourseTimeSlot, TIME_SLOTS_HUANGJIAHU } from '../../model/CourseModel';
-import { AppStorage } from '../../store/AppStorage';
+import { AppStorage as PreferenceStorage } from '../../store/AppStorage';
 import { CourseApi } from '../../net/CourseApi';
 import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
 import common from '@ohos.app.ability.common';
@@ -25,9 +25,10 @@ export struct PhysicalExperimentPage {
   aboutToAppear(): void { this.prepare(); }
 
   private async prepare(): Promise<void> {
-    const storage = AppStorage.getInstance();
+    const storage = PreferenceStorage.getInstance();
     this.studentId = await storage.getStudentId();
     this.physicalPassword = await storage.getPhysicalExperimentPassword();
+    await this.restoreCachedCourses(storage);
     if (!this.physicalPassword) {
       this.showLogin = true;
       return;
@@ -43,26 +44,44 @@ export struct PhysicalExperimentPage {
     }
     this.showLogin = false;
     this.physicalPassword = password;
+    await PreferenceStorage.getInstance().setPhysicalExperimentPassword(password);
     await this.loadCourses(true);
+  }
+
+  private async restoreCachedCourses(storage: PreferenceStorage): Promise<void> {
+    try {
+      const raw = await storage.getSettingString('physicalExperimentCourseCache', '');
+      if (raw) {
+        const cached = JSON.parse(raw) as PhysicalExperimentCourse[];
+        if (Array.isArray(cached) && cached.length > 0) this.courses = cached;
+      }
+    } catch {}
   }
 
   private async loadCourses(savePassword: boolean = false): Promise<void> {
     this.loading = true;
     this.error = '';
     try {
-      const storage = AppStorage.getInstance();
+      const storage = PreferenceStorage.getInstance();
       this.courses = await PhysicalExperimentApi.getCourses(await storage.getSemester(), this.physicalPassword);
-      if (savePassword) await storage.setPhysicalExperimentPassword(this.physicalPassword);
+      await storage.setPhysicalExperimentPassword(this.physicalPassword);
+      await storage.setSettingString('physicalExperimentCourseCache', JSON.stringify(this.courses));
     } catch (e) {
-      this.error = e instanceof Error ? e.message : '物理实验课表获取失败';
-      if (savePassword) this.showLogin = true;
+      const message = e instanceof Error ? e.message : '物理实验课表获取失败';
+      if (this.courses.length > 0) {
+        this.error = '';
+        promptAction.showToast({ message: '网络异常，已显示上次获取的实验课程', duration: 1800 });
+      } else {
+        this.error = message;
+        if (savePassword) this.showLogin = true;
+      }
     } finally {
       this.loading = false;
     }
   }
 
   private async logoutPhysical(): Promise<void> {
-    await AppStorage.getInstance().setPhysicalExperimentPassword('');
+    await PreferenceStorage.getInstance().setPhysicalExperimentPassword('');
     this.physicalPassword = '';
     this.courses = [];
     this.error = '';
@@ -97,18 +116,51 @@ export struct PhysicalExperimentPage {
     return best;
   }
 
-  private async ensureTermStart(storage: AppStorage): Promise<string> {
-    const cached = await storage.getTermStartDate();
-    if (cached) return cached;
-    const response = await CourseApi.getTermStartDate(await storage.getToken());
-    if (response.data) {
-      const month = response.data.month < 10 ? `0${response.data.month}` : `${response.data.month}`;
-      const day = response.data.day < 10 ? `0${response.data.day}` : `${response.data.day}`;
-      const value = `${response.data.year}-${month}-${day}`;
-      await storage.setTermStartDate(value);
-      return value;
+  private formatDate(date: Date): string {
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    return `${date.getFullYear()}-${month < 10 ? `0${month}` : month}-${day < 10 ? `0${day}` : day}`;
+  }
+
+  private async localTermStart(storage: PreferenceStorage): Promise<string> {
+    const savedDate = this.parseDate(await storage.getDate());
+    const savedWeek = await storage.getWeek();
+    const savedWeekday = await storage.getWeekday();
+    if (savedDate && savedWeek > 0) {
+      const date = new Date(savedDate.year, savedDate.month - 1, savedDate.day);
+      const weekday = savedWeekday >= 1 && savedWeekday <= 7 ? savedWeekday : (date.getDay() === 0 ? 7 : date.getDay());
+      date.setDate(date.getDate() - (savedWeek - 1) * 7 - (weekday - 1));
+      return this.formatDate(date);
+    }
+    for (let i = 0; i < this.courses.length; i++) {
+      const item = this.courses[i];
+      const parts = this.parseDate(item.date || '');
+      if (!parts) continue;
+      const date = new Date(parts.year, parts.month - 1, parts.day);
+      const weekday = date.getDay() === 0 ? 7 : date.getDay();
+      const week = item.startWeek && item.startWeek > 0 ? item.startWeek : 1;
+      date.setDate(date.getDate() - (week - 1) * 7 - (weekday - 1));
+      return this.formatDate(date);
     }
     return '';
+  }
+
+  private async ensureTermStart(storage: PreferenceStorage): Promise<string> {
+    const cached = await storage.getTermStartDate();
+    if (cached) return cached;
+    try {
+      const response = await CourseApi.getTermStartDate(await storage.getToken());
+      if (response.data) {
+        const month = response.data.month < 10 ? `0${response.data.month}` : `${response.data.month}`;
+        const day = response.data.day < 10 ? `0${response.data.day}` : `${response.data.day}`;
+        const value = `${response.data.year}-${month}-${day}`;
+        await storage.setTermStartDate(value);
+        return value;
+      }
+    } catch {}
+    const local = await this.localTermStart(storage);
+    if (local) await storage.setTermStartDate(local);
+    return local;
   }
 
   private toCourse(item: PhysicalExperimentCourse, termStart: string): CourseData {
@@ -136,32 +188,37 @@ export struct PhysicalExperimentPage {
   }
 
   private async importCourses(): Promise<void> {
-    const storage = AppStorage.getInstance();
-    const termStart = await this.ensureTermStart(storage);
-    const imported: CourseData[] = this.courses.map((item: PhysicalExperimentCourse): CourseData => this.toCourse(item, termStart));
-    if (imported.length === 0) {
-      promptAction.showToast({ message: '暂无可导入的实验课程' });
-      return;
-    }
-    const existing = await storage.getCurrentCourses();
-    const base = existing.length > 0 ? existing : this.store.courses;
-    const merged: CourseData[] = [...base];
-    let added = 0;
-    for (let i = 0; i < imported.length; i++) {
-      const item = imported[i];
-      let duplicate = false;
-      for (let j = 0; j < merged.length; j++) {
-        if (merged[j].isPhysicalExperiment && merged[j].courseName === item.courseName &&
-          merged[j].physicalDate === item.physicalDate) duplicate = true;
+    try {
+      const storage = PreferenceStorage.getInstance();
+      const termStart = await this.ensureTermStart(storage);
+      const imported: CourseData[] = this.courses.map((item: PhysicalExperimentCourse): CourseData => this.toCourse(item, termStart));
+      if (imported.length === 0) {
+        promptAction.showToast({ message: '暂无可导入的实验课程' });
+        return;
       }
-      if (!duplicate) {
-        merged.push(item);
-        added++;
+      const existing = await storage.getCurrentCourses();
+      const base = existing.length > 0 ? existing : this.store.courses;
+      const merged: CourseData[] = [...base];
+      let added = 0;
+      for (let i = 0; i < imported.length; i++) {
+        const item = imported[i];
+        let duplicate = false;
+        for (let j = 0; j < merged.length; j++) {
+          if (merged[j].isPhysicalExperiment && merged[j].courseName === item.courseName &&
+            merged[j].physicalDate === item.physicalDate) duplicate = true;
+        }
+        if (!duplicate) { merged.push(item); added++; }
       }
+      await storage.setPhysicalExperimentCourses(imported);
+      await storage.setCurrentCourses(merged);
+      const saved = await storage.getCurrentCourses();
+      this.store.setCourses(saved);
+      AppStorage.setOrCreate<number>('courseDataVersion', Date.now());
+      promptAction.showToast({ message: added > 0 ? `已导入${added}门实验课程` : '实验课程已在课表中' });
+    } catch (error) {
+      console.error('PhysicalExperimentPage', `course import error: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '导入课表失败，请稍后重试', duration: 1800 });
     }
-    this.store.setCourses(merged);
-    await storage.setCurrentCourses(this.store.courses);
-    promptAction.showToast({ message: added > 0 ? `已导入${added}门实验课程` : '实验课程已在课表中' });
   }
 
   private async requestCalendarPermission(): Promise<boolean> {
@@ -210,7 +267,7 @@ export struct PhysicalExperimentPage {
     if (!await this.requestCalendarPermission()) return;
     this.importingCalendar = true;
     try {
-      const storage = AppStorage.getInstance();
+      const storage = PreferenceStorage.getInstance();
       const raw = await storage.getSettingString('physicalExperimentCalendarKeys', '');
       const savedKeys: string[] = raw ? JSON.parse(raw) as string[] : [];
       const manager = calendarManager.getCalendarManager(getContext(this) as common.Context);

@@ -8,6 +8,8 @@ export struct CourseItem {
   @Prop location: string = '';
   @Prop color: string = '#66cc99';
   @Prop isDimmed: boolean = false;
+  /** 同一位置存在跨周的其他课程时，才显示右下角翻页提示。 */
+  @Prop hasAlternateCourse: boolean = false;
   @Prop fontSize: number = 11;
   @Prop italic: boolean = false;
   @Prop bgImage: Resource | null = null;
@@ -44,20 +46,22 @@ export struct CourseItem {
       .justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
 
-      Stack()
-        .width(0)
-        .height(0)
-        .border({
-        width: { left: 5, top: 5, right: 5, bottom: 5 },
-        color: {
-          left: '#00000000',
-          top: '#00000000',
-          right: this.isDimmed ? '#D2D7DC' : '#FFFFFF',
-          bottom: this.isDimmed ? '#D2D7DC' : '#FFFFFF'
-        }
-      })
-        .margin({ right: 4, bottom: 4 })
-        .opacity(0.7)
+      if (this.hasAlternateCourse) {
+        Stack()
+          .width(0)
+          .height(0)
+          .border({
+          width: { left: 5, top: 5, right: 5, bottom: 5 },
+          color: {
+            left: '#00000000',
+            top: '#00000000',
+            right: '#FFFFFF',
+            bottom: '#FFFFFF'
+          }
+        })
+          .margin({ right: 4, bottom: 4 })
+          .opacity(0.9)
+      }
     }
     .width('100%')
     .height('100%')

@@ -2,7 +2,7 @@ import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import request from '@ohos.request';
-import { AppStorage } from '../../store/AppStorage';
+import { AppStorage as PreferenceStorage } from '../../store/AppStorage';
 import { UserApi } from '../../net/UserApi';
 import { StudentApiContent } from '../../model/UserInfoModel';
 import { ApiService } from '../../net/ApiService';
@@ -12,9 +12,12 @@ interface InfoSettingsParams {
   studentId?: string;
 }
 
+AppStorage.setOrCreate<number>('profileVersion', 0);
+
 @Entry
 @Component
 struct InfoSettingsPage {
+  @StorageLink('profileVersion') @Watch('onProfileVersionChanged') private profileVersion: number = 0;
   @State private nickname: string = '未设置昵称';
   @State private studentId: string = '';
   @State private major: string = '未获取专业';
@@ -33,9 +36,30 @@ struct InfoSettingsPage {
     this.loadUserInfo();
   }
 
+  private onProfileVersionChanged(): void {
+    this.refreshNickname();
+  }
+
+  private async refreshNickname(): Promise<void> {
+    const storage = PreferenceStorage.getInstance();
+    this.nickname = (await storage.getUserName()) || (await storage.getRealName()) || '未设置昵称';
+  }
+
+  private async applyRealName(realName: string, storage: PreferenceStorage): Promise<void> {
+    if (!realName) return;
+    await storage.setRealName(realName);
+    const savedNickname = (await storage.getUserName()).trim();
+    if (!savedNickname || savedNickname === '木有设置' || savedNickname === '未设置昵称') {
+      await storage.setUserName(realName);
+      this.nickname = realName;
+      return;
+    }
+    this.nickname = savedNickname;
+  }
+
   private async loadUserInfo(): Promise<void> {
     console.info('InfoSettingsPage', 'loadUserInfo start');
-    const storage = AppStorage.getInstance();
+    const storage = PreferenceStorage.getInstance();
     this.avatarUrl = await storage.getAvatarUrl();
     this.nickname = (await storage.getUserName()) || (await storage.getRealName()) || '未设置昵称';
     this.studentId = (await storage.getStudentId()) || '未获取学号';
@@ -75,11 +99,7 @@ struct InfoSettingsPage {
         const major = data.major || '';
         const college = data.college || '';
         const classes = data.classes || data.clazz || '';
-        if (realName) {
-          this.nickname = realName;
-          await storage.setRealName(realName);
-          if (!(await storage.getUserName())) await storage.setUserName(realName);
-        }
+        await this.applyRealName(realName, storage);
         if (studentId) { this.studentId = studentId; await storage.setStudentId(studentId); }
         if (major) { this.major = major; await storage.setMajor(major); }
         if (college) { this.college = college; await storage.setCollege(college); }
@@ -91,14 +111,14 @@ struct InfoSettingsPage {
     }
   }
 
-  private async applyUserInfo(data: StudentApiContent | undefined, storage: AppStorage): Promise<void> {
+  private async applyUserInfo(data: StudentApiContent | undefined, storage: PreferenceStorage): Promise<void> {
     if (!data) return;
     const realName = data.stuName || data.name || '';
     const studentId = data.stuNum || data.studentNumber || data.studentId || '';
     const major = data.major || '';
     const college = data.college || '';
     const classes = data.classes || data.clazz || '';
-    if (realName) { this.nickname = realName; await storage.setRealName(realName); await storage.setUserName(realName); }
+    await this.applyRealName(realName, storage);
     if (studentId) { this.studentId = studentId; await storage.setStudentId(studentId); }
     if (major) { this.major = major; await storage.setMajor(major); }
     if (college) { this.college = college; await storage.setCollege(college); }
@@ -139,7 +159,7 @@ struct InfoSettingsPage {
     this.showingCropper = false;
     this.cropImageUri = '';
     try {
-      const storage = AppStorage.getInstance();
+      const storage = PreferenceStorage.getInstance();
       const token = await storage.getAppAuthAccessToken();
       if (!token) throw new Error('missing app auth token');
       const task = await request.uploadFile(getContext(this), {
@@ -160,7 +180,7 @@ struct InfoSettingsPage {
       promptAction.showToast({ message: '头像已同步', duration: 1200 });
     } catch (error) {
       // Keep the selected local image visible if the network is temporarily unavailable.
-      await AppStorage.getInstance().setAvatarUrl(localUri);
+      await PreferenceStorage.getInstance().setAvatarUrl(localUri);
       console.warn('InfoSettingsPage', `avatar upload failed: ${JSON.stringify(error)}`);
       promptAction.showToast({ message: '头像已更新，服务器同步失败', duration: 1800 });
     }
@@ -203,7 +223,20 @@ struct InfoSettingsPage {
 
   @Builder
   private nicknameRow(): void {
-    Row() { Text('昵称').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#333333'); Blank().layoutWeight(1); Text(this.nickname).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333333').textAlign(TextAlign.End).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).constraintSize({ maxWidth: '68%' }); }.width('100%').height(84).padding({ left: 32, right: 24 }); this.divider();
+    Row() {
+      Text('昵称').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#333333');
+      Blank().layoutWeight(1);
+      Text(this.nickname).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333333')
+        .textAlign(TextAlign.End).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: '60%' });
+      Text('›').fontSize(28).fontColor('#999999').margin({ left: 10 });
+    }
+    .width('100%').height(84).padding({ left: 32, right: 24 })
+    .onClick(() => router.pushUrl({
+      url: 'pages/profile/EditNamePage',
+      params: { name: this.nickname }
+    }));
+    this.divider();
   }
 
   @Builder

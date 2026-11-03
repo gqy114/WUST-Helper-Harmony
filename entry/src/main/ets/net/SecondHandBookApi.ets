@@ -39,8 +39,8 @@ interface BookTradeExtra {
 }
 export class SecondHandBookApi {
   private static async headers(): Promise<Headers> { const token = await AppStorage.getInstance().getAppAuthAccessToken(); return { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' }; }
-  static async feed(keyword: string = '', category: string = '', major: string = ''): Promise<SecondhandListing[]> {
-    const query = `?page=1&limit=50&keyword=${encodeURIComponent(keyword)}&category=${encodeURIComponent(category)}${major.length > 0 ? `&major=${encodeURIComponent(major)}` : ''}`;
+  static async feed(keyword: string = '', category: string = '', major: string = '', page: number = 1, limit: number = 20): Promise<SecondhandListing[]> {
+    const query = `?page=${page}&limit=${limit}&keyword=${encodeURIComponent(keyword)}&category=${encodeURIComponent(category)}${major.length > 0 ? `&major=${encodeURIComponent(major)}` : ''}`;
     const response = await HttpRequest.get<Response<SecondhandListing[] | ListingPage>>(`https://lyzyy.love:8081/api/v1/secondhand/listings${query}`, await SecondHandBookApi.headers());
     const data = response.data.data;
     const values: SecondhandListing[] = Array.isArray(data) ? data : (data?.items || data?.list || data?.listings || data?.records || data?.content || data?.data || []);
@@ -143,13 +143,13 @@ export class SecondHandBookApi {
       sellerAvatar: post.avatarUrl, avatarUrl: post.avatarUrl, college: post.college, redFlowers: post.redFlowers, replies });
   }
 
-  static async communityFeed(): Promise<SecondhandListing[]> {
+  static async communityFeed(page: number = 1): Promise<SecondhandListing[]> {
     const tags: string[] = ['book_trade', 'book-trade', 'book', 'secondhand', 'second_hand_book'];
     const result: SecondhandListing[] = [];
     const seen: Set<number> = new Set<number>();
     for (const tag of tags) {
       try {
-        const posts = await CampusWallApi.listPages(tag, 3);
+        const posts = await CampusWallApi.list(page, tag);
         posts.forEach((post: CampusWallPost) => {
           const id = post.id || 0;
           if (id <= 0 || seen.has(id)) return;

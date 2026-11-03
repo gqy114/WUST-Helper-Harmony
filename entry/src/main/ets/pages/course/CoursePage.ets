@@ -49,6 +49,8 @@ export struct CoursePage {
   @State private calendarCourseList: CourseData[] = [];
   @State private showCourseDialog: boolean = false;
   @State private tappedCourse: CourseData | null = null;
+  @State private detailCourseList: CourseData[] = [];
+  @State private detailCourseIndex: number = 0;
   @State private currentWeek: number = 1;
   @State private actualCurrentWeek: number = 1;
   @State private weekDates: string[] = [];
@@ -58,6 +60,7 @@ export struct CoursePage {
   @State private isRefreshing: boolean = false;
   @State private refreshRotate: number = 0;
   private refreshTimer: number = -1;
+  private sessionRetryTimer: number = -1;
   @State private showMoreMenu: boolean = false;
   @State private menuAnim: boolean = false;
   @State private onlyThisWeek: boolean = false;
@@ -68,14 +71,20 @@ export struct CoursePage {
   @State private currentSemester: string = '2026-2027-1';
   @StorageLink('scheduleSettings') scheduleSettings: ScheduleSettings = DEFAULT_SETTINGS;
   @StorageLink('sundayFirst') sundayFirst: boolean = false;
+  @StorageLink('courseDataVersion') @Watch('onCourseDataVersionChanged') courseDataVersion: number = 0;
   private semesterStart: Date = new Date(2025, 8, 1);
 
   aboutToAppear(): void {
     this.initializeWeek();
   }
 
+  private onCourseDataVersionChanged(): void {
+    this.loadCurrentArchiveCourses();
+  }
+
   private async initializeWeek(): Promise<void> {
-    await this.resolveSemesterStart();
+    // 课表首屏不能被非关键的学期起始日网络请求阻塞。先用缓存/默认值完成渲染，
+    // 课表恢复后再刷新起始日并校正当前周。
     const autoWeek = this.calcCurrentWeek();
     const adjustedWeek = await this.getAdjustedWeek();
     const initialWeek = adjustedWeek >= 1 && adjustedWeek <= 25 ? adjustedWeek : autoWeek;
@@ -86,7 +95,21 @@ export struct CoursePage {
     this.updateWeekDates();
     this.loadCalendarOrderSetting();
     this.loadScheduleSettings();
-    this.verifyAndLoad();
+    await this.verifyAndLoad();
+    this.resolveSemesterStartAndRefreshWeek();
+  }
+
+  private async resolveSemesterStartAndRefreshWeek(): Promise<void> {
+    await this.resolveSemesterStart();
+    const adjustedWeek = await this.getAdjustedWeek();
+    const resolvedWeek = adjustedWeek >= 1 && adjustedWeek <= 25
+      ? adjustedWeek
+      : this.calcCurrentWeek();
+    this.actualCurrentWeek = resolvedWeek;
+    this.currentWeek = resolvedWeek;
+    this.store.setCurrentWeek(resolvedWeek);
+    this.updateWeekDates();
+    this.applyOnlyThisWeekFilter();
   }
 
   /** 从缓存或 getData 接口解析学期起始日，覆盖 2025-09-01 的默认值。 */
@@ -205,18 +228,16 @@ export struct CoursePage {
     this.loadCalendarOrderSetting();
     this.calendarCourseList = Array.isArray(store.courses) ? [...store.courses] : [];
     console.info("CoursePage onPageShow len=", this.calendarCourseList.length);
-    this.calendarCourseList = [];
-    setTimeout(() => {
-      const latest = CourseStore.getInstance().courses;
-      this.calendarCourseList = Array.isArray(latest) ? [...latest] : [];
-      console.info("CoursePage onPageShow refresh len=", this.calendarCourseList.length);
-    }, 50);
   }
 
   aboutToDisappear(): void {
     if (this.refreshTimer !== -1) {
       clearInterval(this.refreshTimer);
       this.refreshTimer = -1;
+    }
+    if (this.sessionRetryTimer !== -1) {
+      clearTimeout(this.sessionRetryTimer);
+      this.sessionRetryTimer = -1;
     }
   }
 
@@ -258,7 +279,9 @@ export struct CoursePage {
     try {
       const s = PreferenceStorage.getInstance();
       await this.store.restoreFromStorage();
-      this.showCachedCourses();
+      // CourseStore 只恢复周次和学期，课程本身保存在 currentCourses 中，必须显式读取。
+      const hasArchive = await this.loadCurrentArchiveCourses();
+      if (!hasArchive) this.showCachedCourses();
       this.currentSemester = this.store.semester || this.calcSemesterFallback();
       const adjustedWeek = AppStorage.get<number>('adjustedCurrentWeek');
       if (adjustedWeek !== undefined && adjustedWeek >= 1 && adjustedWeek <= 25) {
@@ -269,11 +292,13 @@ export struct CoursePage {
         this.currentWeek = this.store.currentWeek;
       }
       this.updateWeekDates();
-      this.loading = true;
+      // 有缓存时立即展示，后台刷新不能再用全屏 LoadingProgress 遮住旧课表。
+      this.loading = this.allCourseList.length === 0;
       const token = await s.getToken();
-      if (!token && !(await TeachingSessionService.ensureSession(true))) {
+      if (!token) {
         this.loading = false;
         if (this.store.courses.length === 0) this.errorMsg = '教务系统暂不可用，暂无本地课表';
+        this.scheduleSessionRestore();
         return;
       }
       await this.fetchCourses();
@@ -284,6 +309,33 @@ export struct CoursePage {
       this.showCachedCourses();
       if (this.store.courses.length === 0) this.errorMsg = '教务系统暂不可用，暂无本地课表';
     }
+  }
+
+  /**
+   * 主页与课表页可能同时恢复教务会话。若当前正有恢复任务，稍后检查新 Token，
+   * 成功后自动刷新课表，避免首次进入时一次竞争失败后永久停留在错误页。
+   */
+  private scheduleSessionRestore(attempt: number = 0): void {
+    if (this.sessionRetryTimer !== -1) return;
+    this.sessionRetryTimer = setTimeout(async () => {
+      this.sessionRetryTimer = -1;
+      const s = PreferenceStorage.getInstance();
+      let token = await s.getToken();
+      if (!token) {
+        await TeachingSessionService.ensureSession(false);
+        token = await s.getToken();
+      }
+      if (!token) {
+        // 云测网络下登录恢复可能超过一次定时周期；有限重试，避免无限轮询。
+        if (attempt < 5) this.scheduleSessionRestore(attempt + 1);
+        return;
+      }
+      const hadCourses = this.allCourseList.length > 0;
+      if (!hadCourses) this.loading = true;
+      await this.fetchCourses();
+      this.loading = false;
+      this.refreshKey = this.refreshKey + 1;
+    }, 1200);
   }
 
   /** 调用真实 API 获取课表 */
@@ -525,15 +577,56 @@ export struct CoursePage {
   }
 
   /** 课程点击弹详情 */
-  private onCourseTap(course: CourseData): void {
+  private onCourseTap(course: CourseData, relatedCourses: CourseData[]): void {
     this.tappedCourse = course;
+    this.detailCourseList = relatedCourses.length > 0 ? [...relatedCourses] : [course];
+    this.detailCourseIndex = 0;
     animateTo({ duration: 260, curve: Curve.EaseOut }, () => {
       this.showCourseDialog = true;
     });
   }
 
   @Builder
-  private courseDetailOverlay(course: CourseData) {
+  private courseDetailCard(course: CourseData) {
+    Stack({ alignContent: Alignment.Start }) {
+      Image(this.courseBackground(course))
+        .width('100%').height('100%')
+        .objectFit(ImageFit.Cover)
+        .borderRadius(14).opacity(0.96)
+      Column() {
+        Text(isCourseInWeek(course, this.currentWeek) ? '本周' : '非本周')
+          .fontSize(18).fontWeight(FontWeight.Bold).fontColor('#17324D')
+          .margin({ bottom: 22 })
+        Text(course.courseName)
+          .fontSize(26).fontWeight(FontWeight.Bold).fontColor('#17324D')
+          .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ bottom: 18 })
+        Text(course.location)
+          .fontSize(20).fontWeight(FontWeight.Medium).fontColor('#17324D')
+          .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ bottom: 18 })
+        Text(course.teacher)
+          .fontSize(20).fontWeight(FontWeight.Medium).fontColor('#17324D')
+          .margin({ bottom: 18 })
+        Text(`教学班 ${course.dayOfWeek} · 第${course.startPeriod}-${course.endPeriod}节`)
+          .fontSize(18).fontColor('#17324D').maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ bottom: 18 })
+        Text(`第${course.weekRanges}周`).fontSize(18).fontColor('#17324D')
+      }
+      .alignItems(HorizontalAlign.Start)
+      .width('60%')
+      .padding({ left: 20, right: 16, top: 24, bottom: 24 })
+      .margin({ left: 18 })
+      .backgroundColor('#CCFFFFFF')
+      .borderRadius(16)
+    }
+    .width('76%').height('100%').borderRadius(14).clip(true)
+    .backgroundColor('#FFFFFF').onClick(() => {})
+  }
+
+  @Builder
+  private courseDetailOverlay() {
     Stack({ alignContent: Alignment.Center }) {
       Column()
         .width('100%').height('100%')
@@ -544,41 +637,24 @@ export struct CoursePage {
           });
         })
 
-      Stack({ alignContent: Alignment.Start }) {
-        Image(this.courseBackground(course))
+      Swiper() {
+        ForEach(this.detailCourseList, (detailCourse: CourseData) => {
+          Row() {
+            this.courseDetailCard(detailCourse)
+          }
           .width('100%').height('100%')
-          .objectFit(ImageFit.Cover)
-          .borderRadius(14).opacity(0.96)
-        Column() {
-          Text(isCourseInWeek(course, this.currentWeek) ? '本周' : '非本周')
-            .fontSize(18).fontWeight(FontWeight.Bold).fontColor('#17324D')
-            .margin({ bottom: 22 })
-          Text(course.courseName)
-            .fontSize(26).fontWeight(FontWeight.Bold).fontColor('#17324D')
-            .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ bottom: 18 })
-          Text(course.location)
-            .fontSize(20).fontWeight(FontWeight.Medium).fontColor('#17324D')
-            .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ bottom: 18 })
-          Text(course.teacher)
-            .fontSize(20).fontWeight(FontWeight.Medium).fontColor('#17324D')
-            .margin({ bottom: 18 })
-          Text(`教学班 ${course.dayOfWeek} · 第${course.startPeriod}-${course.endPeriod}节`)
-            .fontSize(18).fontColor('#17324D').maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ bottom: 18 })
-          Text(`第${course.weekRanges}周`).fontSize(18).fontColor('#17324D')
-        }
-        .alignItems(HorizontalAlign.Start)
-        .width('60%')
-        .padding({ left: 20, right: 16, top: 24, bottom: 24 })
-        .margin({ left: 18 })
-        .backgroundColor('#CCFFFFFF')
-        .borderRadius(16)
+          .justifyContent(FlexAlign.Center)
+        }, (detailCourse: CourseData, index: number) => `${index}-${detailCourse.courseName}-${detailCourse.teacher}-${detailCourse.location}-${detailCourse.weekRanges}`)
       }
-      .width('76%').height('66%').borderRadius(14).clip(true)
-      .backgroundColor('#FFFFFF').onClick(() => {})
+      .index(this.detailCourseIndex)
+      .loop(false)
+      .indicator(this.detailCourseList.length > 1)
+      .onChange((index: number) => {
+        this.detailCourseIndex = index;
+        this.tappedCourse = this.detailCourseList[index];
+      })
+      .width('100%').height('66%')
+      .onClick(() => {})
       .transition(TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.86, y: 0.86 })))
     }
     .width('100%').height('100%').transition(TransitionEffect.OPACITY)
@@ -850,7 +926,7 @@ export struct CoursePage {
         CourseCalendar({
           currentWeek: this.currentWeek,
           refreshKey: this.refreshKey,
-          onCourseClick: (course: CourseData) => this.onCourseTap(course),
+          onCourseClick: (course: CourseData, relatedCourses: CourseData[]) => this.onCourseTap(course, relatedCourses),
           courseList: this.courseList,
           weekDates: this.weekDates,
           monthLabel: this.monthLabel,
@@ -858,7 +934,6 @@ export struct CoursePage {
           sundayFirst: this.sundayFirst,
           courseFontSize: this.scheduleSettings.fontSize,
           courseItalic: this.scheduleSettings.italic,
-          backgroundResolver: (course: CourseData) => this.courseBackground(course),
         })
           .layoutWeight(1)
       }
@@ -867,7 +942,7 @@ export struct CoursePage {
       .backgroundColor(this.scheduleSettings.bgImage ? '#00F5F5F5' : '#F5F5F5')
 
       if (this.showCourseDialog && this.tappedCourse) {
-        this.courseDetailOverlay(this.tappedCourse as CourseData)
+        this.courseDetailOverlay()
       }
 
       if (this.showMoreMenu) {

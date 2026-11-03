@@ -27,9 +27,15 @@ const WEEKDAY_NAMES_MONDAY_FIRST: string[] = ['周一', '周二', '周三', '周
 const WEEKDAY_NAMES_SUNDAY_FIRST: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const PERIOD_SLOT_HEIGHT: number = PERIOD_HEIGHT * 2 + 5;
 
+interface CourseDisplayGroup {
+  key: string;
+  displayCourse: CourseData;
+  relatedCourses: CourseData[];
+  hasAlternateCourse: boolean;
+}
+
 @Component
 export struct CourseCalendar {
-  @Prop backgroundResolver: ((course: CourseData) => Resource) | null = null;
   /** 当前周的课程（已过滤） */
   @Prop courseList: CourseData[] = [];
   /** 当前周次 */
@@ -47,7 +53,7 @@ export struct CourseCalendar {
   /** 是否将周日作为表头第一列。 */
   @Prop sundayFirst: boolean = false;
   /** 课程点击回调 */
-  onCourseClick?: (course: CourseData) => void;
+  onCourseClick?: (course: CourseData, relatedCourses: CourseData[]) => void;
 
   @State private gridWidth: number = 360;
   @State private columnWidth: number = 50;
@@ -81,6 +87,90 @@ export struct CourseCalendar {
 
   private getColumnIndex(dayOfWeek: number): number {
     return this.sundayFirst ? dayOfWeek % 7 : dayOfWeek - 1;
+  }
+
+  /** 同一天、相同起止节次的课程共用一个课表位置。 */
+  private coursePositionKey(course: CourseData): string {
+    return `${course.dayOfWeek}-${course.startPeriod}-${course.endPeriod}`;
+  }
+
+  private courseIdentity(course: CourseData): string {
+    return `${course.courseName}|${course.teacher}|${course.location}`;
+  }
+
+  /**
+   * 判断两个周次表达式是否真的覆盖不同教学周，避免仅因字符串写法不同误显示三角形。
+   */
+  private hasDifferentWeekSchedule(first: CourseData, second: CourseData): boolean {
+    for (let week = 1; week <= 25; week++) {
+      if (isCourseInWeek(first, week) !== isCourseInWeek(second, week)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 仅“不同课程 + 不同周次 + 相同课表位置”才属于可左右切换的课程组。 */
+  private isAlternateCourseGroup(courses: CourseData[]): boolean {
+    for (let i = 0; i < courses.length; i++) {
+      for (let j = i + 1; j < courses.length; j++) {
+        if (this.courseIdentity(courses[i]) !== this.courseIdentity(courses[j]) &&
+          this.hasDifferentWeekSchedule(courses[i], courses[j])) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private orderRelatedCourses(courses: CourseData[], displayCourse: CourseData): CourseData[] {
+    const ordered: CourseData[] = [displayCourse];
+    for (let i = 0; i < courses.length; i++) {
+      if (courses[i] !== displayCourse) {
+        ordered.push(courses[i]);
+      }
+    }
+    return ordered;
+  }
+
+  /**
+   * 先按课表位置合并课程，当前位置优先展示本周课程；没有本周课程时展示第一门。
+   * 这样非本周课程不会覆盖当前周正在上的课程。
+   */
+  private getDisplayGroups(): CourseDisplayGroup[] {
+    const groupedCourses: CourseData[][] = [];
+    const groupKeys: string[] = [];
+    for (let i = 0; i < this.courseList.length; i++) {
+      const course = this.courseList[i];
+      const key = this.coursePositionKey(course);
+      let groupIndex = groupKeys.indexOf(key);
+      if (groupIndex < 0) {
+        groupKeys.push(key);
+        groupedCourses.push([]);
+        groupIndex = groupedCourses.length - 1;
+      }
+      groupedCourses[groupIndex].push(course);
+    }
+
+    const result: CourseDisplayGroup[] = [];
+    for (let i = 0; i < groupedCourses.length; i++) {
+      const courses = groupedCourses[i];
+      let displayCourse = courses[0];
+      for (let j = 0; j < courses.length; j++) {
+        if (isCourseInWeek(courses[j], this.currentWeek)) {
+          displayCourse = courses[j];
+          break;
+        }
+      }
+      const hasAlternateCourse = this.isAlternateCourseGroup(courses);
+      result.push({
+        key: groupKeys[i],
+        displayCourse: displayCourse,
+        relatedCourses: hasAlternateCourse ? this.orderRelatedCourses(courses, displayCourse) : [displayCourse],
+        hasAlternateCourse: hasAlternateCourse,
+      });
+    }
+    return result;
   }
 
   build() {
@@ -133,32 +223,33 @@ export struct CourseCalendar {
           .width('100%')
 
           // 课程色块（绝对定位）
-          ForEach(this.courseList, (course: CourseData) => {
+          ForEach(this.getDisplayGroups(), (group: CourseDisplayGroup) => {
             Stack() {
               CourseItem({
-                courseName: course.courseName,
-                teacher: course.teacher,
-                location: course.location,
-                color: course.color ? course.color : '#66cc99',
-                isDimmed: !isCourseInWeek(course, this.currentWeek),   // 直接内联计算
+                courseName: group.displayCourse.courseName,
+                teacher: group.displayCourse.teacher,
+                location: group.displayCourse.location,
+                color: group.displayCourse.color ? group.displayCourse.color : '#66cc99',
+                isDimmed: !isCourseInWeek(group.displayCourse, this.currentWeek),
+                hasAlternateCourse: group.hasAlternateCourse,
                 fontSize: this.courseFontSize,
                 italic: this.courseItalic,
-                bgImage: this.backgroundResolver ? this.backgroundResolver(course) : null,
+                bgImage: null,
                 onItemTap: () => {
                   if (this.onCourseClick !== undefined && this.onCourseClick !== null) {
-                    this.onCourseClick(course);
+                    this.onCourseClick(group.displayCourse, group.relatedCourses);
                   }
                 },
               })
             }
               .position({
               x: (typeof LABEL_WIDTH === 'number' ? LABEL_WIDTH : 36) +
-                this.getColumnIndex(course.dayOfWeek) * this.columnWidth + 1,
-              y: (course.startPeriod - 1) * ((typeof PERIOD_HEIGHT === 'number' ? PERIOD_HEIGHT : 60) + 5) + 1,
+                this.getColumnIndex(group.displayCourse.dayOfWeek) * this.columnWidth + 1,
+              y: (group.displayCourse.startPeriod - 1) * ((typeof PERIOD_HEIGHT === 'number' ? PERIOD_HEIGHT : 60) + 5) + 1,
             })
             .width(this.columnWidth - 3)
-            .height((course.endPeriod - course.startPeriod + 1) * ((typeof PERIOD_HEIGHT === 'number' ? PERIOD_HEIGHT : 60) + 5) - 3)
-          }, (course: CourseData, index: number) => `${this.refreshKey}-${index}-${course.dayOfWeek}-${course.startPeriod}-${course.endPeriod}-${course.courseName}-${course.teacher}-${course.location}-${course.weekRanges}`)
+            .height((group.displayCourse.endPeriod - group.displayCourse.startPeriod + 1) * ((typeof PERIOD_HEIGHT === 'number' ? PERIOD_HEIGHT : 60) + 5) - 3)
+          }, (group: CourseDisplayGroup) => `${this.refreshKey}-${group.key}-${group.displayCourse.courseName}-${group.displayCourse.teacher}-${group.displayCourse.weekRanges}`)
         }
         .width('100%')
         .height(this.timeSlots.length * PERIOD_SLOT_HEIGHT + 10)

@@ -10,6 +10,12 @@ struct SecondHandBookPage {
   @State private query: string = '';
   @State private searching: boolean = false;
   @State private loading: boolean = true;
+  @State private loadingMore: boolean = false;
+  @State private nativePage: number = 1;
+  @State private communityPage: number = 1;
+  @State private nativeHasMore: boolean = true;
+  @State private communityHasMore: boolean = true;
+  private readonly pageSize: number = 20;
   @State private avatarUrl: string = '';
   @State private selfMajor: string = '';
   @State private majors: string[] = [];
@@ -39,21 +45,71 @@ struct SecondHandBookPage {
 
   private async load(): Promise<void> {
     this.loading = true;
+    this.nativePage = 1;
+    this.communityPage = 1;
+    this.nativeHasMore = true;
+    this.communityHasMore = true;
     let listings: SecondhandListing[] = [];
     let community: SecondhandListing[] = [];
     try {
-      listings = await SecondHandBookApi.feed(this.query, '', '');
+      listings = await SecondHandBookApi.feed(this.query, '', '', 1, this.pageSize);
       listings.forEach((item: SecondhandListing) => { if (!item.source) item.source = 'secondhand'; });
     } catch {}
-    try { community = await SecondHandBookApi.communityFeed(); } catch {}
+    try { community = await SecondHandBookApi.communityFeed(1); } catch {}
+    this.nativeHasMore = listings.length >= this.pageSize;
+    this.communityHasMore = community.length >= this.pageSize;
     const keyword = this.query.trim().toLowerCase();
     const matched = keyword.length === 0 ? community : community.filter((item: SecondhandListing) =>
       `${item.bookTitle || ''} ${item.note || ''} ${item.bookAuthor || ''}`.toLowerCase().indexOf(keyword) >= 0);
-    this.listings = listings.concat(matched);
+    this.listings = this.appendUniqueListings([], listings.concat(matched));
     if (this.listings.length === 0 && listings.length === 0 && community.length === 0) {
       promptAction.showToast({ message: '暂无二手书信息', duration: 1200 });
     }
     this.loading = false;
+  }
+
+  private listingKey(item: SecondhandListing): string {
+    return `${item.source || 'secondhand'}-${item.communityPostId || item.id || item.bookId || item.bookTitle || ''}`;
+  }
+
+  private appendUniqueListings(current: SecondhandListing[], incoming: SecondhandListing[]): SecondhandListing[] {
+    const result = current.slice();
+    const keys: string[] = result.map((item: SecondhandListing) => this.listingKey(item));
+    incoming.forEach((item: SecondhandListing) => {
+      const key = this.listingKey(item);
+      if (keys.indexOf(key) < 0) { result.push(item); keys.push(key); }
+    });
+    return result;
+  }
+
+  private async loadMore(): Promise<void> {
+    if (this.loading || this.loadingMore || (!this.nativeHasMore && !this.communityHasMore)) return;
+    this.loadingMore = true;
+    let incoming: SecondhandListing[] = [];
+    if (this.nativeHasMore) {
+      const nextNativePage = this.nativePage + 1;
+      try {
+        const nativeItems = await SecondHandBookApi.feed(this.query, '', '', nextNativePage, this.pageSize);
+        nativeItems.forEach((item: SecondhandListing) => { if (!item.source) item.source = 'secondhand'; });
+        incoming = incoming.concat(nativeItems);
+        this.nativePage = nextNativePage;
+        this.nativeHasMore = nativeItems.length >= this.pageSize;
+      } catch { this.nativeHasMore = false; }
+    }
+    if (this.communityHasMore) {
+      const nextCommunityPage = this.communityPage + 1;
+      try {
+        const communityItems = await SecondHandBookApi.communityFeed(nextCommunityPage);
+        const keyword = this.query.trim().toLowerCase();
+        const matched = keyword.length === 0 ? communityItems : communityItems.filter((item: SecondhandListing) =>
+          `${item.bookTitle || ''} ${item.note || ''} ${item.bookAuthor || ''}`.toLowerCase().indexOf(keyword) >= 0);
+        incoming = incoming.concat(matched);
+        this.communityPage = nextCommunityPage;
+        this.communityHasMore = communityItems.length >= this.pageSize;
+      } catch { this.communityHasMore = false; }
+    }
+    this.listings = this.appendUniqueListings(this.listings, incoming);
+    this.loadingMore = false;
   }
 
   private money(value: number | undefined): string { return `¥${(value || 0).toFixed(2)}`; }
@@ -204,15 +260,14 @@ struct SecondHandBookPage {
         }.width('92%').height(52).padding({ left: 16, right: 12 }).backgroundColor(Color.White).borderRadius(26).margin({ bottom: 10 });
       }
 
-      Scroll() {
-        Column() {
+      List() {
           if (this.loading) {
-            Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 });
+            ListItem() { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
           } else if (this.visibleListings().length === 0) {
-            Text('暂无符合条件的书籍').fontSize(18).fontColor('#999999').margin({ top: 80 });
+            ListItem() { Text('暂无符合条件的书籍').fontSize(18).fontColor('#999999').margin({ top: 80 }); }
           } else {
             ForEach(this.visibleListings(), (item: SecondhandListing) => {
-              Row() {
+              ListItem() { Row() {
                 if (item.bookCover) { Image(item.bookCover).width(92).height(116).objectFit(ImageFit.Cover).borderRadius(10).margin({ right: 16 }); }
                 Column() {
                   Text(item.bookTitle || '未命名书籍').fontSize(21).fontWeight(FontWeight.Bold).fontColor('#857A25').maxLines(2);
@@ -223,11 +278,11 @@ struct SecondHandBookPage {
                 }.layoutWeight(1);
               }.width('92%').padding(16).backgroundColor(Color.White).borderRadius(16).margin({ top: 10 })
                 .onClick(() => router.pushUrl({ url: 'pages/campus/SecondHandBookDetailPage',
-                  params: { listing: JSON.stringify(item) } }));
+                  params: { listing: JSON.stringify(item) } })); }
             }, (item: SecondhandListing) => `${item.source || 'secondhand'}-${item.id || item.bookId || item.bookTitle}`)
           }
-        }.width('100%').padding({ bottom: 24 }).backgroundColor('#F5F6F8');
-      }.layoutWeight(1);
+          if (!this.loading && this.listings.length > 0) { ListItem() { Row() { if (this.loadingMore) { LoadingProgress().width(22).height(22).color('#857A25'); Text('正在加载更多…').fontSize(15).fontColor('#888888').margin({ left: 8 }); } else if (!this.nativeHasMore && !this.communityHasMore) { Text('已经到底了').fontSize(15).fontColor('#AAAAAA'); } }.width('100%').height(54).justifyContent(FlexAlign.Center); } }
+      }.width('100%').layoutWeight(1).backgroundColor('#F5F6F8').onReachEnd(() => this.loadMore());
 
       Row() {
         Text('发布二手书').fontSize(19).fontWeight(FontWeight.Bold).fontColor(Color.White)

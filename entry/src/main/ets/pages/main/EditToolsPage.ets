@@ -20,8 +20,9 @@ struct EditToolsPage {
     { title: '学校校历', desc: '了解假期安排', icon: $r('app.media.ic_schoolcalendar'), enabled: true },
     { title: '物理实验', desc: '导入实验课表', icon: $r('app.media.ic_physical'), enabled: true },
     { title: '校园黄页', desc: '号码通讯录', icon: $r('app.media.ic_yellow_page'), enabled: true },
-    { title: '饮水机', desc: '扫码取水与结算', icon: $r('app.media.water_dispenser'), enabled: true },
-    { title: '查电费', desc: '寝室剩余电量', icon: $r('app.media.electricity_bill'), enabled: true }
+    { title: '查电费', desc: '寝室剩余电量', icon: $r('app.media.electricity_bill'), enabled: true },
+    { title: '第二课堂', desc: '素质发展学分', icon: $r('app.media.second_classroom'), enabled: true },
+    { title: '饮水机', desc: '扫码取水与结算', icon: $r('app.media.water_dispenser'), enabled: false }
   ];
 
   async aboutToAppear(): Promise<void> {
@@ -31,7 +32,11 @@ struct EditToolsPage {
     if (fullRaw.length > 0) {
       try {
         const fullOrder = JSON.parse(fullRaw) as string[];
-        this.allTools.sort((a: ToolEntry, b: ToolEntry) => fullOrder.indexOf(a.title) - fullOrder.indexOf(b.title));
+        this.allTools.sort((a: ToolEntry, b: ToolEntry) => {
+          const ai = fullOrder.indexOf(a.title);
+          const bi = fullOrder.indexOf(b.title);
+          return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
+        });
       } catch { /* 使用默认顺序 */ }
     }
     if (raw.length > 0) {
@@ -51,11 +56,12 @@ struct EditToolsPage {
   @Builder private toolCard(item: ToolEntry) {
     Row() {
       Column() {
-        Text(item.title).fontSize(18).fontWeight(FontWeight.Bold).maxLines(1)
-        Text(item.desc).fontSize(11).fontColor('#777777').maxLines(1).margin({ top: 4 })
-      }.layoutWeight(1).alignItems(HorizontalAlign.Start)
-      Image(item.icon).width(54).height(54).objectFit(ImageFit.Contain)
+        Text(item.title).fontSize(18).fontWeight(FontWeight.Bold).maxLines(1).draggable(false)
+        Text(item.desc).fontSize(11).fontColor('#777777').maxLines(1).margin({ top: 4 }).draggable(false)
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start).draggable(false)
+      Image(item.icon).width(54).height(54).objectFit(ImageFit.Contain).draggable(false)
     }.width('100%').height(100).padding({ left: 12, right: 12 }).backgroundColor(Color.White).borderRadius(12)
+      .draggable(false)
       .translate({ x: this.draggingTitle === item.title ? this.dragOffsetX : 0, y: this.draggingTitle === item.title ? this.dragOffsetY : 0 })
       .scale({ x: this.draggingTitle === item.title ? this.dragScale : 1, y: this.draggingTitle === item.title ? this.dragScale : 1 })
       .opacity(this.draggingTitle === item.title ? 0.94 : 1)
@@ -98,19 +104,22 @@ struct EditToolsPage {
             this.dragOffsetY = 0;
             animateTo({ duration: 220, curve: Curve.EaseOut }, () => this.refreshLists());
           }
-        }).onActionEnd(() => {
-          if (this.draggingIndex < 0) return;
-          this.saveLayout();
-          animateTo({ duration: 220, curve: Curve.EaseOut, onFinish: () => {
-            this.draggingIndex = -1;
-            this.draggingTitle = '';
-          } }, () => {
-            this.dragOffsetX = 0;
-            this.dragOffsetY = 0;
-            this.dragScale = 1;
-          });
-        })
+        }).onActionEnd(() => this.finishDragging(true))
+          .onActionCancel(() => this.finishDragging(false))
       ))
+  }
+
+  private finishDragging(save: boolean): void {
+    if (this.draggingIndex < 0) return;
+    if (save) this.saveLayout();
+    animateTo({ duration: 220, curve: Curve.EaseOut, onFinish: () => {
+      this.draggingIndex = -1;
+      this.draggingTitle = '';
+    } }, () => {
+      this.dragOffsetX = 0;
+      this.dragOffsetY = 0;
+      this.dragScale = 1;
+    });
   }
 
   private refreshLists(): void {
@@ -138,7 +147,8 @@ struct EditToolsPage {
     const routes: Record<string, string> = {
       '校车时刻': 'pages/campus/SchoolBusPage', '学校校历': 'pages/campus/SchoolCalendarPage',
       '物理实验': 'pages/course/PhysicalExperimentPage', '校园黄页': 'pages/campus/YellowPagesPage',
-      '饮水机': 'pages/main/WaterDispenserPage', '查电费': 'pages/main/ElectricityPage'
+      '饮水机': 'pages/main/WaterDispenserPage', '查电费': 'pages/main/ElectricityPage',
+      '第二课堂': 'pages/main/SecondClassroomPage'
     };
     const target = routes[title];
     if (target !== undefined) router.pushUrl({ url: target });

@@ -2,8 +2,7 @@
  * LoginPage.ets — 登录页
  *
  * 迁移来源：LoginMvpActivity.java + activity_login.xml
- * + LoginPresenter.java + LoginModel.java
- * + PolicyDialog.java + PermissionDialog.java + ErrorLoginDialog.java
+ * + LoginPresenter.java + LoginModel.java + ErrorLoginDialog.java
  *
  * 文件路径：entry/src/main/ets/pages/login/LoginPage.ets
  */
@@ -24,102 +23,11 @@ const TAG = 'LoginPage';
 const C_THEME = '#1ec98d';
 const C_GRAY = '#d0d0d0';
 const C_LINK = '#a2a1a1';
-const C_BLUE = '#1295ff';
 const C_CONFIRM = '#2785ef';
 const TIMEOUT_LOGIN = 20_000;
 const TIMEOUT_COURSE = 28_000;
-const URL_PRIVACY = 'https://wusthelper.wustlinghang.cn/page/android_privacy.html';
 const URL_HELP = 'https://support.qq.com/product/275699/faqs-more';
 const URL_VOLUNTEER = 'https://volunteer.wustlinghang.cn';
-
-// ═══════════════════════════════════════════════ PolicyDialog═══════════════════════════════════════════════
-
-@CustomDialog
-
-struct PolicyDialog {
-  controller?: CustomDialogController;
-  onPolicyYes?: () => void;
-  onFinish?: () => void;
-  onClose?: () => void;
-
-  @State private stage: number = 1;
-  @State private content: string = `欢迎使用武科大助手。
-1.为向您提供教务系统课表、成绩查询、学分统计、图书馆借阅等服务，我们会根据您使用服务的具体功能需要，收集必要的用户信息。
-2.为了实现图片缓存与取用，降低流量消耗，需要相关媒体访问能力。您有权拒绝或者取消授权。
-3.未经您的允许，我们不会与第三方共享或对外提供您的信息。`
-  @State private btnNo: string = '不同意';
-  @State private btnYes: string = '同意并且授权';
-  @State private showLink: boolean = true;
-  @State private semesterStr: string = "";
-
-  build() {
-    Column() {
-      Text('温馨提示').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#333').margin({ top: 10 })
-      if (this.showLink) {
-        Row() {
-          Text('请您阅读完整版的').fontSize(14).fontColor('#333')
-          Text('《用户协议与隐私政策》').fontSize(14).fontColor(C_BLUE)
-            .onClick(() => {
-              RouterUtil.push('pages/common/WebPage', { title: '用户协议与隐私政策', url: URL_PRIVACY });
-            })
-        }.padding({ left: 16 }).width('100%').margin({ top: 8 })
-      }
-      Scroll() {
-        Text(this.content).fontSize(14).fontColor('#666').lineHeight(20).padding(16).width('100%')
-      }.height(200).width('100%')
-      Row() {
-
-        Text(this.btnNo).fontSize(16).fontColor('#666').height(32).layoutWeight(1).textAlign(TextAlign.Center
-        )
-          .onClick(() => this.onNotPermit())
-
-        Text(this.btnYes).fontSize(16).fontColor(C_THEME).height(32).layoutWeight(1).textAlign(TextAlign.Center)
-        .onClick(() => this.onPermit())
-      }.width('100%').padding(10)
-    }.width('85%').backgroundColor(Color.White).borderRadius(12)
-  }
-
-  private onPermit(): void {
-    if (this.stage === 1) { this.onClose?.(); this.onPolicyYes?.(); return; }
-    this.stage = 1; this.showLink = true;
-    this.content = '欢迎使用武科大助手。\n1.为向您提供教务系统课表……';
-    this.btnYes = '同意并且授权'; this.btnNo = '不同意';
-  }
-
-  private onNotPermit(): void {
-    if (this.stage === 1) {
-      this.stage = 2; this.showLink = false;
-      this.content = `1.您需要同意本用户协议和隐私政策才能继续使用武科大助手\n2.若您不同意，很遗憾我们无法为
-      您提供服务`;
-      this.btnYes = '查看协议'; this.btnNo = '仍不同意';
-    } else if (this.stage === 2) {
-      this.stage = 3; this.content = '要不再想想？';
-      this.btnYes = '查看协议'; this.btnNo = '退出应用';
-    } else {
-      this.onClose?.(); this.onFinish?.();
-    }
-  }
-}
-
-// ═══════════════════════════════════════════════ PermissionDialog═══════════════════════════════════════════════
-
-@CustomDialog
-struct PermissionDialog {
-  controller?: CustomDialogController;
-  onGrant?: () => void;
-  onClose?: () => void;
-
-  build() {
-    Column() {
-      Text('存储权限').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#333').margin({ top: 10 })
-      Text('为了实现图片缓存与取用，降低流量消耗，需要您授权读取存储权限。')
-        .fontSize(14).fontColor('#666').lineHeight(20).padding(16)
-      Text('同意并且授权').fontSize(16).fontColor(Color.White).backgroundColor(C_THEME).borderRadius(6)
-        .padding({ left: 32, right: 32, top: 8, bottom: 8 }).margin({ bottom: 10 })
-        .onClick(() => { this.onClose?.(); this.onGrant?.(); })
-    }.width('80%').backgroundColor(Color.White).borderRadius(12).alignItems(HorizontalAlign.Center)
-  }
-}
 
 // ═══════════════════════════════════════════════ ErrorLoginDialog═══════════════════════════════════════════════
 
@@ -224,12 +132,12 @@ struct LoginPage {
   @State private showVolunteer: boolean = true;
   @State private loadingMessage: string = '登录中...';
   @State private isShowLoadingDialog: boolean = false;
-  @State private isShowPolicyDialog: boolean = false;
-  @State private isShowPermissionDialog: boolean = false;
   @State private isShowErrorDialog: boolean = false;
   @State private errorTitle: string = '';
   @State private errorContent: string = '';
-  private twoVerifyController?: CustomDialogController;
+  @State private showTwoVerifyPanel: boolean = false;
+  @State private verifyCode: string = '';
+  private verifyState: string = '';
   // ── 内部状态 ──
   private errorCount: Record<string, number> = {};
   private isLoggingIn: boolean = false;
@@ -257,7 +165,6 @@ struct LoginPage {
     console.info(TAG, 'onPageShow');
     this.initDialogs();
     this.restoreCredentials();
-    this.checkPolicy();
   }
 
   onBackPress(): boolean {
@@ -287,20 +194,6 @@ struct LoginPage {
       if (pwd?.trim()) this.password = pwd;
     } catch {
       console.warn(TAG, 'restore error');
-    }
-  }
-
-  private async checkPolicy(): Promise<void> {
-    try {
-      const storage = AppStorage.getInstance();
-      const agreed: boolean = await storage.getIsConfirmPolicy();
-      if (!agreed) {
-        setTimeout(() => {
-          if (this.isPageAlive) { this.isShowPolicyDialog = true; }
-        }, 300);
-      }
-    } catch {
-      console.warn(TAG, 'checkPolicy error');
     }
   }
 
@@ -384,7 +277,11 @@ struct LoginPage {
           if (this.isGraduate) {
             const gdata = resp.data as GraduateLoginDataContent;
             if (gdata.name) {
-              await s.setUserName(gdata.name);
+              await s.setRealName(gdata.name);
+              const savedNickname = await s.getUserName();
+              if (!savedNickname?.trim() || savedNickname === '木有设置' || savedNickname === '未设置昵称') {
+                await s.setUserName(gdata.name);
+              }
             }
             await StorageUtil.saveLoginInfo('grad_' + sid, sid, sid);
             console.info(TAG, 'graduate login, sid saved');
@@ -428,30 +325,39 @@ struct LoginPage {
   }
 
   private showTwoVerify(state: string, phone: string): void {
-    this.twoVerifyController = new CustomDialogController({
-      builder: TwoVerifyDialog({
-        phone,
-        onSend: async () => {
-          const result = await ApiService.sendUndergradVerifyCode(state);
-          promptAction.showToast({ message: (result.code === 200 || String(result.code) === '200') ? '验证码已发送' : (result.msg ?? '验证码发送失败'), duration: 1800 });
-        },
-        onSubmit: async (code: string) => {
-          if (!code.trim()) { promptAction.showToast({ message: '请输入验证码', duration: 1200 }); return; }
-          const result = await ApiService.verifyUndergradCode(state, code.trim());
-          if ((result.code === 200 || String(result.code) === '200') && result.data?.token) {
-            await this.saveLoginData(result.data.token, result.msg ?? '', this.studentId, this.password);
-            this.twoVerifyController?.close();
-            promptAction.showToast({ message: '登录成功', duration: 1500 });
-            router.pushUrl({ url: 'pages/main/MainPage' });
-          } else {
-            promptAction.showToast({ message: result.msg ?? '验证码错误', duration: 1800 });
-          }
-        }
-      }),
-      alignment: DialogAlignment.Center,
-      autoCancel: false
-    });
-    this.twoVerifyController.open();
+    this.verifyState = state;
+    this.verifyCode = '';
+    this.showTwoVerifyPanel = true;
+    this.sendVerifyCode(phone);
+  }
+
+  private async sendVerifyCode(phone: string): Promise<void> {
+    try {
+      const result = await ApiService.sendUndergradVerifyCode(this.verifyState);
+      promptAction.showToast({ message: (result.code === 200 || String(result.code) === '200') ? `验证码已发送至 ${phone || '绑定手机'}` : (result.msg ?? '验证码发送失败'), duration: 1800 });
+    } catch (error) {
+      console.error(TAG, `send verify code failed: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '验证码发送失败，请稍后重试', duration: 1800 });
+    }
+  }
+
+  private async submitVerifyCode(): Promise<void> {
+    try {
+      if (!this.verifyCode.trim()) { promptAction.showToast({ message: '请输入验证码', duration: 1200 }); return; }
+      const result = await ApiService.verifyUndergradCode(this.verifyState, this.verifyCode.trim());
+      if ((result.code === 200 || String(result.code) === '200') && result.data?.token) {
+        await this.saveLoginData(result.data.token, result.msg ?? '', this.studentId, this.password);
+        this.showTwoVerifyPanel = false;
+        promptAction.showToast({ message: '登录成功', duration: 1500 });
+        await router.pushUrl({ url: 'pages/main/MainPage' });
+      } else {
+        promptAction.showToast({ message: result.msg ?? '验证码错误', duration: 1800 });
+      }
+    } catch (error) {
+      console.error(TAG, `verify login failed: ${JSON.stringify(error)}`);
+      this.showTwoVerifyPanel = false;
+      promptAction.showToast({ message: '登录信息保存失败，请重新登录', duration: 2200 });
+    }
   }
   private async loginUndergrad(sid: string, pwd: string): Promise<void> {
     try {
@@ -600,10 +506,6 @@ private async fetchUserInfo(_sid: string): Promise<void> {
     this.isShowLoadingDialog = false;
   }
 
-  private openPermissionDialog(): void {
-    this.isShowPermissionDialog = true;
-  }
-
   private initDialogs(): void {
     console.info(TAG, 'initDialogs migrated to @State');
   }
@@ -612,10 +514,6 @@ private async fetchUserInfo(_sid: string): Promise<void> {
     this.errorTitle = title;
     this.errorContent = content;
     this.isShowErrorDialog = true;
-  }
-
-  private requestStoragePermission(): void {
-    console.info(TAG, 'requestStoragePermission: stub — use abilityAccessCtrl');
   }
 
   // ══════════ 定时器管理 ══════════
@@ -677,17 +575,6 @@ private async fetchUserInfo(_sid: string): Promise<void> {
   private weekday(): number {
     const d = new Date().getDay();
     return d === 0 ? 7 : d;
-  }
-
-  private finishApp(): void {
-    try {
-      const ctx = getContext(this) as common.UIAbilityContext;
-      if (ctx?.terminateSelf) {
-        ctx.terminateSelf();
-      }
-    } catch {
-      console.warn(TAG, 'finishApp: exit failed');
-    }
   }
 
   // ══════════ UI 布局 ══════════
@@ -770,28 +657,23 @@ private async fetchUserInfo(_sid: string): Promise<void> {
         })
       }
 
-      if (this.isShowPolicyDialog) {
-        PolicyDialog({
-          onPolicyYes: () => {
-            this.isShowPolicyDialog = false;
-            this.openPermissionDialog();
-          },
-          onFinish: () => {
-            this.isShowPolicyDialog = false;
-            this.finishApp();
-          },
-          onClose: () => { this.isShowPolicyDialog = false; }
-        })
-      }
-
-      if (this.isShowPermissionDialog) {
-        PermissionDialog({
-          onGrant: () => {
-            this.isShowPermissionDialog = false;
-            this.requestStoragePermission();
-          },
-          onClose: () => { this.isShowPermissionDialog = false; }
-        })
+      if (this.showTwoVerifyPanel) {
+        Column() {
+          Text('需要短信验证').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333')
+          Text('验证码已发送，请输入短信验证码').fontSize(14).fontColor('#777').margin({ top: 12 })
+          TextInput({ placeholder: '请输入验证码', text: this.verifyCode })
+            .width('86%').height(46).margin({ top: 18 })
+            .onChange((value: string) => this.verifyCode = value)
+          Row() {
+            Text('取消').fontSize(16).fontColor('#777').layoutWeight(1).textAlign(TextAlign.Center)
+              .onClick(() => this.showTwoVerifyPanel = false)
+            Text('验证登录').fontSize(16).fontColor(C_THEME).layoutWeight(1).textAlign(TextAlign.Center)
+              .onClick(() => this.submitVerifyCode())
+          }.width('86%').margin({ top: 20 })
+        }
+        .position({ x: '8%', y: '36%' }).width('84%').padding(24)
+        .backgroundColor(Color.White).borderRadius(14).shadow({ radius: 12, color: '#40000000' })
+        .zIndex(20)
       }
 
       if (this.isShowErrorDialog) {

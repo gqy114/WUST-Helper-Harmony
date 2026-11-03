@@ -11,6 +11,35 @@ import { LibraryLoanItem } from '../model/LibraryLoanModel';
 
 /** 当前借阅列表 —— 对应 WustApi.LIBRARY_CURRENT_LOANS_V2 */
 const CURRENT_LOANS_URL = 'https://smarttool.wust.edu.cn:3001/api/wx/huiwen/patron/loans';
+const READER_INFO_URL = 'https://smarttool.wust.edu.cn:3001/api/wx/huiwen/patron/info';
+
+export interface LibraryReaderInfo {
+  name?: string;
+  patronName?: string;
+  cardNo?: string;
+  readerCode?: string;
+  type?: string;
+  readerType?: string;
+  status?: string;
+  loanCount?: number;
+  currentLoanCount?: number;
+  loanLimit?: number;
+  maxLoanCount?: number;
+  expiryDate?: string;
+  expireDate?: string;
+}
+
+interface ReaderApiWrapper {
+  code?: number;
+  msg?: string;
+  data?: LibraryReaderInfo;
+}
+
+export interface LibraryReaderResult {
+  code: number;
+  msg: string;
+  data: LibraryReaderInfo;
+}
 
 /** API 原始返回条目字段名一致 */
 interface LoanApiRaw {
@@ -94,6 +123,22 @@ export class LibraryApi {
     } catch {
       console.warn('LibraryApi', 'getLoanList error');
       return { code: -1, msg: '网络请求失败', data: [] };
+    }
+  }
+
+  static async getReaderInfo(token: string): Promise<LibraryReaderResult> {
+    try {
+      const result = await HttpRequest.request<ReaderApiWrapper>(READER_INFO_URL, 'GET', {
+        headers: { Authorization: token ? `Bearer ${token}` : '', Platform: 'android' },
+      });
+      const resp = result.data;
+      if (resp && (resp.code === 200 || resp.code === 0 || resp.code === 10000 || resp.code === 20000)) {
+        return { code: resp.code ?? 0, msg: resp.msg ?? 'ok', data: resp.data ?? {} };
+      }
+      return { code: resp?.code ?? -1, msg: resp?.msg ?? '读者信息获取失败', data: {} };
+    } catch {
+      console.warn('LibraryApi', 'getReaderInfo error');
+      return { code: -1, msg: '网络请求失败', data: {} };
     }
   }
 }

@@ -41,6 +41,18 @@ export function isOverdue(dueDate: string): boolean {
   return due.getTime() < now.getTime();
 }
 
+/** 距离应还日期的自然日数；无法识别日期时返回较大的值。 */
+export function daysUntilDue(dueDate: string): number {
+  if (!dueDate) return 99999;
+  const normalized = dueDate.replace(/\//g, '-').substring(0, 10);
+  const parts = normalized.split('-');
+  if (parts.length !== 3) return 99999;
+  const due = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.ceil((due.getTime() - now.getTime()) / 86400000);
+}
+
 /** 格式化借阅状态文本 */
 export function getLoanStatus(dueDate: string): string {
   return isOverdue(dueDate) ? '已超期' : '在借';
