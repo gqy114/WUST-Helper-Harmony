@@ -1,4 +1,5 @@
 import { promptAction, router } from '@kit.ArkUI';
+import { common, Want } from '@kit.AbilityKit';
 import { call } from '@kit.TelephonyKit';
 
 interface YellowPageEntry {
@@ -64,10 +65,30 @@ export struct YellowPagesPage {
   private async dial(phone: string): Promise<void> {
     const normalized = phone.trim();
     if (!normalized) return;
+    const context = getContext(this) as common.UIAbilityContext;
     try {
-      await call.makeCall(normalized);
-    } catch {
-      promptAction.showToast({ message: '无法打开拨号界面', duration: 1500 });
+      // Stage 模型在部分新系统/平板上需要显式传入 UIAbilityContext。
+      await call.makeCall(context, normalized);
+      return;
+    } catch (error) {
+      console.info('YellowPagesPage', `makeCall failed: ${JSON.stringify(error)}`);
+    }
+
+    // makeCall 连接不到电话服务时，交给系统按 tel URI 查找可用拨号应用。
+    const dialWant: Want = { action: 'ohos.want.action.dial', uri: `tel:${normalized}` };
+    try {
+      await context.startAbility(dialWant);
+      return;
+    } catch (error) {
+      console.info('YellowPagesPage', `ACTION_DIAL failed: ${JSON.stringify(error)}`);
+    }
+
+    const viewWant: Want = { action: 'ohos.want.action.viewData', uri: `tel:${normalized}` };
+    try {
+      await context.startAbility(viewWant);
+    } catch (error) {
+      console.info('YellowPagesPage', `tel URI fallback failed: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '当前设备没有可用的拨号应用', duration: 1800 });
     }
   }
 
@@ -78,9 +99,9 @@ export struct YellowPagesPage {
         Text('黄页').fontSize(24).fontWeight(FontWeight.Bold).margin({ left: 14 })
       }.width('100%').height(76).padding({ left: 20 }).backgroundColor(Color.White)
 
-      Scroll() {
-        Column() {
-          ForEach(this.groups, (group: YellowPageGroup, index: number) => {
+      List() {
+        ForEach(this.groups, (group: YellowPageGroup, index: number) => {
+          ListItem() {
             Column() {
               Row() {
                 Image(group.icon).width(58).height(58)
@@ -103,9 +124,10 @@ export struct YellowPagesPage {
               }
               Divider().color('#DDDDDD').height(1).margin({ left: 82 })
             }.width('100%')
-          })
-        }.width('100%').padding({ left: 20, right: 20, top: 12 }).alignItems(HorizontalAlign.Start)
-      }.layoutWeight(1)
+          }.width('100%')
+        })
+      }.width('100%').layoutWeight(1).padding({ left: 20, right: 20, top: 12 })
+        .alignListItem(ListItemAlign.Start).scrollBar(BarState.Off)
     }.width('100%').height('100%').alignItems(HorizontalAlign.Start).backgroundColor('#FAFAFA')
   }
 }
