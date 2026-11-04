@@ -396,7 +396,7 @@ struct MinePage {
         Row() {
           Button('获取规则').fontSize(17).fontColor('#777777').backgroundColor('#EEEEEE').borderRadius(8).layoutWeight(1)
             .onClick(() => promptAction.showDialog({ title: '小红花获取规则',
-              message: '在求助区回复一个不同的问题可获得 1 朵小红花；回复被提问者采纳后，再获得 5 朵小红花。',
+              message: '回复他人的不同求助，每个问题可获得 1 朵小红花；回复被提问者采纳后，再获得 5 朵。回复或采纳自己的求助不计小红花。',
               buttons: [{ text: '知道了', color: '#20C894' }] }))
           Button('知道了').fontSize(17).fontColor(Color.White).backgroundColor('#20C894').borderRadius(8)
             .layoutWeight(1).margin({ left: 12 }).onClick(() => this.closeFlowerDialog())
