@@ -31,7 +31,8 @@ struct CampusWallPage {
     this.avatarUrl = await storage.getAvatarUrl();
     this.selfCollege = (await storage.getCollege()).trim();
   }
-  aboutToAppear(): void { this.load(); this.loadProfile(); }
+  aboutToAppear(): void { this.loadProfile(); }
+  onPageShow(): void { this.load(); }
   private appendUniquePosts(current: CampusWallPost[], incoming: CampusWallPost[]): CampusWallPost[] {
     const result = current.slice();
     const ids: number[] = result.map((post: CampusWallPost) => post.id || 0);
@@ -46,6 +47,7 @@ struct CampusWallPage {
   }
   private async load(): Promise<void> {
     this.loading = true;
+    this.posts = [];
     this.currentPage = 1;
     this.hasMore = true;
     try {

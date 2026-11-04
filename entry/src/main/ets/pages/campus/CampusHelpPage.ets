@@ -23,9 +23,11 @@ struct CampusHelpPage {
   @State private activeStatusFilter: string = "全部";
   @State private selfCollege: string = "";
   private async loadAvatar(): Promise<void> { this.avatarUrl = await AppStorage.getInstance().getAvatarUrl(); }
-  aboutToAppear(): void { this.load(); this.loadAvatar(); }
+  aboutToAppear(): void { this.loadAvatar(); }
+  onPageShow(): void { this.load(); }
   private async load(): Promise<void> {
     this.loading = true;
+    this.posts = [];
     this.currentPage = 1;
     this.hasMore = true;
     try { this.selfCollege = await AppStorage.getInstance().getCollege(); } catch {}

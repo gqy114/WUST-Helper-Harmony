@@ -31,7 +31,8 @@ struct SecondHandBookPage {
   @State private activeSort: string = '默认排序';
   @State private pendingSort: string = '默认排序';
 
-  aboutToAppear(): void { this.load(); this.loadProfile(); this.loadMajors(); }
+  aboutToAppear(): void { this.loadProfile(); this.loadMajors(); }
+  onPageShow(): void { this.load(); }
 
   private async loadProfile(): Promise<void> {
     const storage = AppStorage.getInstance();
@@ -45,6 +46,7 @@ struct SecondHandBookPage {
 
   private async load(): Promise<void> {
     this.loading = true;
+    this.listings = [];
     this.nativePage = 1;
     this.communityPage = 1;
     this.nativeHasMore = true;

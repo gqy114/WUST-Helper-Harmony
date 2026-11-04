@@ -21,9 +21,11 @@ struct CampusLostPage {
   @State private activeFilter: string = "全部";
 
   private async loadAvatar(): Promise<void> { this.avatarUrl = await AppStorage.getInstance().getAvatarUrl(); }
-  aboutToAppear(): void { this.load(); this.loadAvatar(); }
+  aboutToAppear(): void { this.loadAvatar(); }
+  onPageShow(): void { this.load(); }
   private async load(): Promise<void> {
     this.loading = true;
+    this.posts = [];
     this.currentPage = 1;
     this.hasMore = true;
     try {
