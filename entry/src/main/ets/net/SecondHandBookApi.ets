@@ -171,8 +171,23 @@ export class SecondHandBookApi {
           `https://lyzyy.love:8081/api/v1/secondhand/books/${listing.bookId}`, headers);
         const data = response.data.data;
         book = data?.book;
-        const matched = (data?.listings || []).find((item: SecondhandListing) => item.id === listing.id);
-        if (matched) current = matched;
+        const matched = (data?.listings || []).find((item: SecondhandListing) => item.id === listing.id) || data?.listing;
+        if (matched) {
+          // 列表接口包含联系方式和卖家资料，但部分详情接口只返回书籍与价格信息。
+          // 合并而不是直接替换，避免进入详情页后“联系卖家”入口消失。
+          matched.contact = (matched.contact || '').trim() || listing.contact;
+          matched.sellerId = matched.sellerId || listing.sellerId;
+          matched.sellerName = matched.sellerName || listing.sellerName;
+          matched.displayName = matched.displayName || listing.displayName;
+          matched.realName = matched.realName || listing.realName;
+          matched.avatarUrl = matched.avatarUrl || listing.avatarUrl;
+          matched.sellerAvatar = matched.sellerAvatar || listing.sellerAvatar;
+          matched.college = matched.college || listing.college;
+          if (matched.redFlowers === undefined) matched.redFlowers = listing.redFlowers;
+          matched.source = matched.source || listing.source;
+          matched.communityPostId = matched.communityPostId || listing.communityPostId;
+          current = matched;
+        }
       } catch {}
     }
     if ((listing.id || 0) > 0) {
