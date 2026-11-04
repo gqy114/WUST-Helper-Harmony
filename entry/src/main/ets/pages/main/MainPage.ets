@@ -16,6 +16,7 @@ import { promptAction } from '@kit.ArkUI';
 import router from '@ohos.router';
 import { HomeBanner, HomeContentApi, HomeNotice } from '../../net/HomeContentApi';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
+import { CampusWallApi, CampusWallPost } from '../../net/CampusWallApi';
 
 // ═══════════════════════════════════════════════ 常量 ═══════════════════════════════════════════════
 
@@ -103,12 +104,25 @@ struct MainPage {
   @State private visibleToolTitles: string[] = [];
   @State private homeBanners: HomeBanner[] = [];
   @State private homeNoticeText: string = '公告：欢迎使用武科大助手，随时随地开启校园之旅';
+  @State private campusWallUnread: number = 0;
+  @State private campusLostUnread: number = 0;
+  @State private campusTeamUnread: number = 0;
+  @State private campusHelpUnread: number = 0;
+  @State private campusBookUnread: number = 0;
+  @State private communityMessageUnread: number = 0;
   /** 底部导航栏是否隐藏 */
   @State private barHidden: boolean = false;
   // ── 非 @State 内部变量 ──
   private lastBackTime: number = 0;
   private tabsController: TabsController = new TabsController();
   private teachingRetryTimer: number = -1;
+  private communityBadgeTimer: number = -1;
+  private communityBadgesLoading: boolean = false;
+  private campusWallLatestId: number = 0;
+  private campusLostLatestId: number = 0;
+  private campusTeamLatestId: number = 0;
+  private campusHelpLatestId: number = 0;
+  private campusBookLatestId: number = 0;
 
   // ═══════════════════════════════════════════════ 生命周期 ═══════════════════════════════════════════════
 
@@ -121,6 +135,7 @@ struct MainPage {
     this.loadHomeContent();
     this.updateCatState();
     this.startTeachingSessionRetry();
+    this.startCommunityBadgeRefresh();
     console.info(TAG, `[module-debug] toolList.length=${toolList.length}`);
     console.info(TAG, `[module-debug] campusWallItem.title=${campusWallItem.title}, desc=${campusWallItem.desc}, route=${campusWallItem.route}`);
   }
@@ -144,12 +159,17 @@ struct MainPage {
     this.loadToolLayout();
     this.refreshCatEasterEgg();
     this.verifyLoginState();
+    this.loadCommunityBadges();
   }
 
   aboutToDisappear(): void {
     if (this.teachingRetryTimer !== -1) {
       clearInterval(this.teachingRetryTimer);
       this.teachingRetryTimer = -1;
+    }
+    if (this.communityBadgeTimer !== -1) {
+      clearInterval(this.communityBadgeTimer);
+      this.communityBadgeTimer = -1;
     }
   }
 
@@ -160,6 +180,148 @@ struct MainPage {
         if (ok) console.info(TAG, 'teaching session restored in background');
       });
     }, 60_000);
+  }
+
+  private startCommunityBadgeRefresh(): void {
+    this.loadCommunityBadges();
+    if (this.communityBadgeTimer !== -1) return;
+    this.communityBadgeTimer = setInterval(() => this.loadCommunityBadges(), 60_000);
+  }
+
+  private async loadCommunityBadges(): Promise<void> {
+    if (this.communityBadgesLoading) return;
+    this.communityBadgesLoading = true;
+    try {
+      await Promise.all([
+        this.loadCommunityPostBadge('wall', 'wall'),
+        this.loadCommunityPostBadge('lost', 'lost'),
+        this.loadCommunityPostBadge('team', 'team'),
+        this.loadCommunityPostBadge('help', 'help'),
+        this.loadCommunityPostBadge('book', 'book_trade'),
+        this.loadCommunityMessageBadge()
+      ]);
+    } finally {
+      this.communityBadgesLoading = false;
+    }
+  }
+
+  private async loadCommunityPostBadge(key: string, tag: string): Promise<void> {
+    try {
+      const posts: CampusWallPost[] = await CampusWallApi.list(1, tag);
+      let latestId = 0;
+      for (const post of posts) latestId = Math.max(latestId, post.id || 0);
+      this.setCommunityLatestId(key, latestId);
+
+      const storage = AppStorage.getInstance();
+      const storageKey = `communityLastSeen_${key}`;
+      const lastSeenId = await storage.getSettingNumber(storageKey, 0);
+      // 首次启用功能时建立基线，避免把所有历史帖子都误报为新帖。
+      if (lastSeenId <= 0) {
+        if (latestId > 0) await storage.setSettingNumber(storageKey, latestId);
+        this.setCommunityUnread(key, 0);
+        return;
+      }
+
+      let unread = 0;
+      for (const post of posts) {
+        if ((post.id || 0) > lastSeenId) unread++;
+      }
+      this.setCommunityUnread(key, unread);
+    } catch (error) {
+      console.warn(TAG, `load ${key} badge failed: ${JSON.stringify(error)}`);
+    }
+  }
+
+  private async loadCommunityMessageBadge(): Promise<void> {
+    try {
+      const page = await CampusWallApi.notifications(0, 1);
+      this.communityMessageUnread = Math.max(0, page.unreadCount || 0);
+    } catch (error) {
+      console.warn(TAG, `load community message badge failed: ${JSON.stringify(error)}`);
+    }
+  }
+
+  private setCommunityUnread(key: string, count: number): void {
+    const value = Math.max(0, count);
+    if (key === 'wall') this.campusWallUnread = value;
+    else if (key === 'lost') this.campusLostUnread = value;
+    else if (key === 'team') this.campusTeamUnread = value;
+    else if (key === 'help') this.campusHelpUnread = value;
+    else if (key === 'book') this.campusBookUnread = value;
+  }
+
+  private setCommunityLatestId(key: string, id: number): void {
+    if (key === 'wall') this.campusWallLatestId = id;
+    else if (key === 'lost') this.campusLostLatestId = id;
+    else if (key === 'team') this.campusTeamLatestId = id;
+    else if (key === 'help') this.campusHelpLatestId = id;
+    else if (key === 'book') this.campusBookLatestId = id;
+  }
+
+  private communityLatestId(key: string): number {
+    if (key === 'wall') return this.campusWallLatestId;
+    if (key === 'lost') return this.campusLostLatestId;
+    if (key === 'team') return this.campusTeamLatestId;
+    if (key === 'help') return this.campusHelpLatestId;
+    if (key === 'book') return this.campusBookLatestId;
+    return 0;
+  }
+
+  private communityKey(title: string): string {
+    if (title === '校园墙') return 'wall';
+    if (title === '失物招领') return 'lost';
+    if (title === '竞赛组队') return 'team';
+    if (title === '求助') return 'help';
+    if (title === '二手书') return 'book';
+    return '';
+  }
+
+  private communityTag(key: string): string {
+    if (key === 'book') return 'book_trade';
+    return key;
+  }
+
+  private communityBadgeCount(item: CardItem): number {
+    const key = this.communityKey(item.title);
+    if (key === 'wall') return this.campusWallUnread;
+    if (key === 'lost') return this.campusLostUnread;
+    if (key === 'team') return this.campusTeamUnread;
+    if (key === 'help') return this.campusHelpUnread;
+    if (key === 'book') return this.campusBookUnread;
+    return 0;
+  }
+
+  private badgeText(count: number): string {
+    return count > 99 ? '99+' : `${count}`;
+  }
+
+  private async markCommunitySeen(item: CardItem): Promise<void> {
+    const key = this.communityKey(item.title);
+    if (!key) return;
+    this.setCommunityUnread(key, 0);
+    try {
+      let latestId = this.communityLatestId(key);
+      if (latestId <= 0) {
+        const posts = await CampusWallApi.list(1, this.communityTag(key));
+        for (const post of posts) latestId = Math.max(latestId, post.id || 0);
+        this.setCommunityLatestId(key, latestId);
+      }
+      if (latestId > 0) {
+        await AppStorage.getInstance().setSettingNumber(`communityLastSeen_${key}`, latestId);
+      }
+    } catch (error) {
+      console.warn(TAG, `mark ${key} seen failed: ${JSON.stringify(error)}`);
+    }
+  }
+
+  private openCardItem(item: CardItem): void {
+    if (this.communityKey(item.title)) this.markCommunitySeen(item);
+    this.openHotFeature(item);
+  }
+
+  private openCommunityMessages(): void {
+    this.communityMessageUnread = 0;
+    router.pushUrl({ url: 'pages/campus/CommunityNotificationsPage' });
   }
 
   private async loadToolLayout(): Promise<void> {
@@ -574,8 +736,31 @@ struct MainPage {
             Row() {
               Image($r('app.media.info')).width(42).height(42).padding(8).backgroundColor('#EEEEEE').borderRadius(21)
                 .onClick(() => this.showCommunityRules())
-              Image($r('app.media.notifications')).width(42).height(42).padding(8).backgroundColor('#EEEEEE').borderRadius(21).margin({ left: 10 })
-                .onClick(() => router.pushUrl({ url: 'pages/campus/CommunityNotificationsPage' }))
+              Stack({ alignContent: Alignment.TopEnd }) {
+                Image($r('app.media.notifications'))
+                  .width(42)
+                  .height(42)
+                  .padding(8)
+                  .backgroundColor('#EEEEEE')
+                  .borderRadius(21)
+                if (this.communityMessageUnread > 0) {
+                  Text(this.badgeText(this.communityMessageUnread))
+                    .fontSize(11)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(Color.White)
+                    .textAlign(TextAlign.Center)
+                    .constraintSize({ minWidth: 21 })
+                    .height(21)
+                    .padding({ left: 5, right: 5 })
+                    .backgroundColor('#F04444')
+                    .borderRadius(11)
+                    .translate({ x: 5, y: -5 })
+                }
+              }
+              .width(42)
+              .height(42)
+              .margin({ left: 10 })
+              .onClick(() => this.openCommunityMessages())
             }
           }.width('100%').padding({ left: 16, right: 16 }).margin({ top: 24 })
 
@@ -734,42 +919,59 @@ struct MainPage {
     /** 通用卡片组件 */
     @Builder
     private CardItem(item: CardItem) {
-      Row() {
-        Column() {
-          Text(item.title)
-            .fontSize(18)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(item.titleColor)
-          Text(item.desc)
-            .fontSize(11)
-            .fontColor(item.titleColor)
-            .margin({ top: 3 })
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Stack({ alignContent: Alignment.TopEnd }) {
+        Row() {
+          Column() {
+            Text(item.title)
+              .fontSize(18)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(item.titleColor)
+            Text(item.desc)
+              .fontSize(11)
+              .fontColor(item.titleColor)
+              .margin({ top: 3 })
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          .margin({ left: 10 })
+          Image(item.icon)
+            .width(54)
+            .height(54)
+            .objectFit(ImageFit.Contain)
+            .rotate({ angle: item.rotated ? -45 : 0 })
         }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-        .margin({ left: 10 })
-        Image(item.icon)
-          .width(54)
-          .height(54)
-          .objectFit(ImageFit.Contain)
+        .width('100%')
+        .height('100%')
+        .padding({ left: 12, right: 12, top: 14, bottom: 14 })
+        .alignItems(VerticalAlign.Center)
 
-          .rotate({ angle: item.rotated ? -45 : 0 })
+        if (this.communityBadgeCount(item) > 0) {
+          Text(this.badgeText(this.communityBadgeCount(item)))
+            .fontSize(12)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(Color.White)
+            .textAlign(TextAlign.Center)
+            .constraintSize({ minWidth: 24 })
+            .height(24)
+            .padding({ left: 6, right: 6 })
+            .backgroundColor('#F04444')
+            .borderRadius(12)
+            .margin({ top: 8, right: 8 })
+        }
       }
       .width('100%')
       .height(100)
-      .padding({ left: 12, right: 12, top: 14, bottom: 14 })
       .backgroundColor(item.bgColor)
       .borderRadius(12)
-      .alignItems(VerticalAlign.Center)
       .onClick(() => {
         if (item.onCardClick) {
           item.onCardClick();
           return;
         }
         if (item.route) {
-          this.openHotFeature(item)
+          this.openCardItem(item)
         }
       })
     }

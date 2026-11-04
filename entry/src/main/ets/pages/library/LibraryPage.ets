@@ -12,6 +12,8 @@ const LIBRARY_GREEN: string = '#20C894';
 @Entry
 @Component
 struct LibraryPage {
+  @State private selectedTab: number = 0;
+  private navTabs: string[] = ['图书服务', '收藏', '公告通知', '首页推荐', '活动资讯', '资源导航'];
   private entries: LibraryEntry[] = [
     { title: '馆藏查询', description: '查询喜欢的图书收藏吧～', icon: $r('app.media.library_catalog'), route: 'catalog' },
     { title: '图书借阅', description: '随时了解图书借阅情况～', icon: $r('app.media.book_borrowing'), route: 'pages/library/LibraryBorrowingPage' },
@@ -44,38 +46,75 @@ struct LibraryPage {
     .onClick(() => this.openEntry(item))
   }
 
+  @Builder
+  private navigationItem(title: string, index: number) {
+    Column() {
+      Text(title)
+        .fontSize(17)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.selectedTab === index ? '#333333' : '#666666')
+        .height(48)
+        .textAlign(TextAlign.Center)
+      Divider()
+        .width('100%')
+        .height(3)
+        .color(this.selectedTab === index ? '#91D04E' : '#E5E5E5')
+    }
+    .width(index === 0 ? 96 : 104)
+    .height(51)
+    .onClick(() => { this.selectedTab = index; })
+  }
+
+  @Builder
+  private serviceContent() {
+    Scroll() {
+      Column({ space: 24 }) {
+        ForEach(this.entries, (item: LibraryEntry) => { this.serviceCard(item) })
+        Text('领航工作室出品').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#777777').margin({ top: 8, bottom: 30 })
+      }
+      .width('100%').padding({ left: 22, right: 22, top: 28 })
+    }
+    .width('100%').layoutWeight(1).scrollBar(BarState.Off)
+  }
+
+  @Builder
+  private emptyContent() {
+    Column() {
+      Image($r('app.media.empty')).width(92).height(92).objectFit(ImageFit.Contain)
+      Text('没有内容').fontSize(22).fontWeight(FontWeight.Bold).fontColor('#42C99A').margin({ top: 12 })
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+  }
+
   build() {
     Column() {
       Row() {
-        Text('‹').fontSize(48).fontColor(Color.White).fontWeight(FontWeight.Lighter).width(52).onClick(() => router.back())
-        Text('图书馆').fontSize(28).fontWeight(FontWeight.Bold).fontColor(Color.White).margin({ left: 12 }).layoutWeight(1)
-        Image($r('app.media.search')).width(30).height(30).fillColor(Color.White).onClick(() => this.openEntry(this.entries[0]))
+        Text('‹').fontSize(42).fontColor(Color.White).fontWeight(FontWeight.Lighter).width(46).onClick(() => router.back())
+        Text('图书馆').fontSize(26).fontWeight(FontWeight.Bold).fontColor(Color.White).margin({ left: 8 }).layoutWeight(1)
+        Image($r('app.media.search')).width(27).height(27).fillColor(Color.White).onClick(() => this.openEntry(this.entries[0]))
       }
-      .width('100%').height(96).padding({ left: 22, right: 28, top: 24 }).backgroundColor(LIBRARY_GREEN)
+      .width('100%').height(72).padding({ left: 18, right: 24, top: 8 }).backgroundColor(LIBRARY_GREEN)
 
       Scroll() {
-        Row({ space: 34 }) {
-          Text('图书服务').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#555555')
-          Text('收藏').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#555555')
-          Text('公告通知').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#555555')
-          Text('首页推荐').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#555555')
-          Text('活动资讯').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#555555')
-          Text('资源导航').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#555555')
+        Row() {
+          ForEach(this.navTabs, (title: string, index: number) => {
+            this.navigationItem(title, index)
+          })
         }
-        .height(58).padding({ left: 20, right: 20 }).alignItems(VerticalAlign.Center)
-        .constraintSize({ minWidth: 650 })
+        .height(51)
+        .constraintSize({ minWidth: 616 })
       }
       .width('100%').scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
-      .backgroundColor(Color.White).border({ width: { bottom: 3 }, color: '#91D04E' })
+      .backgroundColor(Color.White)
 
-      Scroll() {
-        Column({ space: 24 }) {
-          ForEach(this.entries, (item: LibraryEntry) => { this.serviceCard(item) })
-          Text('领航工作室出品').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#777777').margin({ top: 8, bottom: 30 })
-        }
-        .width('100%').padding({ left: 22, right: 22, top: 34 })
+      if (this.selectedTab === 0) {
+        this.serviceContent()
+      } else {
+        this.emptyContent()
       }
-      .width('100%').layoutWeight(1).scrollBar(BarState.Off)
     }
     .width('100%').height('100%').backgroundColor('#F7F7F7')
   }
