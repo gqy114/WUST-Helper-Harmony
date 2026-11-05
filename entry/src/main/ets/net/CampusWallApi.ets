@@ -13,7 +13,13 @@ export interface CampusWallBookTrade {
   author?: string; bookAuthor?: string; publisher?: string; bookPublisher?: string;
   edition?: string; bookEdition?: string; isbn?: string; bookIsbn?: string; majors?: string[] | string;
   campus?: string; campusName?: string; meetingPlace?: string; location?: string; note?: string;
-  contact?: string; contactType?: string;
+  contact?: string; contactType?: string; contactValue?: string; contactInformation?: string;
+  contact_type?: string; contact_value?: string; contact_information?: string;
+  contactMethod?: string; contactWay?: string; contactContent?: string; contactAccount?: string;
+  contact_method?: string; contact_way?: string; contact_content?: string; contact_account?: string;
+  bookContact?: string; bookContactType?: string; book_contact?: string; book_contact_type?: string;
+  sellerContact?: string; seller_contact?: string; phone?: string; mobile?: string; qq?: string;
+  wechat?: string; weChat?: string;
 }
 export interface CampusWallPost {
   id?: number;
@@ -63,8 +69,13 @@ export interface CampusWallPost {
   meetingPlace?: string;
   location?: string;
   note?: string;
-  contact?: string;
-  contactType?: string;
+  contact?: string; contactType?: string; contactValue?: string; contactInformation?: string;
+  contact_type?: string; contact_value?: string; contact_information?: string;
+  contactMethod?: string; contactWay?: string; contactContent?: string; contactAccount?: string;
+  contact_method?: string; contact_way?: string; contact_content?: string; contact_account?: string;
+  bookContact?: string; bookContactType?: string; book_contact?: string; book_contact_type?: string;
+  sellerContact?: string; seller_contact?: string; phone?: string; mobile?: string; qq?: string;
+  wechat?: string; weChat?: string;
   bookTrade?: CampusWallBookTrade;
   bookTradeInfo?: CampusWallBookTrade;
   listingId?: number;

@@ -54,6 +54,13 @@ struct SecondHandBookDetailPage {
         const previous: SecondhandListing = this.listing;
         const post: CampusWallPost = await CampusWallApi.detail(this.communityPostId || this.listing.id || 0);
         const loaded: SecondhandListing = SecondHandBookApi.fromCommunityPost(post);
+        const linkedListingId = post.listingId || post.bookTrade?.listingId || post.bookTrade?.id ||
+          post.bookTradeInfo?.listingId || post.bookTradeInfo?.id || 0;
+        if (linkedListingId > 0) {
+          loaded.id = linkedListingId;
+          const nativeDetail: SecondhandDetail = await SecondHandBookApi.detail(loaded);
+          loaded.contact = (nativeDetail.listing?.contact || loaded.contact || '').trim();
+        }
         // 部分详情接口不会重复返回交易联系方式，不能因此覆盖列表页已取得的数据。
         loaded.contact = (loaded.contact || '').trim() || previous.contact;
         loaded.sellerId = loaded.sellerId || previous.sellerId;
