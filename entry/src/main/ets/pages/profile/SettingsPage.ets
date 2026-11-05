@@ -91,6 +91,8 @@ struct SettingsPage {
 
       Scroll() {
         Column() {
+          this.groupTitle('账号')
+          this.navItem('修改本科教务密码', () => router.pushUrl({ url: 'pages/login/PasswordRecoveryPage' }))
           this.groupTitle('界面')
           this.navItem('底部导航自定义', () => router.pushUrl({ url: 'pages/profile/BottomNavCustomizePage' }))
           this.switchItem('显示校园猫入口', this.showCampusCat, (value: boolean) => { this.showCampusCat = value; this.saveBool('showCampusCat', value); })
