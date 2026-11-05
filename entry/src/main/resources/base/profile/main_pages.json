@@ -2,6 +2,7 @@
   "src": [
     "pages/splash/LaunchPage",
     "pages/login/LoginPage",
+    "pages/login/PasswordRecoveryPage",
     "pages/main/MainPage",
     "pages/main/HomeNoticePage",
     "pages/main/HomeNoticeDetailPage",

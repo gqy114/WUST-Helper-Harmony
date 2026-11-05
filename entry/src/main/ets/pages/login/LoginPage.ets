@@ -191,7 +191,7 @@ struct LoginPage {
       const sid = await s.getStudentId();
       const pwd = await s.getPassword();
       if (sid?.trim()) this.studentId = sid;
-      if (pwd?.trim()) this.password = pwd;
+      this.password = pwd || '';
     } catch {
       console.warn(TAG, 'restore error');
     }
@@ -611,13 +611,13 @@ private async fetchUserInfo(_sid: string): Promise<void> {
 
           // ── 输入区 ──
           Column() {
-            TextInput({ placeholder: '学号' })
+            TextInput({ text: this.studentId, placeholder: '学号' })
               .enableAutoFill(true)
               .fontSize(16).height(48).backgroundColor('#f5f5f5').borderRadius(8)
               .onChange((v: string) => { this.studentId = v; })
 
             Row() {
-              TextInput({ placeholder: '教务处密码' })
+              TextInput({ text: this.password, placeholder: '教务处密码' })
                 .enableAutoFill(true)
                 .fontSize(16).height(48)
                 .type(this.isPasswordVisible ? InputType.Normal : InputType.Password)
@@ -638,7 +638,9 @@ private async fetchUserInfo(_sid: string): Promise<void> {
                 .onClick(() => { RouterUtil.push('pages/common/WebPage', { title: '工时系统', url: URL_VOLUNTEER }); })
             }
             if (this.showVolunteer) { Blank() } else { Blank().layoutWeight(1) }
-            Text('忘记密码？登录遇到问题？').fontSize(14).fontColor(C_LINK).margin({ right: 30 })
+            Text('找回密码').fontSize(14).fontColor(C_THEME).margin({ right: 18 })
+              .onClick(() => { RouterUtil.push('pages/login/PasswordRecoveryPage'); })
+            Text('登录遇到问题？').fontSize(14).fontColor(C_LINK).margin({ right: 30 })
               .onClick(() => { RouterUtil.push('pages/common/WebPage', { title: '帮助', url: URL_HELP }); })
           }.width('100%').margin({ top: 13 }).padding({ bottom: 60 })
         }.width('100%')
