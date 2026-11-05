@@ -144,6 +144,7 @@ interface FlowerRankingResponse { code?: number; message?: string; data?: Campus
 interface ReactionData { added?: boolean; }
 interface ReactionResponse { data?: ReactionData; }
 interface PublishResponse { code?: number; message?: string; }
+interface ReplyResponse { code?: number; message?: string; }
 interface ReportResponse { code?: number; message?: string; }
 interface DeleteResponse { code?: number; message?: string; }
 interface AcceptReplyResponse { code?: number; message?: string; data?: Record<string, number | string>; }
@@ -268,9 +269,15 @@ export class CampusWallApi {
   }
 
   static async reply(id: number, content: string): Promise<void> {
-    await HttpRequest.postJson<Record<string, string>>(
+    const response = await HttpRequest.postJson<ReplyResponse>(
       `https://lyzyy.love:8081/api/v1/campus-wall/posts/${id}/replies`,
       { content }, await CampusWallApi.headers());
+    const status = response.response.responseCode;
+    const data = response.data;
+    if (status < 200 || status >= 300 || !data || typeof data !== 'object' ||
+      (data.code !== 0 && data.code !== 200)) {
+      throw new Error((data && typeof data === 'object' ? data.message : '') || '留言发送失败，请稍后重试');
+    }
   }
 
   static async report(targetType: string, targetId: number, reason: string): Promise<void> {

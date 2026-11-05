@@ -218,7 +218,7 @@ export class SecondHandBookApi {
     }
     return result;
   }
-  static async detail(listing: SecondhandListing): Promise<SecondhandDetail> {
+  static async detail(listing: SecondhandListing, requireReplies: boolean = false): Promise<SecondhandDetail> {
     const headers = await SecondHandBookApi.headers();
     let current: SecondhandListing = listing;
     let replies: SecondhandReply[] = listing.replies || [];
@@ -267,8 +267,21 @@ export class SecondHandBookApi {
       try {
         const response = await HttpRequest.get<Response<SecondhandReply[]>>(
           `https://lyzyy.love:8081/api/v1/secondhand/listings/${listing.id}/replies`, headers);
-        replies = Array.isArray(response.data.data) ? response.data.data : replies;
-      } catch {}
+        const status = response.response.responseCode;
+        const data = response.data;
+        if (status < 200 || status >= 300 || !data || typeof data !== 'object' ||
+          (data.code !== 0 && data.code !== 200) || !Array.isArray(data.data)) {
+          throw new Error('留言刷新失败');
+        }
+        replies = data.data;
+      } catch (error) {
+        // Older backends may not have the replies endpoint. A normal details
+        // load can still show the book, but a post-send refresh must report it.
+        if (requireReplies) {
+          const message = error instanceof Error && error.message ? error.message : '留言刷新失败';
+          throw new Error(message);
+        }
+      }
     }
     if (book) {
       book.title = SecondHandBookApi.decoded(book.title);
@@ -286,8 +299,19 @@ export class SecondHandBookApi {
     const response = await HttpRequest.postJson<Response<Object>>(
       `https://lyzyy.love:8081/api/v1/secondhand/listings/${listingId}/replies`,
       { content }, await SecondHandBookApi.headers());
-    const code = response.data.code;
-    if (code !== undefined && code !== 0 && code !== 200) throw new Error(response.data.message || 'reply failed');
+    const status = response.response.responseCode;
+    const data = response.data;
+    if (status < 200 || status >= 300 || !data || typeof data !== 'object' ||
+      (data.code !== 0 && data.code !== 200)) {
+      const message = data && typeof data === 'object' ? data.message : '';
+      if (status === 404 || (data && typeof data === 'object' && data.code === 404)) {
+        throw new Error(message || '书籍不存在或留言服务暂不可用');
+      }
+      if (status === 409 || (data && typeof data === 'object' && data.code === 409)) {
+        throw new Error(message || '书籍已售出，无法留言');
+      }
+      throw new Error(message || '留言发送失败，请稍后重试');
+    }
   }
   static async removeListing(listingId: number): Promise<void> {
     const response = await HttpRequest.postJson<Response<Object>>(
