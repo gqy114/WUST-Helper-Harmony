@@ -34,7 +34,8 @@ struct SecondHandBookDetailPage {
     if (params.listing) {
       try { this.listing = JSON.parse(params.listing) as SecondhandListing; } catch { this.listing = {}; }
     }
-    this.communityPostId = Number(params.postId || this.listing.communityPostId || 0);
+    const communityPostId = Number(params.postId || this.listing.communityPostId || 0);
+    this.communityPostId = Number.isSafeInteger(communityPostId) && communityPostId > 0 ? communityPostId : 0;
     this.loadProfile();
     this.load();
   }
@@ -47,11 +48,13 @@ struct SecondHandBookDetailPage {
     this.myCollege = await storage.getCollege();
   }
 
-  private async load(): Promise<void> {
+  private async load(notifyFailure: boolean = true, requireReplies: boolean = false): Promise<boolean> {
     this.loading = true;
     try {
       if (this.communityPostId > 0 || this.listing.source === 'community') {
-        const post: CampusWallPost = await CampusWallApi.detail(this.communityPostId || this.listing.id || 0);
+        if (this.communityPostId <= 0) throw new Error('帖子信息不完整');
+        const post: CampusWallPost = await CampusWallApi.detail(this.communityPostId);
+        if (!post.id || post.id !== this.communityPostId) throw new Error('帖子详情加载失败');
         this.listing = SecondHandBookApi.fromCommunityPost(post);
         this.communityPostId = post.id || this.communityPostId;
         this.book = { title: this.listing.bookTitle, author: this.listing.bookAuthor,
@@ -59,14 +62,19 @@ struct SecondHandBookDetailPage {
           isbn: this.listing.bookIsbn, category: this.listing.major, coverUrl: this.listing.bookCover };
         this.replies = this.listing.replies || [];
         this.loading = false;
-        return;
+        return true;
       }
-      const detail: SecondhandDetail = await SecondHandBookApi.detail(this.listing);
+      const detail: SecondhandDetail = await SecondHandBookApi.detail(this.listing, requireReplies);
       this.book = detail.book || {};
       this.listing = detail.listing || this.listing;
       this.replies = detail.replies || [];
-    } catch { promptAction.showToast({ message: '详情加载失败', duration: 1400 }); }
+    } catch {
+      if (notifyFailure) promptAction.showToast({ message: '详情加载失败', duration: 1400 });
+      this.loading = false;
+      return false;
+    }
     this.loading = false;
+    return true;
   }
 
   private metadata(label: string): string {
@@ -182,19 +190,29 @@ struct SecondHandBookDetailPage {
 
   private async sendReply(): Promise<void> {
     const content = this.replyText.trim();
-    if (!content || this.sending || !(this.listing.id || 0)) return;
+    if (!content || this.sending) return;
+    const isCommunity = this.communityPostId > 0 || this.listing.source === 'community';
+    const targetId = isCommunity ? this.communityPostId : Number(this.listing.id || 0);
+    if (!Number.isSafeInteger(targetId) || targetId <= 0) {
+      promptAction.showToast({ message: '帖子信息不完整，请重新打开后重试', duration: 1600 });
+      return;
+    }
     this.sending = true;
     try {
-      if (this.communityPostId > 0) await CampusWallApi.reply(this.communityPostId, content);
-      else await SecondHandBookApi.reply(this.listing.id || 0, content);
-      this.replies.push({ studentId: this.myStudentId, displayName: this.myName, avatarUrl: this.myAvatar,
-        college: this.myCollege, content, createdAt: Date.now() });
-      this.replies = this.replies.slice();
-      this.replyText = '';
-      this.replyOpen = false;
-      promptAction.showToast({ message: '留言成功', duration: 1200 });
-    } catch { promptAction.showToast({ message: '留言发送失败', duration: 1400 }); }
-    this.sending = false;
+      if (isCommunity) await CampusWallApi.reply(targetId, content);
+      else await SecondHandBookApi.reply(targetId, content);
+      if (this.replyText.trim() === content) {
+        this.replyText = '';
+        this.replyOpen = false;
+      }
+      const refreshed = await this.load(false, true);
+      promptAction.showToast({ message: refreshed ? '留言成功' : '留言已发送，刷新失败，请稍后重试', duration: 1600 });
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : '留言发送失败，请稍后重试';
+      promptAction.showToast({ message, duration: 1800 });
+    } finally {
+      this.sending = false;
+    }
   }
 
   @Builder
@@ -359,7 +377,7 @@ struct SecondHandBookDetailPage {
             TextArea({ placeholder: '请输入留言', text: this.replyText }).width('100%').height(230).fontSize(20).backgroundColor(Color.White).onChange((value: string) => { this.replyText = value; })
             Row() {
               Text('收起').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#777777').layoutWeight(1).textAlign(TextAlign.Center).onClick(() => { this.replyOpen = false; })
-              Button(this.sending ? '发送中…' : '发送').width(160).height(52).fontSize(20).fontWeight(FontWeight.Bold).backgroundColor('#20C894').onClick(() => this.sendReply())
+              Button(this.sending ? '发送中…' : '发送').width(160).height(52).fontSize(20).fontWeight(FontWeight.Bold).backgroundColor('#20C894').enabled(!this.sending).onClick(() => this.sendReply())
             }.width('100%').margin({ top: 10 })
           }.width('92%').padding(22).backgroundColor(Color.White).borderRadius(22)
         }.width('100%').height('100%')
