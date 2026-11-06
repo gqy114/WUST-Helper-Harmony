@@ -609,18 +609,26 @@ private async fetchUserInfo(_sid: string): Promise<void> {
           }.justifyContent(FlexAlign.Center).width('100%').margin({ top: '12%' })
 
           // ── 本科生/研究生 切换 ──
-          Row() {
-            Text('本科生').fontSize(14)
-              .fontColor(this.isGraduate ? '#f0f0f0' : Color.White)
-              .width(140).height(40).textAlign(TextAlign.Center)
-              .backgroundColor(this.isGraduate ? Color.Transparent : C_THEME)
-              .borderRadius({ topLeft: 20, bottomLeft: 20 })
-            Text('研究生').fontSize(14)
-              .fontColor(this.isGraduate ? Color.White : '#f0f0f0')
-              .width(140).height(40).textAlign(TextAlign.Center)
-              .backgroundColor(this.isGraduate ? C_THEME : Color.Transparent)
-              .borderRadius({ topRight: 20, bottomRight: 20 })
-          }.width(280).height(40).backgroundColor(C_GRAY).borderRadius(20).margin({ top: 40 })
+          Stack({ alignContent: Alignment.Start }) {
+            // 绿色滑块：跟随 isGraduate 左右平移，切换时做平滑过渡
+            Row()
+              .width(140).height(40)
+              .backgroundColor(C_THEME)
+              .borderRadius(20)
+              .translate({ x: this.isGraduate ? 140 : 0 })
+              .animation({ duration: 260, curve: Curve.EaseInOut })
+            Row() {
+              Text('本科生').fontSize(14)
+                .fontColor(this.isGraduate ? '#f0f0f0' : Color.White)
+                .width(140).height(40).textAlign(TextAlign.Center)
+                .animation({ duration: 260, curve: Curve.EaseInOut })
+              Text('研究生').fontSize(14)
+                .fontColor(this.isGraduate ? Color.White : '#f0f0f0')
+                .width(140).height(40).textAlign(TextAlign.Center)
+                .animation({ duration: 260, curve: Curve.EaseInOut })
+            }.width(280).height(40)
+          }
+          .width(280).height(40).backgroundColor(C_GRAY).borderRadius(20).margin({ top: 40 })
           .onClick(() => { this.isGraduate = !this.isGraduate; this.onSwitchChanged(); })
 
           // ── 输入区 ──
