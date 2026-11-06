@@ -18,6 +18,8 @@
     "pages/course/ScheduleSetting",
     "pages/profile/SettingsPage",
     "pages/profile/WidgetSettingsPage",
+    "pages/profile/QQGroupPage",
+    "pages/campus/InnovationCreditPage",
     "pages/profile/BottomNavCustomizePage",
     "pages/profile/InfoSettingsPage",
     "pages/profile/EditNamePage",

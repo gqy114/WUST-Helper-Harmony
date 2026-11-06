@@ -6,13 +6,20 @@ export interface InnovationCreditTicket {
   ticket?: string;
 }
 
+/** primaryAuthTicket 的顶层响应。 */
+export interface InnovationCreditEnvelope {
+  code: number;
+  msg?: string;
+  data?: InnovationCreditTicket;
+}
+
 export class InnovationCreditApi {
   private static readonly URL = 'https://lyzyy.love/InnovationCredit/Support/primaryAuthTicket';
 
   static async getAuthTicket(studentId: string, password: string): Promise<InnovationCreditTicket> {
-    const result = await HttpRequest.postJson<{ code: number; msg?: string; data?: InnovationCreditTicket }>(
+    const result = await HttpRequest.postJson<InnovationCreditEnvelope>(
       InnovationCreditApi.URL,
-      { username: studentId, password },
+      { username: studentId, password: password },
     );
     if (result.data.code !== 200 || !result.data.data) {
       throw new Error(result.data.msg ?? '双创学分认证失败');
