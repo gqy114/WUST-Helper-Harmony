@@ -91,14 +91,24 @@ export class SecondHandBookApi {
   }
 
   private static formatContact(pairs: string[][]): string {
+    let type = '';
+    let value = '';
     for (const pair of pairs) {
-      const type = pair[0] || '';
-      const value = pair[1] || '';
-      if (!value) continue;
-      if (!type || value.indexOf('：') >= 0 || value.indexOf(':') >= 0) return value;
-      return `${type}：${value}`;
+      if (value || !pair[1]) continue;
+      value = pair[1];
+      type = pair[0] || '';
     }
-    return '';
+    if (!value) return '';
+    if (!type) {
+      // 类型与号码可能分开存放（例如 post.contactType='QQ'、extra.contactValue='12345678'）。
+      // 只从“有类型没有号码”的来源补齐类型：这些来源没有自己的号码，
+      // 不会把另一种联系方式（如另一个卖家的微信）的类型误配给当前号码。
+      for (const pair of pairs) {
+        if (!pair[1] && pair[0]) { type = pair[0]; break; }
+      }
+    }
+    if (!type || value.indexOf('：') >= 0 || value.indexOf(':') >= 0) return value;
+    return `${type}：${value}`;
   }
 
   private static normalizedContact(item: SecondhandListing): string {
@@ -114,6 +124,48 @@ export class SecondHandBookApi {
       SecondHandBookApi.contactPair(extra.seller), SecondHandBookApi.contactPair(extra.trade),
       SecondHandBookApi.contactPair(extra.bookTrade), SecondHandBookApi.contactPair(extra.bookTradeInfo)
     ]);
+  }
+
+  private static text(value?: string): string { return (value || '').trim(); }
+
+  // 详情接口可能只返回部分字段（例如仅补回联系方式），直接替换会把列表里已有的
+  // id、sellerId、价格和书籍信息清空。这里逐字段合并：详情有值则覆盖，无值保留列表数据。
+  private static mergeListing(base: SecondhandListing, incoming?: SecondhandListing): SecondhandListing {
+    if (!incoming) return base;
+    const merged: SecondhandListing = base;
+    merged.id = (incoming.id || 0) > 0 ? incoming.id : merged.id;
+    merged.bookId = (incoming.bookId || 0) > 0 ? incoming.bookId : merged.bookId;
+    merged.sellerId = SecondHandBookApi.text(incoming.sellerId) || merged.sellerId;
+    merged.price = incoming.price !== undefined && incoming.price !== null ? incoming.price : merged.price;
+    merged.condition = SecondHandBookApi.text(incoming.condition) || merged.condition;
+    merged.note = SecondHandBookApi.text(incoming.note) || merged.note;
+    merged.status = SecondHandBookApi.text(incoming.status) || merged.status;
+    merged.images = (incoming.images && incoming.images.length > 0) ? incoming.images : merged.images;
+    merged.createdAt = incoming.createdAt !== undefined && incoming.createdAt !== null ? incoming.createdAt : merged.createdAt;
+    merged.bookTitle = SecondHandBookApi.text(incoming.bookTitle) || merged.bookTitle;
+    merged.bookAuthor = SecondHandBookApi.text(incoming.bookAuthor) || merged.bookAuthor;
+    merged.bookPublisher = SecondHandBookApi.text(incoming.bookPublisher) || merged.bookPublisher;
+    merged.bookEdition = SecondHandBookApi.text(incoming.bookEdition) || merged.bookEdition;
+    merged.bookIsbn = SecondHandBookApi.text(incoming.bookIsbn) || merged.bookIsbn;
+    merged.bookCover = SecondHandBookApi.text(incoming.bookCover) || merged.bookCover;
+    merged.campus = SecondHandBookApi.text(incoming.campus) || merged.campus;
+    merged.campusName = SecondHandBookApi.text(incoming.campusName) || merged.campusName;
+    merged.major = SecondHandBookApi.text(incoming.major) || merged.major;
+    merged.majors = incoming.majors !== undefined ? incoming.majors : merged.majors;
+    merged.sellerName = SecondHandBookApi.text(incoming.sellerName) || merged.sellerName;
+    merged.displayName = SecondHandBookApi.text(incoming.displayName) || merged.displayName;
+    merged.realName = SecondHandBookApi.text(incoming.realName) || merged.realName;
+    merged.sellerAvatar = SecondHandBookApi.text(incoming.sellerAvatar) || merged.sellerAvatar;
+    merged.avatarUrl = SecondHandBookApi.text(incoming.avatarUrl) || merged.avatarUrl;
+    merged.college = SecondHandBookApi.text(incoming.college) || merged.college;
+    if (merged.redFlowers === undefined) merged.redFlowers = incoming.redFlowers;
+    merged.source = SecondHandBookApi.text(incoming.source) || merged.source;
+    merged.communityPostId = (incoming.communityPostId || 0) > 0 ? incoming.communityPostId : merged.communityPostId;
+    merged.extra = SecondHandBookApi.text(incoming.extra) || merged.extra;
+    merged.book = incoming.book || merged.book;
+    merged.contact = SecondHandBookApi.normalizedContact(incoming) || merged.contact;
+    merged.replies = (incoming.replies && incoming.replies.length > 0) ? incoming.replies : merged.replies;
+    return merged;
   }
 
   static conditionLabel(value?: string): string {
@@ -226,15 +278,14 @@ export class SecondHandBookApi {
     if ((listing.id || 0) > 0) {
       try {
         // 列表接口可能为保护卖家隐私省略联系方式，详情接口会在登录后返回完整交易资料。
+        // 该请求以 URL 中的 listing.id 定位商品，因此只做字段合并，不整体替换。
         const response = await HttpRequest.get<Response<ListingDetailData>>(
           `https://lyzyy.love:8081/api/v1/secondhand/listings/${listing.id}`, headers);
         const data = response.data.data;
         const detailed = data?.listing || data?.item || data;
-        if (detailed) {
-          detailed.contact = SecondHandBookApi.normalizedContact(detailed) || SecondHandBookApi.normalizedContact(listing);
-          detailed.source = detailed.source || listing.source;
-          detailed.communityPostId = detailed.communityPostId || listing.communityPostId;
-          current = detailed;
+        // 详情里若显式给出了不同的 ID，说明返回的不是当前商品，直接忽略。
+        if (detailed && (!(detailed.id || 0) || detailed.id === listing.id)) {
+          current = SecondHandBookApi.mergeListing(current, detailed);
         }
       } catch {}
     }
@@ -244,22 +295,13 @@ export class SecondHandBookApi {
           `https://lyzyy.love:8081/api/v1/secondhand/books/${listing.bookId}`, headers);
         const data = response.data.data;
         book = data?.book;
-        const matched = (data?.listings || []).find((item: SecondhandListing) => item.id === listing.id) || data?.listing;
+        // 书籍详情返回的是同一本书下的商品集合，单条 listing 不保证就是当前商品，
+        // 必须核对 ID，否则会把另一位卖家的联系方式、价格错当成本商品的。
+        const single = data?.listing;
+        const matched = (data?.listings || []).find((item: SecondhandListing) => item.id === listing.id) ||
+          ((single && single.id === listing.id) ? single : undefined);
         if (matched) {
-          // 列表接口包含联系方式和卖家资料，但部分详情接口只返回书籍与价格信息。
-          // 合并而不是直接替换，避免进入详情页后“联系卖家”入口消失。
-          matched.contact = SecondHandBookApi.normalizedContact(matched) || SecondHandBookApi.normalizedContact(current) || SecondHandBookApi.normalizedContact(listing);
-          matched.sellerId = matched.sellerId || listing.sellerId;
-          matched.sellerName = matched.sellerName || listing.sellerName;
-          matched.displayName = matched.displayName || listing.displayName;
-          matched.realName = matched.realName || listing.realName;
-          matched.avatarUrl = matched.avatarUrl || listing.avatarUrl;
-          matched.sellerAvatar = matched.sellerAvatar || listing.sellerAvatar;
-          matched.college = matched.college || listing.college;
-          if (matched.redFlowers === undefined) matched.redFlowers = listing.redFlowers;
-          matched.source = matched.source || listing.source;
-          matched.communityPostId = matched.communityPostId || listing.communityPostId;
-          current = matched;
+          current = SecondHandBookApi.mergeListing(current, matched);
         }
       } catch {}
     }
