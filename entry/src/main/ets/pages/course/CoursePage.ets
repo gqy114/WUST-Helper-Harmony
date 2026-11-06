@@ -360,10 +360,33 @@ export struct CoursePage {
         this.store.setSemester(semester);
       }
 
-      const resp = await CourseApi.getCourseTable(semester, token);
+      // 研究生没有可复用的教务 Cookie，必须用保存的学号密码走研究生课表接口。
+      const isGraduate = await s.getIsGraduate();
+      let resp: CourseData[] | null = null;
+      let responseCode: number = -1;
+      let responseMsg: string = '';
+      if (isGraduate) {
+        const sid = await s.getStudentId();
+        const pwd = await s.getPassword();
+        const gradResult = await CourseApi.getGraduateCourseTable(sid, pwd);
+        responseCode = gradResult.code;
+        responseMsg = gradResult.msg;
+        resp = gradResult.data ?? null;
+        if (responseCode === 10000 || responseCode === 200 || responseCode === 0) {
+          resp = resp ?? [];
+        } else {
+          resp = null;
+        }
+      } else {
+        const undergradResult = await CourseApi.getCourseTable(semester, token);
+        responseCode = undergradResult.code;
+        responseMsg = undergradResult.msg;
+        resp = (responseCode === 10000 || responseCode === 200 || responseCode === 0)
+          ? (undergradResult.data ?? []) : null;
+      }
 
-      if (resp.code === 10000 || resp.code === 200 || resp.code === 0) {
-        const list: CourseData[] = resp.data ? resp.data : [];
+      if (responseCode === 10000 || responseCode === 200 || responseCode === 0) {
+        const list: CourseData[] = resp ? resp : [];
         const savedCourses = await s.getCurrentCourses();
         for (let i = 0; i < savedCourses.length; i++) {
           if (savedCourses[i].isPhysicalExperiment) list.push(savedCourses[i]);
@@ -384,15 +407,25 @@ export struct CoursePage {
         this.filterVisibleCourses();
 
         console.info(TAG, `loaded ${list.length} courses`);
-      } else if (resp.code === 401 || resp.code === 403 || resp.code === 10001 || resp.code === 30001) {
-        if (!retried && await TeachingSessionService.ensureSession(true)) {
+      } else if (responseCode === 401 || responseCode === 403 || responseCode === 10001 || responseCode === 30001) {
+        // 研究生的 401 只可能是学校网关/研究生系统拒绝了学号密码，
+        // 刷新本科教务 Token 没有任何作用，直接把后端给出的原因展示出来。
+        if (!retried && !isGraduate && await TeachingSessionService.ensureSession(true)) {
           await this.fetchCourses(true);
           return;
         }
         this.showCachedCourses();
-        if (this.store.courses.length === 0) this.errorMsg = '教务登录已失效，将在后台自动重试';
+        if (this.store.courses.length === 0) {
+          this.errorMsg = responseMsg || (isGraduate
+            ? '研究生课表加载失败，请确认使用统一身份认证密码登录'
+            : '教务登录已失效，正在后台自动重试');
+          if (!isGraduate) {
+            // 登录恢复与首次课表请求经常同时发生；之前这里直接停留错误页，不再重试。
+            this.scheduleSessionRestore();
+          }
+        }
       } else {
-        this.errorMsg = resp.msg || '课表获取失败';
+        this.errorMsg = responseMsg || '课表获取失败';
         // 有缓存数据时仍展示
         const cached = this.store.courses;
         if (cached.length > 0) {

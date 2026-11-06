@@ -12,6 +12,13 @@ const UG_COURSE_SEARCH_URL = 'https://lyzyy.love/UnderGraduate/Support/searchCou
 const UG_TERM_STARTDATE_URL = 'https://lyzyy.love/UnderGraduate/Support/getData';
 const UG_TERM_STARTDATE_BACKUP_URL = 'https://www.lyzyy.love/UnderGraduate/Support/getData';
 
+/**
+ * 研究生课表接口。研究生登录只返回个人信息，后端不接受 grad_ 前缀的伪 Token，
+ * 必须把学号与密码放在 POST 请求体里，由后端换取教务 Cookie。
+ */
+const GRAD_COURSE_TABLE_URL = 'https://lyzyy.love/Graduate/Support/getCoursesPage';
+const GRAD_COURSE_TABLE_BACKUP_URL = 'http://port.happylandmc.cc:52144/Graduate/Support/getCoursesPage';
+
 /** 一步式课表接口原始返回项。字段名与教务处接口保持一致。 */
 export interface CourseApiRawItem {
   className?: string;
@@ -40,6 +47,8 @@ export interface CourseApiRawItem {
 export interface CourseApiEnvelope {
   code?: number;
   msg?: string;
+  /** Go 后端统一用 message 字段；缺了它错误原因就只剩“课表获取失败”。 */
+  message?: string;
   data?: CourseApiRawItem[];
 }
 
@@ -65,6 +74,8 @@ export interface TermStartDateResult {
 }
 interface CourseHttpResult<T> { data: T; }
 interface CourseHeaders extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
+interface GraduateCourseBody extends Record<string, string> { username: string; password: string; }
+interface GraduateCourseHeaders extends Record<string, string> { Platform: string; Accept: string; }
 
 function asInt(value: string | number | undefined, fallback: number): number {
   if (value === undefined || value === '') {
@@ -76,6 +87,12 @@ function asInt(value: string | number | undefined, fallback: number): number {
 
 function firstValue(value: string | undefined): string {
   return value === undefined ? '' : value;
+}
+
+/** Go 后端把提示放在 message，旧接口放在 msg，两者都要读。 */
+function envelopeMessage(resp: CourseApiEnvelope | undefined): string {
+  if (!resp) return '';
+  return firstValue(resp.msg) || firstValue(resp.message);
 }
 
 function normalizeItem(raw: CourseApiRawItem): CourseData {
@@ -178,20 +195,51 @@ export class CourseApi {
         }
         return {
           code: resp.code !== undefined ? resp.code : 10000,
-          msg: firstValue(resp.msg),
+          msg: envelopeMessage(resp),
           data: list,
         };
       }
 
       return {
         code: resp && resp.code !== undefined ? resp.code : -1,
-        msg: resp && resp.msg !== undefined ? resp.msg : '请求失败',
+        msg: envelopeMessage(resp) || '请求失败',
         data: [],
       };
     } catch {
       console.warn('CourseApi', 'getCourseTable error');
       return { code: -1, msg: '网络请求失败', data: [] };
     }
+  }
+
+  /**
+   * 研究生课表。POST 学号与密码，后端用它们登录研究生系统并解析课表。
+   */
+  static async getGraduateCourseTable(username: string, password: string): Promise<BaseResponse<CourseData[]>> {
+    const body: GraduateCourseBody = { username: username, password: password };
+    const headers: GraduateCourseHeaders = { Platform: 'android', Accept: 'application/json' };
+    let lastMessage: string = '网络请求失败';
+    const urls: string[] = [GRAD_COURSE_TABLE_URL, GRAD_COURSE_TABLE_BACKUP_URL];
+    for (let i = 0; i < urls.length; i++) {
+      try {
+        const result = await HttpRequest.postJson<CourseApiEnvelope>(urls[i], body, headers, 45000);
+        const resp = result.data;
+        if (resp && (resp.code === 10000 || resp.code === 200 || resp.code === 0) && resp.data) {
+          const list: CourseData[] = [];
+          for (let j = 0; j < resp.data.length; j++) {
+            if (!isPhysicalExperimentItem(resp.data[j])) list.push(normalizeItem(resp.data[j]));
+          }
+          return { code: resp.code !== undefined ? resp.code : 10000, msg: envelopeMessage(resp), data: list };
+        }
+        lastMessage = envelopeMessage(resp) || '课表获取失败';
+        // 业务失败（非网络失败）换节点也没有意义，直接返回给页面展示。
+        if (resp && resp.code !== undefined) {
+          return { code: resp.code, msg: lastMessage, data: [] };
+        }
+      } catch {
+        console.warn('CourseApi', 'getGraduateCourseTable request failed');
+      }
+    }
+    return { code: -1, msg: lastMessage, data: [] };
   }
 
   /**

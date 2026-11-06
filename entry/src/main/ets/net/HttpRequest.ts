@@ -58,6 +58,8 @@ export class HttpRequest {
       isForm?: boolean;
       /** 多步骤会话必须固定在创建会话的节点，不参与故障切换。 */
       pinBackend?: boolean;
+      /** 自定义读取超时；研究生登录/课表要后端现登录，耗时明显长于普通接口。 */
+      readTimeoutMs?: number;
     },
   ): Promise<RequestResult<T>> {
     {
@@ -105,7 +107,7 @@ export class HttpRequest {
             expectDataType: options?.expectDataType ?? http.HttpDataType.STRING,
             // 多节点按顺序尝试，单节点连接超时不宜过长。
             connectTimeout: 10000,
-            readTimeout: 20000
+            readTimeout: options?.readTimeoutMs ?? 20000
           });
           console.info(TAG, `${method} ${target.url} responseCode=${response.responseCode}`);
           const unavailable = response.responseCode === 502 || response.responseCode === 503 || response.responseCode === 504;
@@ -149,11 +151,13 @@ export class HttpRequest {
     url: string,
     body: Record<string, string>,
     extraHeaders?: Record<string, string>,
+    readTimeoutMs?: number,
   ): Promise<RequestResult<T>> {
     return HttpRequest.request<T>(url, 'POST', {
       body,
       headers: extraHeaders,
-      isForm:false
+      isForm:false,
+      readTimeoutMs
     });
   }
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 业务 API 层，对应原 Android 端 NewApiHelper 中的部分方法
  * 仅包含 LaunchActivity 涉及的接口
  */
@@ -18,6 +18,8 @@ export const UG_LOGIN_V2 = 'https://lyzyy.love:8081/UnderGraduate/Support/loginG
 const UG_LOGIN_V2_BACKUP = 'https://www.lyzyy.love/UnderGraduate/Support/loginGetCookie';
 const GO_BACKUP_BASE = 'http://port.happylandmc.cc:52144';
 const UG_LOGIN_BACKEND_BACKUP = `${GO_BACKUP_BASE}/UnderGraduate/Support/loginGetCookie`;
+// 研究生登录：首选 Go 后端（与课表/培养方案同一套凭据校验），旧 8009 服务仅作回退。
+export const GRADUATE_LOGIN_GO = 'https://lyzyy.love:8081/Graduate/Support/loginPage';
 export const GRADUATE_LOGIN_V2 = 'https://www.lyzyy.love:8009/personal-info';
 const GRADUATE_LOGIN_V2_BACKUP = 'https://lyzyy.love:8009/personal-info';
 export const APP_AUTH_LOGIN = 'https://lyzyy.love:8081/api/v1/auth/login';
@@ -31,6 +33,36 @@ interface UndergradLoginResponse {
   message?: string;
   data?: TokenDataContent | string;
   dataObject?: TokenDataContent;
+}
+
+/**
+ * 研究生登录响应的原始形状：
+ * - Go 后端（Graduate/Support/loginPage）：data 直接是学生资料字段；
+ * - 旧 8009 服务：data 是 { status, message, login_error, data } 包装层，失败时外层 code 仍是 200。
+ */
+interface GraduateLoginPayload {
+  studentNumber?: string;
+  name?: string;
+  college?: string;
+  major?: string;
+  clazz?: string;
+  birthday?: string;
+  sex?: string;
+  nationality?: string;
+  hometown?: string;
+  idNumber?: string;
+  status?: string;
+  message?: string;
+  login_error?: string;
+  data?: GraduateLoginPayload;
+}
+
+/** Go 后端把提示放在 message 而不是 msg，两种都要读。 */
+interface GraduateLoginResponse<T> {
+  code: number;
+  msg?: string;
+  message?: string;
+  data?: T;
 }
 
 export class ApiService {
@@ -119,19 +151,75 @@ export class ApiService {
         idNumber: '420106200301010000',
       });
     }
+    const body: Record<string, string> = { student_id: studentId, password };
+    const headers: Record<string, string> = { Platform: 'android' };
+    let primary: BaseResponse<GraduateLoginDataContent> = { code: -1, msg: '登录请求失败' };
     try {
-      const result = await HttpRequest.postJson<BaseResponse<GraduateLoginDataContent>>(
-        GRADUATE_LOGIN_V2,
-        { student_id: studentId, password },
-      );
-      return result.data;
+      // 研究生课表需要 Go 后端用同一份学号密码换取研究生系统 Cookie，
+      // 从同一入口登录可以保证「能登录」与「能取课表」的凭据口径一致。
+      const result = await HttpRequest.postJson<GraduateLoginResponse<GraduateLoginPayload>>(
+        GRADUATE_LOGIN_GO, body, headers, 45000);
+      primary = ApiService.normalizeGraduateLogin(result.data);
+      if (primary.code === 200 || String(primary.code) === '200') return primary;
+      console.warn('ApiService', `go graduate login failed: ${primary.msg}`);
     } catch {
-      const result = await HttpRequest.postJson<BaseResponse<GraduateLoginDataContent>>(
-        GRADUATE_LOGIN_V2_BACKUP,
-        { student_id: studentId, password },
-      );
-      return result.data;
+      console.warn('ApiService', 'go graduate login request error');
     }
+
+    // 兼容旧 8009 个人信息服务：它只做研究生系统登录，失败时外层仍返回 200。
+    const legacyUrls: string[] = [GRADUATE_LOGIN_V2, GRADUATE_LOGIN_V2_BACKUP];
+    for (let i = 0; i < legacyUrls.length; i++) {
+      try {
+        const legacy = await HttpRequest.postJson<GraduateLoginResponse<GraduateLoginPayload>>(legacyUrls[i], body);
+        const normalized = ApiService.normalizeGraduateLogin(legacy.data);
+        if (normalized.code === 200 || String(normalized.code) === '200') return normalized;
+      } catch {
+        console.warn('ApiService', 'legacy graduate login request failed');
+      }
+    }
+    return primary;
+  }
+
+  /** 把两种后端的研究生登录响应归一成 BaseResponse<GraduateLoginDataContent>。 */
+  private static normalizeGraduateLogin(
+    resp: GraduateLoginResponse<GraduateLoginPayload> | undefined,
+  ): BaseResponse<GraduateLoginDataContent> {
+    if (!resp) return { code: -1, msg: '登录失败' };
+    const payload = resp.data;
+    const successCode = resp.code === 200 || resp.code === 0 || resp.code === 10000;
+    const respMsg = (resp.msg || resp.message || '').trim();
+    if (payload) {
+      const nested = payload.data;
+      let profile: GraduateLoginPayload | undefined = undefined;
+      if (nested && (nested.studentNumber || nested.name)) {
+        profile = nested;
+      } else if (payload.studentNumber || payload.name) {
+        profile = payload;
+      }
+      if (successCode && profile) {
+        return { code: 200, msg: respMsg || '登录成功', data: ApiService.toGraduateContent(profile) };
+      }
+      const failureMsg = (payload.login_error || payload.message || '').trim();
+      if (!successCode || payload.status === 'failure' || failureMsg) {
+        return { code: successCode ? 500 : resp.code, msg: failureMsg || respMsg || '登录失败' };
+      }
+    }
+    return { code: resp.code, msg: respMsg || '登录失败' };
+  }
+
+  private static toGraduateContent(profile: GraduateLoginPayload): GraduateLoginDataContent {
+    return {
+      studentNumber: profile.studentNumber ?? '',
+      name: profile.name ?? '',
+      college: profile.college ?? '',
+      major: profile.major ?? '',
+      clazz: profile.clazz ?? '',
+      birthday: profile.birthday ?? '',
+      sex: profile.sex ?? '',
+      nationality: profile.nationality ?? '',
+      hometown: profile.hometown ?? '',
+      idNumber: profile.idNumber ?? '',
+    };
   }
 
   /** App Auth 登录 */
