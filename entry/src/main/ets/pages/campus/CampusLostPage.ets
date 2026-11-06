@@ -14,6 +14,8 @@ struct CampusLostPage {
   @State private currentPage: number = 1;
   @State private hasMore: boolean = true;
   private readonly pageSize: number = 20;
+  // 每次刷新递增；旧的分页/首屏响应只有在代次未变时才允许写回列表和页码。
+  private requestGeneration: number = 0;
   @State private searching: boolean = false;
   @State private query: string = "";
   @State private filterOpen: boolean = false;
@@ -21,17 +23,25 @@ struct CampusLostPage {
   @State private activeFilter: string = "全部";
 
   private async loadAvatar(): Promise<void> { this.avatarUrl = await AppStorage.getInstance().getAvatarUrl(); }
-  aboutToAppear(): void { this.load(); this.loadAvatar(); }
+  aboutToAppear(): void { this.loadAvatar(); }
+  onPageShow(): void { this.load(); }
   private async load(): Promise<void> {
+    const generation = ++this.requestGeneration;
     this.loading = true;
+    this.loadingMore = false;
+    this.posts = [];
     this.currentPage = 1;
     this.hasMore = true;
     try {
       const firstPage = await CampusWallApi.list(1, 'lost');
+      if (generation !== this.requestGeneration) return;
       this.posts = firstPage;
       this.hasMore = firstPage.length >= this.pageSize;
     }
-    catch { promptAction.showToast({ message: '失物信息加载失败', duration: 1500 }); }
+    catch {
+      if (generation !== this.requestGeneration) return;
+      promptAction.showToast({ message: '失物信息加载失败', duration: 1500 });
+    }
     this.loading = false;
   }
   private appendUniquePosts(current: CampusWallPost[], incoming: CampusWallPost[]): CampusWallPost[] {
@@ -48,14 +58,19 @@ struct CampusLostPage {
   }
   private async loadMore(): Promise<void> {
     if (this.loading || this.loadingMore || !this.hasMore) return;
+    const generation = this.requestGeneration;
     this.loadingMore = true;
     const nextPage = this.currentPage + 1;
     try {
       const nextPosts = await CampusWallApi.list(nextPage, 'lost');
+      if (generation !== this.requestGeneration) return;
       this.posts = this.appendUniquePosts(this.posts, nextPosts);
       this.currentPage = nextPage;
       this.hasMore = nextPosts.length >= this.pageSize;
-    } catch { promptAction.showToast({ message: '加载更多失败', duration: 1200 }); }
+    } catch {
+      if (generation !== this.requestGeneration) return;
+      promptAction.showToast({ message: '加载更多失败', duration: 1200 });
+    }
     this.loadingMore = false;
   }
   private matchScore(post: CampusWallPost): number { const q = this.query.trim().toLowerCase(); if (!q) return 1; const text = `${post.title || ""}${post.content || ""}${post.displayName || ""}${post.realName || ""}${post.college || ""}`.toLowerCase(); let score = 0; for (let i = 0; i < q.length; i++) { if (text.includes(q.charAt(i))) score++; } return score; }

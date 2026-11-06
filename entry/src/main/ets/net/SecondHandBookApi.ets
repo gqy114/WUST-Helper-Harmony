@@ -3,7 +3,16 @@ import { AppStorage } from '../store/AppStorage';
 import { CampusWallApi, CampusWallBookTrade, CampusWallPost, CampusWallReply, decodeHtmlEntities } from './CampusWallApi';
 export interface SecondhandReply { id?: number; studentId?: string; displayName?: string; realName?: string; avatarUrl?: string; college?: string; major?: string; content?: string; createdAt?: string | number; redFlowers?: number; }
 export interface SecondhandBook { id?: number; isbn?: string; title?: string; author?: string; publisher?: string; edition?: string; category?: string; coverUrl?: string; listingCount?: number; priceMin?: number; priceMax?: number; priceAvg?: number; }
-export interface SecondhandListing { id?: number; bookId?: number; sellerId?: string; price?: number; sellPrice?: number | string; salePrice?: number | string; bookPrice?: number | string; amount?: number | string; condition?: string; bookCondition?: string; note?: string; images?: string[]; contact?: string; status?: string; createdAt?: number | string; bookTitle?: string; bookAuthor?: string; bookPublisher?: string; bookEdition?: string; bookIsbn?: string; bookCover?: string; campus?: string; campusName?: string; major?: string; majors?: string[] | string; sellerName?: string; displayName?: string; realName?: string; sellerAvatar?: string; avatarUrl?: string; college?: string; redFlowers?: number; replies?: SecondhandReply[]; source?: string; communityPostId?: number; book?: SecondhandBook; }
+export interface SecondhandContactFields {
+  contact?: string; contactType?: string; contactValue?: string; contactInformation?: string;
+  contact_type?: string; contact_value?: string; contact_information?: string;
+  contactMethod?: string; contactWay?: string; contactContent?: string; contactAccount?: string;
+  contact_method?: string; contact_way?: string; contact_content?: string; contact_account?: string;
+  bookContact?: string; bookContactType?: string; book_contact?: string; book_contact_type?: string;
+  sellerContact?: string; seller_contact?: string; phone?: string; mobile?: string; qq?: string;
+  wechat?: string; weChat?: string;
+}
+export interface SecondhandListing extends SecondhandContactFields { id?: number; bookId?: number; sellerId?: string; price?: number; sellPrice?: number | string; salePrice?: number | string; bookPrice?: number | string; amount?: number | string; condition?: string; bookCondition?: string; note?: string; images?: string[]; status?: string; createdAt?: number | string; bookTitle?: string; bookAuthor?: string; bookPublisher?: string; bookEdition?: string; bookIsbn?: string; bookCover?: string; campus?: string; campusName?: string; major?: string; majors?: string[] | string; sellerName?: string; displayName?: string; realName?: string; sellerAvatar?: string; avatarUrl?: string; college?: string; redFlowers?: number; replies?: SecondhandReply[]; source?: string; communityPostId?: number; book?: SecondhandBook; extra?: string; seller?: SecondhandContactFields; trade?: SecondhandContactFields; contactInfo?: string | SecondhandContactFields; contact_info?: string | SecondhandContactFields; }
 export interface SecondhandDetail { book?: SecondhandBook; listing?: SecondhandListing; replies?: SecondhandReply[]; }
 interface Response<T> { data?: T; code?: number; message?: string; }
 interface Headers extends Record<string, string> { Authorization: string; Platform: string; Accept: string; }
@@ -15,7 +24,8 @@ type MajorValue = string | MajorItem;
 interface MajorPage { items?: MajorValue[]; list?: MajorValue[]; majors?: MajorValue[]; records?: MajorValue[]; data?: MajorValue[]; }
 interface ListingPage { items?: SecondhandListing[]; list?: SecondhandListing[]; listings?: SecondhandListing[]; records?: SecondhandListing[]; content?: SecondhandListing[]; data?: SecondhandListing[]; }
 interface BookDetailData { book?: SecondhandBook; listings?: SecondhandListing[]; listing?: SecondhandListing; replies?: SecondhandReply[]; }
-interface BookTradeExtra {
+interface ListingDetailData extends SecondhandListing { listing?: SecondhandListing; item?: SecondhandListing; }
+interface BookTradeExtra extends SecondhandContactFields {
   id?: number; listingId?: number; listing_id?: number; bookId?: number; book_id?: number;
   bookTrade?: CampusWallBookTrade; bookTradeInfo?: CampusWallBookTrade;
   price?: number | string; condition?: string; campus?: string; campusName?: string; major?: string;
@@ -25,17 +35,16 @@ interface BookTradeExtra {
   salePrice?: number | string; sale_price?: number | string; bookCondition?: string; book_condition?: string;
   applicableMajors?: string[] | string; applicable_majors?: string[] | string;
   tradeCampus?: string; trade_campus?: string; tradePlace?: string; trade_place?: string;
-  contactValue?: string; contact_value?: string; contact_type?: string;
+  contactInfo?: string | SecondhandContactFields; contact_info?: string | SecondhandContactFields;
+  seller?: SecondhandContactFields; trade?: SecondhandContactFields;
   sellingPrice?: number | string; selling_price?: number | string; priceYuan?: number | string; price_yuan?: number | string;
   priceCents?: number | string; price_cents?: number | string;
   amount?: number | string; bookPublisher?: string; bookEdition?: string; bookIsbn?: string;
   publisherName?: string; editionInfo?: string; isbn13?: string; description?: string;
   tradeLocation?: string; trade_location?: string; contactMethod?: string; contact_method?: string;
-  contactAccount?: string; contact_account?: string;
   sellPrice?: number | string; sell_price?: number | string; bookPrice?: number | string; book_price?: number | string;
   bookMajors?: string[] | string; book_majors?: string[] | string; bookCampus?: string; book_campus?: string;
-  bookLocation?: string; book_location?: string; bookContact?: string; book_contact?: string;
-  bookContactType?: string; book_contact_type?: string;
+  bookLocation?: string; book_location?: string;
 }
 export class SecondHandBookApi {
   private static async headers(): Promise<Headers> { const token = await AppStorage.getInstance().getAppAuthAccessToken(); return { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' }; }
@@ -61,6 +70,104 @@ export class SecondHandBookApi {
 
   static decoded(value?: string): string { return decodeHtmlEntities(value || ''); }
 
+  private static contactPair(fields?: SecondhandContactFields | CampusWallBookTrade | CampusWallPost): string[] {
+    if (!fields) return ['', ''];
+    const value = fields.contact || fields.contactValue || fields.contact_value || fields.contactInformation ||
+      fields.contact_information || fields.contactContent || fields.contact_content || fields.contactAccount ||
+      fields.contact_account || fields.bookContact || fields.book_contact || fields.sellerContact ||
+      fields.seller_contact || fields.phone || fields.mobile || fields.qq || fields.wechat || fields.weChat || '';
+    let type = fields.contactType || fields.contact_type || fields.contactMethod || fields.contact_method ||
+      fields.contactWay || fields.contact_way || fields.bookContactType || fields.book_contact_type || '';
+    if (!type && fields.qq) type = 'QQ';
+    if (!type && (fields.wechat || fields.weChat)) type = '微信';
+    if (!type && (fields.phone || fields.mobile)) type = '手机号';
+    return [SecondHandBookApi.decoded(type).trim(), SecondHandBookApi.decoded(value).trim()];
+  }
+
+  private static contactInfoPair(info?: string | SecondhandContactFields): string[] {
+    if (!info) return ['', ''];
+    if (typeof info === 'string') return ['', SecondHandBookApi.decoded(info).trim()];
+    return SecondHandBookApi.contactPair(info);
+  }
+
+  private static formatContact(pairs: string[][]): string {
+    let type = '';
+    let value = '';
+    for (const pair of pairs) {
+      if (value || !pair[1]) continue;
+      value = pair[1];
+      type = pair[0] || '';
+    }
+    if (!value) return '';
+    if (!type) {
+      // 类型与号码可能分开存放（例如 post.contactType='QQ'、extra.contactValue='12345678'）。
+      // 只从“有类型没有号码”的来源补齐类型：这些来源没有自己的号码，
+      // 不会把另一种联系方式（如另一个卖家的微信）的类型误配给当前号码。
+      for (const pair of pairs) {
+        if (!pair[1] && pair[0]) { type = pair[0]; break; }
+      }
+    }
+    if (!type || value.indexOf('：') >= 0 || value.indexOf(':') >= 0) return value;
+    return `${type}：${value}`;
+  }
+
+  private static normalizedContact(item: SecondhandListing): string {
+    let extra: BookTradeExtra = {};
+    if (item.extra) {
+      try { extra = JSON.parse(item.extra) as BookTradeExtra; } catch {}
+    }
+    return SecondHandBookApi.formatContact([
+      SecondHandBookApi.contactPair(item), SecondHandBookApi.contactInfoPair(item.contactInfo),
+      SecondHandBookApi.contactInfoPair(item.contact_info), SecondHandBookApi.contactPair(item.seller),
+      SecondHandBookApi.contactPair(item.trade), SecondHandBookApi.contactPair(extra),
+      SecondHandBookApi.contactInfoPair(extra.contactInfo), SecondHandBookApi.contactInfoPair(extra.contact_info),
+      SecondHandBookApi.contactPair(extra.seller), SecondHandBookApi.contactPair(extra.trade),
+      SecondHandBookApi.contactPair(extra.bookTrade), SecondHandBookApi.contactPair(extra.bookTradeInfo)
+    ]);
+  }
+
+  private static text(value?: string): string { return (value || '').trim(); }
+
+  // 详情接口可能只返回部分字段（例如仅补回联系方式），直接替换会把列表里已有的
+  // id、sellerId、价格和书籍信息清空。这里逐字段合并：详情有值则覆盖，无值保留列表数据。
+  private static mergeListing(base: SecondhandListing, incoming?: SecondhandListing): SecondhandListing {
+    if (!incoming) return base;
+    const merged: SecondhandListing = base;
+    merged.id = (incoming.id || 0) > 0 ? incoming.id : merged.id;
+    merged.bookId = (incoming.bookId || 0) > 0 ? incoming.bookId : merged.bookId;
+    merged.sellerId = SecondHandBookApi.text(incoming.sellerId) || merged.sellerId;
+    merged.price = incoming.price !== undefined && incoming.price !== null ? incoming.price : merged.price;
+    merged.condition = SecondHandBookApi.text(incoming.condition) || merged.condition;
+    merged.note = SecondHandBookApi.text(incoming.note) || merged.note;
+    merged.status = SecondHandBookApi.text(incoming.status) || merged.status;
+    merged.images = (incoming.images && incoming.images.length > 0) ? incoming.images : merged.images;
+    merged.createdAt = incoming.createdAt !== undefined && incoming.createdAt !== null ? incoming.createdAt : merged.createdAt;
+    merged.bookTitle = SecondHandBookApi.text(incoming.bookTitle) || merged.bookTitle;
+    merged.bookAuthor = SecondHandBookApi.text(incoming.bookAuthor) || merged.bookAuthor;
+    merged.bookPublisher = SecondHandBookApi.text(incoming.bookPublisher) || merged.bookPublisher;
+    merged.bookEdition = SecondHandBookApi.text(incoming.bookEdition) || merged.bookEdition;
+    merged.bookIsbn = SecondHandBookApi.text(incoming.bookIsbn) || merged.bookIsbn;
+    merged.bookCover = SecondHandBookApi.text(incoming.bookCover) || merged.bookCover;
+    merged.campus = SecondHandBookApi.text(incoming.campus) || merged.campus;
+    merged.campusName = SecondHandBookApi.text(incoming.campusName) || merged.campusName;
+    merged.major = SecondHandBookApi.text(incoming.major) || merged.major;
+    merged.majors = incoming.majors !== undefined ? incoming.majors : merged.majors;
+    merged.sellerName = SecondHandBookApi.text(incoming.sellerName) || merged.sellerName;
+    merged.displayName = SecondHandBookApi.text(incoming.displayName) || merged.displayName;
+    merged.realName = SecondHandBookApi.text(incoming.realName) || merged.realName;
+    merged.sellerAvatar = SecondHandBookApi.text(incoming.sellerAvatar) || merged.sellerAvatar;
+    merged.avatarUrl = SecondHandBookApi.text(incoming.avatarUrl) || merged.avatarUrl;
+    merged.college = SecondHandBookApi.text(incoming.college) || merged.college;
+    if (merged.redFlowers === undefined) merged.redFlowers = incoming.redFlowers;
+    merged.source = SecondHandBookApi.text(incoming.source) || merged.source;
+    merged.communityPostId = (incoming.communityPostId || 0) > 0 ? incoming.communityPostId : merged.communityPostId;
+    merged.extra = SecondHandBookApi.text(incoming.extra) || merged.extra;
+    merged.book = incoming.book || merged.book;
+    merged.contact = SecondHandBookApi.normalizedContact(incoming) || merged.contact;
+    merged.replies = (incoming.replies && incoming.replies.length > 0) ? incoming.replies : merged.replies;
+    return merged;
+  }
+
   static conditionLabel(value?: string): string {
     const condition = (value || '').trim().toLowerCase();
     if (condition === 'new' || condition === 'brand_new') return '全新';
@@ -83,6 +190,7 @@ export class SecondHandBookApi {
     }
     item.price = SecondHandBookApi.numberValue(item.price ?? item.sellPrice ?? item.salePrice ?? item.bookPrice ?? item.amount);
     item.condition = item.condition || item.bookCondition;
+    item.contact = SecondHandBookApi.normalizedContact(item);
     const majorValue = item.majors || item.major;
     item.major = Array.isArray(majorValue) ? majorValue.join('、') : majorValue;
     item.bookTitle = SecondHandBookApi.decoded(item.bookTitle);
@@ -127,9 +235,11 @@ export class SecondHandBookApi {
       avatarUrl: reply.avatarUrl, college: reply.college, major: reply.major, content: SecondHandBookApi.decoded(reply.content),
       createdAt: reply.createdAt, redFlowers: reply.redFlowers
     }));
-    const contactValue = trade.contact || post.contact || extra.contact || extra.bookContact || extra.book_contact || extra.contactValue || extra.contact_value || extra.contactAccount || extra.contact_account || '';
-    const contactType = trade.contactType || post.contactType || extra.contactType || extra.bookContactType || extra.book_contact_type || extra.contact_type || extra.contactMethod || extra.contact_method || '';
-    const contact = contactType && contactValue ? `${contactType}：${contactValue}` : contactValue;
+    const contact = SecondHandBookApi.formatContact([
+      SecondHandBookApi.contactPair(trade), SecondHandBookApi.contactPair(post), SecondHandBookApi.contactPair(extra),
+      SecondHandBookApi.contactInfoPair(extra.contactInfo), SecondHandBookApi.contactInfoPair(extra.contact_info),
+      SecondHandBookApi.contactPair(extra.seller), SecondHandBookApi.contactPair(extra.trade)
+    ]);
     const cents = trade.priceCents ?? post.priceCents ?? extra.priceCents ?? extra.price_cents;
     const price = cents !== undefined ? SecondHandBookApi.numberValue(cents) / 100 :
       SecondHandBookApi.numberValue(trade.price ?? trade.sellPrice ?? trade.salePrice ?? trade.bookPrice ?? post.price ?? post.sellPrice ?? post.salePrice ?? post.bookPrice ?? post.sellingPrice ?? extra.price ?? extra.bookPrice ?? extra.book_price ?? extra.sellPrice ?? extra.sell_price ?? extra.salePrice ?? extra.sale_price ?? extra.sellingPrice ?? extra.selling_price ?? extra.priceYuan ?? extra.price_yuan ?? extra.amount);
@@ -165,14 +275,34 @@ export class SecondHandBookApi {
     let current: SecondhandListing = listing;
     let replies: SecondhandReply[] = listing.replies || [];
     let book: SecondhandBook | undefined = undefined;
+    if ((listing.id || 0) > 0) {
+      try {
+        // 列表接口可能为保护卖家隐私省略联系方式，详情接口会在登录后返回完整交易资料。
+        // 该请求以 URL 中的 listing.id 定位商品，因此只做字段合并，不整体替换。
+        const response = await HttpRequest.get<Response<ListingDetailData>>(
+          `https://lyzyy.love:8081/api/v1/secondhand/listings/${listing.id}`, headers);
+        const data = response.data.data;
+        const detailed = data?.listing || data?.item || data;
+        // 详情里若显式给出了不同的 ID，说明返回的不是当前商品，直接忽略。
+        if (detailed && (!(detailed.id || 0) || detailed.id === listing.id)) {
+          current = SecondHandBookApi.mergeListing(current, detailed);
+        }
+      } catch {}
+    }
     if ((listing.bookId || 0) > 0) {
       try {
         const response = await HttpRequest.get<Response<BookDetailData>>(
           `https://lyzyy.love:8081/api/v1/secondhand/books/${listing.bookId}`, headers);
         const data = response.data.data;
         book = data?.book;
-        const matched = (data?.listings || []).find((item: SecondhandListing) => item.id === listing.id);
-        if (matched) current = matched;
+        // 书籍详情返回的是同一本书下的商品集合，单条 listing 不保证就是当前商品，
+        // 必须核对 ID，否则会把另一位卖家的联系方式、价格错当成本商品的。
+        const single = data?.listing;
+        const matched = (data?.listings || []).find((item: SecondhandListing) => item.id === listing.id) ||
+          ((single && single.id === listing.id) ? single : undefined);
+        if (matched) {
+          current = SecondHandBookApi.mergeListing(current, matched);
+        }
       } catch {}
     }
     if ((listing.id || 0) > 0) {
@@ -189,7 +319,10 @@ export class SecondHandBookApi {
       } catch (error) {
         // Older backends may not have the replies endpoint. A normal details
         // load can still show the book, but a post-send refresh must report it.
-        if (requireReplies) throw error;
+        if (requireReplies) {
+          const message = error instanceof Error && error.message ? error.message : '留言刷新失败';
+          throw new Error(message);
+        }
       }
     }
     if (book) {

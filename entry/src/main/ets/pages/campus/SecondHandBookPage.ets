@@ -16,6 +16,8 @@ struct SecondHandBookPage {
   @State private nativeHasMore: boolean = true;
   @State private communityHasMore: boolean = true;
   private readonly pageSize: number = 20;
+  // 每次刷新递增；旧的分页/首屏响应只有在代次未变时才允许写回列表和页码。
+  private requestGeneration: number = 0;
   @State private avatarUrl: string = '';
   @State private selfMajor: string = '';
   @State private majors: string[] = [];
@@ -31,7 +33,8 @@ struct SecondHandBookPage {
   @State private activeSort: string = '默认排序';
   @State private pendingSort: string = '默认排序';
 
-  aboutToAppear(): void { this.load(); this.loadProfile(); this.loadMajors(); }
+  aboutToAppear(): void { this.loadProfile(); this.loadMajors(); }
+  onPageShow(): void { this.load(); }
 
   private async loadProfile(): Promise<void> {
     const storage = AppStorage.getInstance();
@@ -44,7 +47,10 @@ struct SecondHandBookPage {
   }
 
   private async load(): Promise<void> {
+    const generation = ++this.requestGeneration;
     this.loading = true;
+    this.loadingMore = false;
+    this.listings = [];
     this.nativePage = 1;
     this.communityPage = 1;
     this.nativeHasMore = true;
@@ -55,7 +61,9 @@ struct SecondHandBookPage {
       listings = await SecondHandBookApi.feed(this.query, '', '', 1, this.pageSize);
       listings.forEach((item: SecondhandListing) => { if (!item.source) item.source = 'secondhand'; });
     } catch {}
+    if (generation !== this.requestGeneration) return;
     try { community = await SecondHandBookApi.communityFeed(1); } catch {}
+    if (generation !== this.requestGeneration) return;
     this.nativeHasMore = listings.length >= this.pageSize;
     this.communityHasMore = community.length >= this.pageSize;
     const keyword = this.query.trim().toLowerCase();
@@ -84,29 +92,38 @@ struct SecondHandBookPage {
 
   private async loadMore(): Promise<void> {
     if (this.loading || this.loadingMore || (!this.nativeHasMore && !this.communityHasMore)) return;
+    const generation = this.requestGeneration;
     this.loadingMore = true;
     let incoming: SecondhandListing[] = [];
     if (this.nativeHasMore) {
       const nextNativePage = this.nativePage + 1;
       try {
         const nativeItems = await SecondHandBookApi.feed(this.query, '', '', nextNativePage, this.pageSize);
+        if (generation !== this.requestGeneration) return;
         nativeItems.forEach((item: SecondhandListing) => { if (!item.source) item.source = 'secondhand'; });
         incoming = incoming.concat(nativeItems);
         this.nativePage = nextNativePage;
         this.nativeHasMore = nativeItems.length >= this.pageSize;
-      } catch { this.nativeHasMore = false; }
+      } catch {
+        if (generation !== this.requestGeneration) return;
+        this.nativeHasMore = false;
+      }
     }
     if (this.communityHasMore) {
       const nextCommunityPage = this.communityPage + 1;
       try {
         const communityItems = await SecondHandBookApi.communityFeed(nextCommunityPage);
+        if (generation !== this.requestGeneration) return;
         const keyword = this.query.trim().toLowerCase();
         const matched = keyword.length === 0 ? communityItems : communityItems.filter((item: SecondhandListing) =>
           `${item.bookTitle || ''} ${item.note || ''} ${item.bookAuthor || ''}`.toLowerCase().indexOf(keyword) >= 0);
         incoming = incoming.concat(matched);
         this.communityPage = nextCommunityPage;
         this.communityHasMore = communityItems.length >= this.pageSize;
-      } catch { this.communityHasMore = false; }
+      } catch {
+        if (generation !== this.requestGeneration) return;
+        this.communityHasMore = false;
+      }
     }
     this.listings = this.appendUniqueListings(this.listings, incoming);
     this.loadingMore = false;
