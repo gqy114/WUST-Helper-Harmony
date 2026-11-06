@@ -10,6 +10,7 @@ import { AppStorage } from '../../store/AppStorage';
 import { ApiService } from '../../net/ApiService';
 import { RouterUtil } from '../../utils/RouterUtil';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
+import { LaunchPrefetchService } from '../../service/LaunchPrefetchService';
 
 const TAG = 'LaunchPage';
 
@@ -39,9 +40,11 @@ struct LaunchPage {
   onPageShow(): void {
     // 对应 onResume()
     console.info(TAG, 'onPageShow');
+    // 启动页展示期间并行预取第一屏数据（课表或主页），进入后不再空等网络。
+    LaunchPrefetchService.start();
     if (!this.navigationScheduled) {
       this.navigationScheduled = true;
-      // 给开屏图保留完整展示时间，再进入登录页或主页。
+      // 给开屏图保留完整展示时间，再进入登录页或主页；期间点击任意位置可立即跳过。
       setTimeout(() => this.handleNavigation(), 1500);
     }
   }
