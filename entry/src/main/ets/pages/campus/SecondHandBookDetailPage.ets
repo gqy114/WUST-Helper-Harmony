@@ -53,23 +53,9 @@ struct SecondHandBookDetailPage {
     try {
       if (this.communityPostId > 0 || this.listing.source === 'community') {
         if (this.communityPostId <= 0) throw new Error('帖子信息不完整');
-        const previous: SecondhandListing = this.listing;
         const post: CampusWallPost = await CampusWallApi.detail(this.communityPostId);
         if (!post.id || post.id !== this.communityPostId) throw new Error('帖子详情加载失败');
-        const loaded: SecondhandListing = SecondHandBookApi.fromCommunityPost(post);
-        const linkedListingId = post.listingId || post.bookTrade?.listingId || post.bookTrade?.id ||
-          post.bookTradeInfo?.listingId || post.bookTradeInfo?.id || 0;
-        if (linkedListingId > 0) {
-          loaded.id = linkedListingId;
-          const nativeDetail: SecondhandDetail = await SecondHandBookApi.detail(loaded);
-          loaded.contact = (nativeDetail.listing?.contact || loaded.contact || '').trim();
-        }
-        // 部分详情接口不会重复返回交易联系方式，不能因此覆盖列表页已取得的数据。
-        loaded.contact = (loaded.contact || '').trim() || previous.contact;
-        loaded.sellerId = loaded.sellerId || previous.sellerId;
-        loaded.source = loaded.source || previous.source;
-        loaded.communityPostId = loaded.communityPostId || previous.communityPostId;
-        this.listing = loaded;
+        this.listing = SecondHandBookApi.fromCommunityPost(post);
         this.communityPostId = post.id || this.communityPostId;
         this.book = { title: this.listing.bookTitle, author: this.listing.bookAuthor,
           publisher: this.listing.bookPublisher, edition: this.listing.bookEdition,
@@ -145,14 +131,6 @@ struct SecondHandBookDetailPage {
     const separator = value.indexOf('：') >= 0 ? '：' : ':';
     const parts = value.split(separator);
     return parts.length > 1 ? [parts[0].trim(), parts.slice(1).join(separator).trim()] : ['联系方式', value];
-  }
-
-  private openSellerContact(): void {
-    if (!(this.listing.contact || '').trim()) {
-      promptAction.showToast({ message: '卖家暂未公开联系方式', duration: 1500 });
-      return;
-    }
-    this.contactOpen = true;
   }
 
   private async copyContact(): Promise<void> {
@@ -346,8 +324,9 @@ struct SecondHandBookDetailPage {
         Row() {
           Image(this.myAvatar || $r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).objectFit(ImageFit.Cover).margin({ right: 12 })
           Text('留言咨询...').fontSize(18).fontColor('#999999').layoutWeight(1).onClick(() => { this.replyOpen = true; })
-          Text('联系卖家').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#20C894')
-            .onClick(() => this.openSellerContact())
+          if ((this.listing.contact || '').trim()) {
+            Text('联系卖家').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#20C894').onClick(() => { this.contactOpen = true; })
+          }
         }.width('92%').height(72).padding({ left: 16, right: 22 }).backgroundColor(Color.White).borderRadius(36).shadow({ radius: 10, color: '#33000000', offsetY: 3 }).margin({ bottom: 16 })
       }.width('100%').height('100%').backgroundColor('#F5F6F8')
 

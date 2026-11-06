@@ -22,8 +22,6 @@ struct CampusWallPage {
   @State private currentPage: number = 1;
   @State private hasMore: boolean = true;
   private readonly pageSize: number = 20;
-  // 每次刷新递增；旧的分页/首屏响应只有在代次未变时才允许写回列表和页码。
-  private requestGeneration: number = 0;
   @State private filterOpen: boolean = false;
   @State private pendingCollegeFilter: string = '全部';
   @State private activeCollegeFilter: string = '全部';
@@ -33,8 +31,7 @@ struct CampusWallPage {
     this.avatarUrl = await storage.getAvatarUrl();
     this.selfCollege = (await storage.getCollege()).trim();
   }
-  aboutToAppear(): void { this.loadProfile(); }
-  onPageShow(): void { this.load(); }
+  aboutToAppear(): void { this.load(); this.loadProfile(); }
   private appendUniquePosts(current: CampusWallPost[], incoming: CampusWallPost[]): CampusWallPost[] {
     const result = current.slice();
     const ids: number[] = result.map((post: CampusWallPost) => post.id || 0);
@@ -48,38 +45,26 @@ struct CampusWallPage {
     return result;
   }
   private async load(): Promise<void> {
-    const generation = ++this.requestGeneration;
     this.loading = true;
-    this.loadingMore = false;
-    this.posts = [];
     this.currentPage = 1;
     this.hasMore = true;
     try {
       const firstPage = await CampusWallApi.list(1, 'wall');
-      if (generation !== this.requestGeneration) return;
       this.posts = firstPage;
       this.hasMore = firstPage.length >= this.pageSize;
-    } catch {
-      if (generation !== this.requestGeneration) return;
-      promptAction.showToast({ message: '校园墙信息加载失败', duration: 1500 });
-    }
+    } catch { promptAction.showToast({ message: '校园墙信息加载失败', duration: 1500 }); }
     this.loading = false;
   }
   private async loadMore(): Promise<void> {
     if (this.loading || this.loadingMore || !this.hasMore) return;
-    const generation = this.requestGeneration;
     this.loadingMore = true;
     const nextPage = this.currentPage + 1;
     try {
       const nextPosts = await CampusWallApi.list(nextPage, 'wall');
-      if (generation !== this.requestGeneration) return;
       this.posts = this.appendUniquePosts(this.posts, nextPosts);
       this.currentPage = nextPage;
       this.hasMore = nextPosts.length >= this.pageSize;
-    } catch {
-      if (generation !== this.requestGeneration) return;
-      promptAction.showToast({ message: '加载更多失败', duration: 1200 });
-    }
+    } catch { promptAction.showToast({ message: '加载更多失败', duration: 1200 }); }
     this.loadingMore = false;
   }
   private reactionCount(post: CampusWallPost, type: string): number { return post.reactions?.[type] || 0; }
