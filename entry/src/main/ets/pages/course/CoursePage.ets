@@ -5,6 +5,7 @@
  */
 import { AppStorage as PreferenceStorage } from '../../store/AppStorage';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
+import { LaunchPrefetchService } from '../../service/LaunchPrefetchService';
 import { CourseApi } from '../../net/CourseApi';
 import { CourseStore } from '../../store/CourseStore';
 import { WeekSelector } from '../../components/WeekSelector';
@@ -301,8 +302,18 @@ export struct CoursePage {
         this.scheduleSessionRestore();
         return;
       }
-      await this.fetchCourses();
-      this.loading = false;
+      // 预取可能刚好在页面读完缓存之后才写入：先等它结束（最多 2.5s），
+      // 再用最新缓存渲染，避免停在旧数据上。
+      await LaunchPrefetchService.awaitPrefetch();
+      if (LaunchPrefetchService.coursePrefetchedRecently()) {
+        // 启动页已经预取到课表：重新读一次存档并直接展示，不再重复请求。
+        await this.loadCurrentArchiveCourses();
+        this.loading = false;
+        console.info(TAG, 'reuse prefetched courses');
+      } else {
+        await this.fetchCourses();
+        this.loading = false;
+      }
     } catch {
       console.error(TAG, 'verifyAndLoad error');
       this.loading = false;
