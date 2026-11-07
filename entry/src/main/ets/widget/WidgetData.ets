@@ -184,10 +184,10 @@ export class WidgetData {
     });
 
     const lines: string[] = [];
-    // 卡片最多四行；课程更多时留一行提示还有多少门，避免用户以为课表不全。
+    // 卡片最多四行：正好四门时全部显示；超过四门时显示三门 + 一行剩余数量。
     const overflow = picked.length > 4;
     const maxCourses = overflow ? 3 : picked.length;
-    for (let i = 0; i < maxCourses && lines.length < 3; i++) {
+    for (let i = 0; i < maxCourses; i++) {
       const course = picked[i];
       const where = course.location && course.location.length > 0 ? ` @${course.location}` : '';
       const day = weekly ? `${WEEKDAY_NAMES[course.dayOfWeek % 7]} ` : '';
