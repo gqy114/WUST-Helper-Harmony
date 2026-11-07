@@ -34,21 +34,25 @@ export class HttpRequest {
     const mainMatch = url.match(/^https?:\/\/(?:www\.)?lyzyy\.love(?::8081)?(?=\/|$)/i);
     const backupMatch = url.match(/^http:\/\/port\.happylandmc\.cc:52144(?=\/|$)/i);
     const matched = mainMatch?.[0] || backupMatch?.[0] || '';
-    if (!matched) return [{ url, index: -1 }];
-    if (pinBackend) {
-      const pinned = [{ url, index: backupMatch ? 1 : 0 }];
-      return secure ? pinned.filter((item: BackendTarget) => item.url.startsWith('https://')) : pinned;
+    let targets: BackendTarget[];
+    if (!matched) {
+      // 未识别的域名（例如第三方服务）保持原样，不做节点改写。
+      targets = [{ url, index: -1 }];
+    } else if (pinBackend) {
+      targets = [{ url, index: backupMatch ? 1 : 0 }];
+    } else {
+      const path = url.substring(matched.length);
+      const first = HttpRequest.preferredBackend;
+      const second = first === 0 ? 1 : 0;
+      targets = [
+        { url: `${HttpRequest.BACKENDS[first]}${path}`, index: first },
+        { url: `${HttpRequest.BACKENDS[second]}${path}`, index: second }
+      ];
     }
-    const path = url.substring(matched.length);
-    const first = HttpRequest.preferredBackend;
-    const second = first === 0 ? 1 : 0;
-    const targets: BackendTarget[] = [
-      { url: `${HttpRequest.BACKENDS[first]}${path}`, index: first },
-      { url: `${HttpRequest.BACKENDS[second]}${path}`, index: second }
-    ];
-    // 含学号/密码/令牌的请求只允许走证书校验过的 HTTPS 节点，
-    // 不允许因为节点故障或首选节点切换而降级到 HTTP。
-    return secure ? targets.filter((item: BackendTarget) => item.url.startsWith('https://')) : targets;
+    if (!secure) return targets;
+    // 含学号/密码/令牌的请求只允许走证书校验过的 HTTPS：
+    // 既排除切换后的 HTTP 备用节点，也排除调用方直接传入的 http:// 地址。
+    return targets.filter((item: BackendTarget) => item.url.startsWith('https://'));
   }
 
   static async request<T>(
