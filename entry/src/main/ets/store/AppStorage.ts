@@ -14,6 +14,11 @@ export class AppStorage {
   private static instance: AppStorage;
   private kvStore: preferences.Preferences | null = null;
 
+  /** 最近一次课表缓存的写入标记：异步写入者用它判断自己是否仍是最后一次写入。 */
+  private courseCacheMarker: string = '';
+
+  getCourseCacheMarker(): string { return this.courseCacheMarker; }
+
   private constructor() {}
 
   static getInstance(): AppStorage {
@@ -25,6 +30,39 @@ export class AppStorage {
 
   async init(context: common.UIAbilityContext): Promise<void> {
     this.kvStore = await preferences.getPreferences(context, STORE_NAME);
+    // 升级后第一次启动就确定旧档案归属，而不是等用户点开档案页。
+    await this.claimLegacyArchives();
+  }
+
+  /**
+   * 旧版本只有全局课表档案。认领必须发生在「首个账号启动/登录」时点，
+   * 否则 A 升级后没打开档案页就切到 B，B 会误认领 A 的档案。
+   * 旧数据只复制不删除。
+   */
+  private async claimLegacyArchives(): Promise<void> {
+    const migrated = await this.getBool('courseArchivesMigrated', false);
+    if (migrated) {
+      return;
+    }
+    const sid = await this.getStudentId();
+    if (!sid) {
+      return;
+    }
+    const legacy = await this.getStr('courseArchives', '');
+    if (legacy) {
+      const scopedKey = await this.archiveKey('courseArchives');
+      if (!(await this.getStr(scopedKey, ''))) {
+        await this.putStr(scopedKey, legacy);
+      }
+    }
+    const legacyId = await this.getStr('currentArchiveId', '');
+    if (legacyId) {
+      const scopedIdKey = await this.archiveKey('currentArchiveId');
+      if (!(await this.getStr(scopedIdKey, ''))) {
+        await this.putStr(scopedIdKey, legacyId);
+      }
+    }
+    await this.putBool('courseArchivesMigrated', true);
   }
 
   // ── 低层读写 ──
@@ -114,7 +152,11 @@ export class AppStorage {
   async getToken(): Promise<string> { return this.getStr('token'); }
   async setToken(v: string): Promise<void> { return this.putStr('token', v); }
   async getStudentId(): Promise<string> { return this.getStr('studentId'); }
-  async setStudentId(v: string): Promise<void> { return this.putStr('studentId', v); }
+  async setStudentId(v: string): Promise<void> {
+    await this.putStr('studentId', v);
+    // 升级后还没重启过就登录：在这里补一次旧档案认领，保证在切号前完成。
+    await this.claimLegacyArchives();
+  }
   async getPassword(): Promise<string> { return this.getStr('password'); }
   async setPassword(v: string): Promise<void> { return this.putStr('password', v); }
   async getPhysicalExperimentPassword(): Promise<string> { return this.getStr('physicalExperimentPassword'); }
@@ -198,11 +240,14 @@ export class AppStorage {
     return this.putStr('importedEventIds', JSON.stringify(value));
   }
 
-  async getCourseArchives(): Promise<CourseArchive[]> {
-    const raw = await this.getStr('courseArchives', '');
-    if (!raw) {
-      return [];
-    }
+  /** 课表档案按账号隔离：同一台设备上不同学号互不可见。 */
+  private async archiveKey(base: string): Promise<string> {
+    const sid = await this.getStudentId();
+    return sid ? `${base}_${sid}` : base;
+  }
+
+  private parseArchives(raw: string): CourseArchive[] {
+    if (!raw) return [];
     try {
       const parsed = JSON.parse(raw) as CourseArchive[];
       return Array.isArray(parsed) ? parsed : [];
@@ -211,16 +256,44 @@ export class AppStorage {
     }
   }
 
+  async getCourseArchives(): Promise<CourseArchive[]> {
+    const sid = await this.getStudentId();
+    if (!sid) {
+      // 还没登录：不认领旧档案，避免升级后第一个点开档案页的账号被动接收。
+      return this.parseArchives(await this.getStr('courseArchives', ''));
+    }
+    const key = await this.archiveKey('courseArchives');
+    let raw = await this.getStr(key, '');
+    if (!raw) {
+      // 旧版本只有全局档案：只允许升级后首次启动的那个账号认领一次，
+      // 之后其它账号不再继承，避免 A 的档案出现在 B 的列表里。
+      const migrated = await this.getBool('courseArchivesMigrated', false);
+      if (!migrated) {
+        const legacy = await this.getStr('courseArchives', '');
+        if (legacy) {
+          await this.putStr(key, legacy);
+          raw = legacy;
+        }
+        const legacyId = await this.getStr('currentArchiveId', '');
+        if (legacyId) {
+          await this.putStr(await this.archiveKey('currentArchiveId'), legacyId);
+        }
+        await this.putBool('courseArchivesMigrated', true);
+      }
+    }
+    return this.parseArchives(raw);
+  }
+
   async setCourseArchives(value: CourseArchive[]): Promise<void> {
-    return this.putStr('courseArchives', JSON.stringify(value));
+    return this.putStr(await this.archiveKey('courseArchives'), JSON.stringify(value));
   }
 
   async getCurrentArchiveId(): Promise<string> {
-    return this.getStr('currentArchiveId', 'mine');
+    return this.getStr(await this.archiveKey('currentArchiveId'), 'mine');
   }
 
   async setCurrentArchiveId(value: string): Promise<void> {
-    return this.putStr('currentArchiveId', value);
+    return this.putStr(await this.archiveKey('currentArchiveId'), value);
   }
 
   private async getStoredCourses(key: string): Promise<CourseData[]> {
@@ -309,6 +382,17 @@ export class AppStorage {
     await this.putStr('physicalExperimentCourses', JSON.stringify(experiments));
   }
 
+  /**
+   * 切换账号时使用：直接清空普通课表与实验课缓存。
+   * 不能走 setCurrentCourses([])：它会先把旧 currentCourses 里的实验课迁移到
+   * 实验课缓存再合并回来，导致上一个账号的实验课残留。
+   */
+  async resetCourseCache(): Promise<void> {
+    this.courseCacheMarker = `reset_${Date.now()}`;
+    await this.putStr('currentCourses', '[]');
+    await this.putStr('physicalExperimentCourses', '[]');
+  }
+
   async getCurrentCourses(): Promise<CourseData[]> {
     const current = await this.getStoredCourses('currentCourses');
     const experiments = await this.getPhysicalExperimentCourses();
@@ -319,7 +403,9 @@ export class AppStorage {
     return merged;
   }
 
-  async setCurrentCourses(value: CourseData[]): Promise<void> {
+  async setCurrentCourses(value: CourseData[], marker?: string): Promise<void> {
+    // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
+    this.courseCacheMarker = marker !== undefined ? marker : `courses_${Date.now()}`;
     const savedExperiments = await this.getPhysicalExperimentCourses();
     const incomingExperiments: CourseData[] = [];
     for (let i = 0; i < value.length; i++) {

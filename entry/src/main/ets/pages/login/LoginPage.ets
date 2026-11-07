@@ -1,4 +1,4 @@
-﻿/**
+/**
  * LoginPage.ets — 登录页
  *
  * 迁移来源：LoginMvpActivity.java + activity_login.xml
@@ -10,6 +10,7 @@ import promptAction from '@ohos.promptAction';
 import netConnection from '@ohos.net.connection';
 
 import { AppStorage } from '../../store/AppStorage';
+import { CourseStore } from '../../store/CourseStore';
 import { ApiService } from '../../net/ApiService';
 import { RouterUtil } from '../../utils/RouterUtil';
 import { StorageUtil } from '../../utils/StorageUtil';
@@ -253,7 +254,8 @@ struct LoginPage {
     this.semesterStr = this.calcSemester();
     await AppStorage.getInstance().setSemester(this.semesterStr);
     this.showLoading('\u767b\u5f55\u4e2d...');
-    this.startLoginTimer();
+    // 研究生登录需要后端现登录研究生系统（aTrust 网关 + 验证码），耗时明显更长。
+    this.startLoginTimer(this.isGraduate ? 60000 : TIMEOUT_LOGIN);
 
     try {
       const resp = this.isGraduate
@@ -273,6 +275,18 @@ struct LoginPage {
 
       if (resp && (resp.code === 200 || String(resp.code) === '200' || resp.code === 0 || resp.code === 10000 || resp.code === 11000)) {
         const s = AppStorage.getInstance();
+        // 切换账号/身份时必须丢掉上一个账号的课表存档，否则新账号会显示别人的课表。
+        const prevSid = await s.getStudentId();
+        const prevGraduate = await s.getIsGraduate();
+        await s.setIsGraduate(this.isGraduate);
+        if (prevSid && (prevSid !== sid || prevGraduate !== this.isGraduate)) {
+          // 不能调用 setCurrentCourses 清空：它会先把旧账号的实验课迁移回来。
+          await s.resetCourseCache();
+          await s.setToken('');
+          // 只清磁盘不够：CourseStore 里的内存课表也要清，避免断网时仍显示上一个账号的课程。
+          CourseStore.getInstance().setCourses([]);
+          console.info(TAG, `account switched ${prevSid} -> ${sid}, cached timetable cleared`);
+        }
         if (resp.data) {
           if (this.isGraduate) {
             const gdata = resp.data as GraduateLoginDataContent;
@@ -283,8 +297,11 @@ struct LoginPage {
                 await s.setUserName(gdata.name);
               }
             }
-            await StorageUtil.saveLoginInfo('grad_' + sid, sid, sid);
-            console.info(TAG, 'graduate login, sid saved');
+            if (gdata.college) await s.setCollege(gdata.college);
+            if (gdata.major) await s.setMajor(gdata.major);
+            // 研究生没有教务 Cookie，课表 / 培养方案都要用保存下来的学号密码现登录。
+            await this.saveLoginData(`grad_${sid}`, resp.msg ?? '登录成功', sid, pwd);
+            console.info(TAG, 'graduate login, credentials saved');
           } else {
             const tdata = resp.data as TokenDataContent;
             if (tdata.token) {
@@ -518,14 +535,14 @@ private async fetchUserInfo(_sid: string): Promise<void> {
 
   // ══════════ 定时器管理 ══════════
 
-  private startLoginTimer(): void {
+  private startLoginTimer(timeoutMs: number = TIMEOUT_LOGIN): void {
     this.clearLoginTimer();
     this.loginTimer = setTimeout(() => {
       if (!this.isPageAlive) return;
       this.hideLoading();
       promptAction.showToast({ message: '登录超时，请检查网络或稍后再试', duration: 3000 });
       this.isLoggingIn = false;
-    }, TIMEOUT_LOGIN);
+    }, timeoutMs);
   }
 
   private clearLoginTimer(): void {
