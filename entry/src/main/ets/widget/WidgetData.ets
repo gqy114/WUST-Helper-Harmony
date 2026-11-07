@@ -169,29 +169,33 @@ export class WidgetData {
   private static courseSnapshot(courses: CourseData[], week: number, mode: string, accent: string): WidgetSnapshot {
     const today = new Date();
     const dayOfWeek = today.getDay() === 0 ? 7 : today.getDay();
-    const dayCourses: CourseData[] = [];
+    const weekly = mode === WIDGET_MODE_WEEKLY;
+    const picked: CourseData[] = [];
     for (let i = 0; i < courses.length; i++) {
       const course = courses[i];
-      if (course.dayOfWeek !== dayOfWeek) continue;
       if (!isCourseInWeek(course, week)) continue;
-      dayCourses.push(course);
+      // 每周课表要展示整周；只有每日课表才按今天过滤。
+      if (!weekly && course.dayOfWeek !== dayOfWeek) continue;
+      picked.push(course);
     }
-    dayCourses.sort((left: CourseData, right: CourseData): number => left.startPeriod - right.startPeriod);
+    picked.sort((left: CourseData, right: CourseData): number => {
+      if (left.dayOfWeek !== right.dayOfWeek) return left.dayOfWeek - right.dayOfWeek;
+      return left.startPeriod - right.startPeriod;
+    });
 
     const lines: string[] = [];
-    for (let i = 0; i < dayCourses.length && lines.length < 4; i++) {
-      const course = dayCourses[i];
+    for (let i = 0; i < picked.length && lines.length < 4; i++) {
+      const course = picked[i];
       const where = course.location && course.location.length > 0 ? ` @${course.location}` : '';
-      lines.push(`${course.startPeriod}-${course.endPeriod}节 ${course.courseName}${where}`);
+      const day = weekly ? `${WEEKDAY_NAMES[course.dayOfWeek % 7]} ` : '';
+      lines.push(`${day}${course.startPeriod}-${course.endPeriod}节 ${course.courseName}${where}`);
     }
     while (lines.length < 4) lines.push('');
 
-    const weekday = WEEKDAY_NAMES[today.getDay()];
-    let title = mode === WIDGET_MODE_WEEKLY ? `第${week}周 ${weekday}` : `${today.getMonth() + 1}月${today.getDate()}日`;
-    let subtitle = dayCourses.length > 0 ? `今天 ${dayCourses.length} 节课` : '今天没有课程了';
-    if (mode === WIDGET_MODE_WEEKLY && dayCourses.length === 0) {
-      subtitle = '本周今天没有课程';
-    }
+    const title = weekly ? `第${week}周` : `${today.getMonth() + 1}月${today.getDate()}日`;
+    const subtitle = picked.length > 0
+      ? (weekly ? `本周 ${picked.length} 节课` : `今天 ${picked.length} 节课`)
+      : (weekly ? '本周没有课程了' : '今天没有课程了');
     return {
       mode: mode,
       title: title,

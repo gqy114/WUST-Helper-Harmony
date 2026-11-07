@@ -29,12 +29,13 @@ export class TeachingSessionService {
     const now = Date.now();
     if (!force && now - TeachingSessionService.lastAttemptAt < 30_000) return false;
 
-    const sid = await storage.getStudentId();
-    const password = await storage.getPassword();
-    if (!sid || !password) return false;
-
+    // 先把共享任务挂上去，再读凭据：读凭据是异步的，
+    // 若等读完再赋值，并发调用会同时通过上面的检查、发出两次登录。
     TeachingSessionService.lastAttemptAt = now;
     const task: Promise<boolean> = (async (): Promise<boolean> => {
+      const sid = await storage.getStudentId();
+      const password = await storage.getPassword();
+      if (!sid || !password) return false;
       try {
         const graduate = await storage.getIsGraduate();
         const refreshed = graduate
