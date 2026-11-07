@@ -525,7 +525,8 @@ struct MinePage {
                         }
                       });
                     } else if (item.title === 'QQ用户群') {
-                      router.pushUrl({ url: 'pages/common/WebPage', params: { title: 'QQ用户群', url: 'https://qm.qq.com/' } });
+                      // 群链接页面在 Web 里是空白页，改为原生页面展示群号，支持复制与唤起 QQ。
+                      router.pushUrl({ url: 'pages/profile/QQGroupPage' });
                     } else if (item.title === '检查更新') {
                       this.checkUpdate();
                     } else {

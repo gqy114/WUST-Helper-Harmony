@@ -1,7 +1,20 @@
+/**
+ * 培养方案页面。
+ *
+ * 关键点：ArkWeb 的 loadData 会把内容里的第一个 `#` 当成文档片段分隔符，
+ * 之后的正文全部被丢弃。培养方案的 HTML 里大量出现 `#`（CSS 颜色、锚点），
+ * 直接传入会让 Web 显示成白屏。官方要求先 encodeURIComponent（把 # 转成 %23），
+ * 或者在调用前做 base64 编码。这里统一在调用处编码。
+ */
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import webview from '@ohos.web.webview';
 import { CultivationPlanApi } from '../../net/CultivationPlanApi';
+
+const TAG = 'TrainingPlanPage';
+const BASE_URL = 'https://www.lyzyy.love/';
+const HISTORY_URL = 'https://www.lyzyy.love/UnderGraduate/Support/getTrainingPlanPage';
+const MAX_RENDER_ATTEMPTS = 2;
 
 @Entry
 @Component
@@ -12,6 +25,7 @@ struct TrainingPlanPage {
   @State private html: string = '';
   private webController: webview.WebviewController = new webview.WebviewController();
   private controllerAttached: boolean = false;
+  private renderAttempts: number = 0;
 
   aboutToAppear(): void {
     this.load();
@@ -22,6 +36,11 @@ struct TrainingPlanPage {
     this.loadFailed = false;
     this.errorText = '';
     this.html = '';
+    this.renderAttempts = 0;
+    // loading 会把 Web 组件从树下移除，controller 随之解绑；
+    // 这里同步复位，等新组件 onControllerAttached 后再 loadData，
+    // 避免在旧 controller 已经解绑的情况下渲染。
+    this.controllerAttached = false;
     try {
       this.html = await CultivationPlanApi.fetchHtml();
     } catch (error) {
@@ -30,6 +49,7 @@ struct TrainingPlanPage {
       promptAction.showToast({ message: this.errorText, duration: 1800 });
     }
     this.loading = false;
+    if (!this.loadFailed) this.renderHtml();
   }
 
   private documentHtml(source: string): string {
@@ -50,18 +70,43 @@ struct TrainingPlanPage {
     return `<!DOCTYPE html><html><head>${additions}</head><body>${source}</body></html>`;
   }
 
+  /**
+   * 渲染正文。Web 组件可能比正文晚就绪，所以由 load() 与 onControllerAttached 共同触发，
+   * 并用 renderAttempts 限制重复渲染。
+   */
   private renderHtml(): void {
     if (!this.controllerAttached || this.html.trim().length === 0) return;
+    if (this.renderAttempts >= MAX_RENDER_ATTEMPTS) return;
+    this.renderAttempts++;
     try {
-      this.webController.loadData(
-        this.documentHtml(this.html),
-        'text/html',
-        'UTF-8',
-        'https://www.lyzyy.love/',
-        'https://www.lyzyy.love/UnderGraduate/Support/getTrainingPlanPage'
-      );
+      // encodeURIComponent 会把 # 编码为 %23，避免 loadData 截断后面的正文。
+      const encoded = encodeURIComponent(this.documentHtml(this.html));
+      this.webController.loadData(encoded, 'text/html', 'UTF-8', BASE_URL, HISTORY_URL);
+      console.info(TAG, `loadData attempt=${this.renderAttempts} size=${encoded.length}`);
     } catch (error) {
-      console.error('TrainingPlanPage', `render html failed: ${JSON.stringify(error)}`);
+      console.error(TAG, `render html failed: ${JSON.stringify(error)}`);
+      this.loadFailed = true;
+      this.errorText = '培养方案渲染失败，请重试';
+    }
+  }
+
+  /** 页面渲染完成后检查是否仍然是空白页（旧内核上 about:blank 会覆盖 loadData 的结果）。 */
+  private verifyRendered(): void {
+    if (this.renderAttempts === 0 || this.html.trim().length === 0) return;
+    try {
+      this.webController.runJavaScript('document.body ? document.body.innerText.length : 0')
+        .then((result: string) => {
+          const length = parseInt(result, 10);
+          if (!isNaN(length) && length === 0 && this.renderAttempts < MAX_RENDER_ATTEMPTS) {
+            console.warn(TAG, 'rendered page is empty, retry loadData');
+            this.renderHtml();
+          }
+        })
+        .catch(() => {
+          // runJavaScript 失败不影响页面本身，忽略。
+        });
+    } catch (error) {
+      console.warn(TAG, `verify rendered failed: ${JSON.stringify(error)}`);
     }
   }
 
@@ -122,11 +167,14 @@ struct TrainingPlanPage {
         Web({ src: 'about:blank', controller: this.webController })
           .width('100%')
           .layoutWeight(1)
-          .javaScriptAccess(false)
+          .javaScriptAccess(true)
           .domStorageAccess(false)
           .onControllerAttached(() => {
             this.controllerAttached = true;
             this.renderHtml();
+          })
+          .onPageEnd(() => {
+            this.verifyRendered();
           })
       }
     }

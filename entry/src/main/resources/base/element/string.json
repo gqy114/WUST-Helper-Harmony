@@ -23,6 +23,22 @@
     {
       "name": "permission_camera_reason",
       "value": "用于扫码功能"
+    },
+    {
+      "name": "EntryFormAbility_label",
+      "value": "梧桐助手小组件"
+    },
+    {
+      "name": "EntryFormAbility_desc",
+      "value": "在桌面展示倒计时与今日课表"
+    },
+    {
+      "name": "widget_display_name",
+      "value": "梧桐助手"
+    },
+    {
+      "name": "widget_desc",
+      "value": "倒计时与今日课表小组件"
     }
   ]
 }
