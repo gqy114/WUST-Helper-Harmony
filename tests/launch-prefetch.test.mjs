@@ -34,7 +34,8 @@ test('预取：按「课表作为首页」决定预取课表还是主页', async
 
 test('课表页：预取刚完成时不再重复请求', async () => {
   const code = await source(`${root}/ets/pages/course/CoursePage.ets`);
-  assert.match(code, /LaunchPrefetchService\.coursePrefetchedRecently\(\)/);
+  // 复用预取结果前必须同时匹配账号、身份和学期，不能只看时间戳。
+  assert.match(code, /LaunchPrefetchService\.coursePrefetchedRecently\(prefetchSid, prefetchGraduate, this\.currentSemester\)/);
 });
 
 test('主页内容：预取后 60 秒内复用缓存', async () => {

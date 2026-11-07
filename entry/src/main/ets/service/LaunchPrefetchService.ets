@@ -24,6 +24,9 @@ export class LaunchPrefetchService {
   private static started: boolean = false;
   private static coursePrefetchedAt: number = 0;
   private static task: Promise<void> | null = null;
+  private static prefetchedSid: string = '';
+  private static prefetchedGraduate: boolean = false;
+  private static prefetchedSemester: string = '';
 
   /** 启动页调用一次即可；重复调用无副作用。 */
   static start(): void {
@@ -49,10 +52,13 @@ export class LaunchPrefetchService {
     if (timer !== -1) clearTimeout(timer);
   }
 
-  /** 课表是否刚刚已经被启动页预取过。 */
-  static coursePrefetchedRecently(): boolean {
-    return LaunchPrefetchService.coursePrefetchedAt > 0 &&
-      Date.now() - LaunchPrefetchService.coursePrefetchedAt < COURSE_FRESH_MS;
+  /** 课表是否刚由启动页预取过，并且账号、身份、学期都还是同一份。 */
+  static coursePrefetchedRecently(sid: string, graduate: boolean, semester: string): boolean {
+    if (LaunchPrefetchService.coursePrefetchedAt <= 0) return false;
+    if (Date.now() - LaunchPrefetchService.coursePrefetchedAt >= COURSE_FRESH_MS) return false;
+    return LaunchPrefetchService.prefetchedSid === sid &&
+      LaunchPrefetchService.prefetchedGraduate === graduate &&
+      LaunchPrefetchService.prefetchedSemester === semester;
   }
 
   private static async run(): Promise<void> {
@@ -62,15 +68,21 @@ export class LaunchPrefetchService {
     if (!sid) return;
     const courseAsHome = await storage.getCourseAsHome();
     if (courseAsHome) {
-      await LaunchPrefetchService.prefetchCourse(storage, sid);
+      await LaunchPrefetchService.prefetchCourse(storage);
     } else {
       await HomeContentApi.preload();
     }
   }
 
   /** 预算课表：写进本地存档，课表页 mount 后立刻有数据。 */
-  private static async prefetchCourse(storage: AppStorage, expectedSid: string): Promise<void> {
+  private static async prefetchCourse(storage: AppStorage): Promise<void> {
+    // 先同步记下版本号，再读账号/学期：期间任何切号或切学期都会让它对不上。
+    const epoch = storage.getSessionEpoch();
+    const expectedSid = await storage.getStudentId();
+    if (!expectedSid) return;
     const expectedGraduate = await storage.getIsGraduate();
+    const semester = (await storage.getSemester()) || LaunchPrefetchService.semesterFallback();
+
     let token = (await storage.getToken()).trim();
     if (!token) {
       // 开机/升级后 Token 可能为空，先恢复会话，成功再继续。
@@ -79,18 +91,15 @@ export class LaunchPrefetchService {
     }
     if (!token) return;
 
-    const isGraduate = expectedGraduate;
     let list: CourseData[] = [];
     try {
-      if (isGraduate) {
-        const sid = await storage.getStudentId();
+      if (expectedGraduate) {
         const pwd = await storage.getPassword();
-        if (!sid || !pwd) return;
-        const result = await CourseApi.getGraduateCourseTable(sid, pwd);
+        if (!pwd) return;
+        const result = await CourseApi.getGraduateCourseTable(expectedSid, pwd);
         if (!LaunchPrefetchService.isOk(result.code)) return;
         list = result.data ?? [];
       } else {
-        const semester = (await storage.getSemester()) || LaunchPrefetchService.semesterFallback();
         const result = await CourseApi.getCourseTable(semester, token);
         if (!LaunchPrefetchService.isOk(result.code)) return;
         list = result.data ?? [];
@@ -100,16 +109,28 @@ export class LaunchPrefetchService {
     }
     if (list.length === 0) return;
 
-    // 请求期间可能已经退出旧账号并登录新账号：先核对身份，再写共享的课表缓存。
-    const currentSid = await storage.getStudentId();
-    const currentGraduate = await storage.getIsGraduate();
-    if (currentSid !== expectedSid || currentGraduate !== expectedGraduate) {
-      console.info(TAG, 'account changed during prefetch, discard result');
+    // 写入前用内存版本号做一次同步校验：账号或学期在这期间被切换过就丢弃结果。
+    if (storage.getSessionEpoch() !== epoch) {
+      console.info(TAG, 'account/semester changed during prefetch, discard result');
       return;
     }
     await storage.setCurrentCourses(list);
+    LaunchPrefetchService.prefetchedSid = expectedSid;
+    LaunchPrefetchService.prefetchedGraduate = expectedGraduate;
+    LaunchPrefetchService.prefetchedSemester = semester;
     LaunchPrefetchService.coursePrefetchedAt = Date.now();
     console.info(TAG, `prefetched ${list.length} courses`);
+
+    // 写入过程本身也可能是异步的：写完再核对一次，若期间切号/切学期就把刚写的数据撤掉，
+    // 否则会污染新账号的课表缓存。
+    if (storage.getSessionEpoch() !== epoch) {
+      console.info(TAG, 'switched during write, rollback prefetched courses');
+      await storage.resetCourseCache();
+      LaunchPrefetchService.coursePrefetchedAt = 0;
+      LaunchPrefetchService.prefetchedSid = '';
+      LaunchPrefetchService.prefetchedSemester = '';
+      return;
+    }
 
     // 学期起始日决定当前周次，缓存里没有时顺手补上。
     try {
