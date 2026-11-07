@@ -107,7 +107,7 @@ export class HttpRequest {
       }
 
       const targets = HttpRequest.backendTargets(requestUrl, options?.pinBackend ?? false,
-        options?.secure ?? false);
+        HttpRequest.needsSecure(options, header));
       if (targets.length === 0) {
         // 敏感请求找不到 HTTPS 节点时直接失败，绝不降级到 HTTP。
         throw new Error('sensitive request requires https backend');
@@ -155,6 +155,21 @@ export class HttpRequest {
       }
       throw new Error('all backend nodes unavailable');
     }
+  }
+
+  /**
+   * 是否按敏感请求处理：显式 secure，或请求头里带了认证信息。
+   * 这样新增的接口即使忘了传 secure，也不会把令牌/Cookie 发到 HTTP 节点。
+   */
+  private static needsSecure(options: { secure?: boolean } | undefined,
+    header: Record<string, string>): boolean {
+    if (options?.secure === true) return true;
+    const keys = Object.keys(header);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i].toLowerCase();
+      if (key === 'authorization' || key === 'cookie' || key === 'token') return true;
+    }
+    return false;
   }
 
   private static async shouldUseCampusProxy(url: string): Promise<boolean> {

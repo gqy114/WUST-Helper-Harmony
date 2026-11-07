@@ -161,6 +161,15 @@ test('含学号密码的课表请求只允许 HTTPS', async () => {
   assert.doesNotMatch(http, /if \(!matched\) return \[\{ url, index: -1 \}\];/);
 });
 
+test('课表档案与所选档案按账号隔离，切换账号不会载入别人的档案', async () => {
+  const storage = await source(`${root}/ets/store/AppStorage.ts`);
+  assert.match(storage, /private async archiveKey\(base: string\): Promise<string>/);
+  assert.match(storage, /archiveKey\('courseArchives'\)/);
+  assert.match(storage, /archiveKey\('currentArchiveId'\)/);
+  // 旧版本只有全局 key，升级时迁移到当前账号，而不是继续共享。
+  assert.match(storage, /const legacy = await this\.getStr\('courseArchives', ''\);/);
+});
+
 test('研究生课表 401 不再刷新本科教务 Token，而是展示后端原因', async () => {
   const course = await source(`${root}/ets/pages/course/CoursePage.ets`);
   assert.match(course, /!retried && !isGraduate && await TeachingSessionService\.ensureSession\(true\)/);
