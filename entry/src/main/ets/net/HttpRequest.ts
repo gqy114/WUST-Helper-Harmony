@@ -29,21 +29,26 @@ export class HttpRequest {
     return HttpRequest.BACKENDS[HttpRequest.preferredBackend];
   }
 
-  private static backendTargets(url: string, pinBackend: boolean = false): BackendTarget[] {
+  private static backendTargets(url: string, pinBackend: boolean = false,
+    secure: boolean = false): BackendTarget[] {
     const mainMatch = url.match(/^https?:\/\/(?:www\.)?lyzyy\.love(?::8081)?(?=\/|$)/i);
     const backupMatch = url.match(/^http:\/\/port\.happylandmc\.cc:52144(?=\/|$)/i);
     const matched = mainMatch?.[0] || backupMatch?.[0] || '';
     if (!matched) return [{ url, index: -1 }];
     if (pinBackend) {
-      return [{ url, index: backupMatch ? 1 : 0 }];
+      const pinned = [{ url, index: backupMatch ? 1 : 0 }];
+      return secure ? pinned.filter((item: BackendTarget) => item.url.startsWith('https://')) : pinned;
     }
     const path = url.substring(matched.length);
     const first = HttpRequest.preferredBackend;
     const second = first === 0 ? 1 : 0;
-    return [
+    const targets: BackendTarget[] = [
       { url: `${HttpRequest.BACKENDS[first]}${path}`, index: first },
       { url: `${HttpRequest.BACKENDS[second]}${path}`, index: second }
     ];
+    // 含学号/密码/令牌的请求只允许走证书校验过的 HTTPS 节点，
+    // 不允许因为节点故障或首选节点切换而降级到 HTTP。
+    return secure ? targets.filter((item: BackendTarget) => item.url.startsWith('https://')) : targets;
   }
 
   static async request<T>(
@@ -60,6 +65,8 @@ export class HttpRequest {
       pinBackend?: boolean;
       /** 自定义读取超时；研究生登录/课表要后端现登录，耗时明显长于普通接口。 */
       readTimeoutMs?: number;
+      /** 敏感请求（学号、密码、令牌）：只允许 HTTPS 节点。 */
+      secure?: boolean;
     },
   ): Promise<RequestResult<T>> {
     {
@@ -95,7 +102,12 @@ export class HttpRequest {
         console.info(TAG, `campus proxy enabled for ${method} ${url}`);
       }
 
-      const targets = HttpRequest.backendTargets(requestUrl, options?.pinBackend ?? false);
+      const targets = HttpRequest.backendTargets(requestUrl, options?.pinBackend ?? false,
+        options?.secure ?? false);
+      if (targets.length === 0) {
+        // 敏感请求找不到 HTTPS 节点时直接失败，绝不降级到 HTTP。
+        throw new Error('sensitive request requires https backend');
+      }
       for (let index = 0; index < targets.length; index++) {
         const target = targets[index];
         const httpRequest = http.createHttp();
@@ -152,12 +164,14 @@ export class HttpRequest {
     body: Record<string, string>,
     extraHeaders?: Record<string, string>,
     readTimeoutMs?: number,
+    secure: boolean = false,
   ): Promise<RequestResult<T>> {
     return HttpRequest.request<T>(url, 'POST', {
       body,
       headers: extraHeaders,
       isForm:false,
-      readTimeoutMs
+      readTimeoutMs,
+      secure
     });
   }
 
@@ -166,12 +180,14 @@ export class HttpRequest {
     url: string,
     body: Record<string, string>,
     extraHeaders?: Record<string, string>,
+    secure: boolean = false,
   ): Promise<RequestResult<T>> {
     return HttpRequest.request<T>(url, 'POST', {
       body,
       headers: extraHeaders,
       isForm: false,
-      pinBackend: true
+      pinBackend: true,
+      secure
     });
   }
 
@@ -180,23 +196,32 @@ export class HttpRequest {
     url: string,
     body: Record<string, string>,
     extraHeaders?: Record<string, string>,
+    secure: boolean = false,
   ): Promise<RequestResult<T>> {
     return HttpRequest.request<T>(url, 'POST', {
       body,
       headers: extraHeaders,
-      isForm:true
+      isForm:true,
+      secure
     });
   }
 
   static async get<T>(
     url: string,
     extraHeaders?: Record<string, string>,
+    secure: boolean = false,
   ): Promise<RequestResult<T>> {
-    return HttpRequest.request<T>(url, 'GET', { headers: extraHeaders });
+    return HttpRequest.request<T>(url, 'GET', { headers: extraHeaders, secure });
   }
 
-  static async postRawJson<T>(url: string, jsonBody: string, extraHeaders?: Record<string, string>): Promise<RequestResult<T>> {
-    return HttpRequest.request<T>(url, 'POST', { headers: extraHeaders, expectDataType: http.HttpDataType.STRING, rawBody: jsonBody });
+  static async postRawJson<T>(url: string, jsonBody: string, extraHeaders?: Record<string, string>,
+    secure: boolean = false): Promise<RequestResult<T>> {
+    return HttpRequest.request<T>(url, 'POST', {
+      headers: extraHeaders,
+      expectDataType: http.HttpDataType.STRING,
+      rawBody: jsonBody,
+      secure
+    });
   }
 }
 

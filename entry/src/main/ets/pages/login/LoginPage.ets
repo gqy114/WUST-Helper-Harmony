@@ -10,6 +10,7 @@ import promptAction from '@ohos.promptAction';
 import netConnection from '@ohos.net.connection';
 
 import { AppStorage } from '../../store/AppStorage';
+import { CourseStore } from '../../store/CourseStore';
 import { ApiService } from '../../net/ApiService';
 import { RouterUtil } from '../../utils/RouterUtil';
 import { StorageUtil } from '../../utils/StorageUtil';
@@ -282,6 +283,8 @@ struct LoginPage {
           await s.setCurrentCourses([]);
           await s.setPhysicalExperimentCourses([]);
           await s.setToken('');
+          // 只清磁盘不够：CourseStore 里的内存课表也要清，避免断网时仍显示上一个账号的课程。
+          CourseStore.getInstance().setCourses([]);
           console.info(TAG, `account switched ${prevSid} -> ${sid}, cached timetable cleared`);
         }
         if (resp.data) {
