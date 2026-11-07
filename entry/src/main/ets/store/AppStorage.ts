@@ -387,16 +387,21 @@ export class AppStorage {
   }
 
   async setCurrentCourses(value: CourseData[], marker?: string): Promise<void> {
-    // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
-    this.courseCacheMarker = marker !== undefined ? marker : `courses_${Date.now()}`;
+    // 写入是异步的：期间若切换账号/学期，就放弃这次写入，
+    // 避免旧请求的结果覆盖新账号刚保存的课表。
+    const epochAtStart = this.sessionEpoch;
     const savedExperiments = await this.getPhysicalExperimentCourses();
     const incomingExperiments: CourseData[] = [];
     for (let i = 0; i < value.length; i++) {
       if (this.isPhysicalExperimentCourse(value[i])) incomingExperiments.push(value[i]);
     }
     const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
+    if (this.sessionEpoch !== epochAtStart) return;
     await this.setPhysicalExperimentCourses(experiments);
+    if (this.sessionEpoch !== epochAtStart) return;
     const merged = this.mergePhysicalExperiments(value, experiments);
+    // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
+    this.courseCacheMarker = marker !== undefined ? marker : `courses_${Date.now()}`;
     await this.putStr('currentCourses', JSON.stringify(merged));
   }
 
