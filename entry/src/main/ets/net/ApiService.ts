@@ -179,6 +179,8 @@ export class ApiService {
           undefined, undefined, true);
         const normalized = ApiService.normalizeGraduateLogin(legacy.data);
         if (normalized.code === 200 || String(normalized.code) === '200') return normalized;
+        // 旧节点明确拒绝凭据时同样立刻停止，避免继续打下一个入口、加速账号锁定。
+        if (ApiService.isCredentialRejection(normalized)) return normalized;
       } catch {
         console.warn('ApiService', 'legacy graduate login request failed');
       }

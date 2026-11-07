@@ -309,6 +309,16 @@ export class AppStorage {
     await this.putStr('physicalExperimentCourses', JSON.stringify(experiments));
   }
 
+  /**
+   * 切换账号时使用：直接清空普通课表与实验课缓存。
+   * 不能走 setCurrentCourses([])：它会先把旧 currentCourses 里的实验课迁移到
+   * 实验课缓存再合并回来，导致上一个账号的实验课残留。
+   */
+  async resetCourseCache(): Promise<void> {
+    await this.putStr('currentCourses', '[]');
+    await this.putStr('physicalExperimentCourses', '[]');
+  }
+
   async getCurrentCourses(): Promise<CourseData[]> {
     const current = await this.getStoredCourses('currentCourses');
     const experiments = await this.getPhysicalExperimentCourses();

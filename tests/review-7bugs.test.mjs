@@ -107,6 +107,12 @@ test('小组件：每周课表展示整周，不能只按今天过滤', async ()
   assert.doesNotMatch(widget, /if \(course\.dayOfWeek !== dayOfWeek\) continue;\s*\n\s*if \(!isCourseInWeek/);
 });
 
+test('小组件：课程超过四行时提示还有更多', async () => {
+  const widget = await source(`${root}/ets/widget/WidgetData.ets`);
+  assert.match(widget, /const overflow = picked\.length > 4;/);
+  assert.match(widget, /还有 \$\{picked\.length - maxCourses\} 门课程/);
+});
+
 test('双创学分：请求只走 HTTPS，错误信息同时读 msg/message', async () => {
   const api = await source(`${root}/ets/net/InnovationCreditApi.ets`);
   assert.match(api, /message\?: string;/);

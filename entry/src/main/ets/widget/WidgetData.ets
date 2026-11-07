@@ -184,12 +184,16 @@ export class WidgetData {
     });
 
     const lines: string[] = [];
-    for (let i = 0; i < picked.length && lines.length < 4; i++) {
+    // 卡片最多四行；课程更多时留一行提示还有多少门，避免用户以为课表不全。
+    const overflow = picked.length > 4;
+    const maxCourses = overflow ? 3 : picked.length;
+    for (let i = 0; i < maxCourses && lines.length < 3; i++) {
       const course = picked[i];
       const where = course.location && course.location.length > 0 ? ` @${course.location}` : '';
       const day = weekly ? `${WEEKDAY_NAMES[course.dayOfWeek % 7]} ` : '';
       lines.push(`${day}${course.startPeriod}-${course.endPeriod}节 ${course.courseName}${where}`);
     }
+    if (overflow) lines.push(`还有 ${picked.length - maxCourses} 门课程`);
     while (lines.length < 4) lines.push('');
 
     const title = weekly ? `第${week}周` : `${today.getMonth() + 1}月${today.getDate()}日`;
