@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 业务 API 层，对应原 Android 端 NewApiHelper 中的部分方法
  * 仅包含 LaunchActivity 涉及的接口
  */
@@ -18,6 +18,8 @@ export const UG_LOGIN_V2 = 'https://lyzyy.love:8081/UnderGraduate/Support/loginG
 const UG_LOGIN_V2_BACKUP = 'https://www.lyzyy.love/UnderGraduate/Support/loginGetCookie';
 const GO_BACKUP_BASE = 'http://port.happylandmc.cc:52144';
 const UG_LOGIN_BACKEND_BACKUP = `${GO_BACKUP_BASE}/UnderGraduate/Support/loginGetCookie`;
+// 研究生登录：首选 Go 后端（与课表/培养方案同一套凭据校验），旧 8009 服务仅作回退。
+export const GRADUATE_LOGIN_GO = 'https://lyzyy.love:8081/Graduate/Support/loginPage';
 export const GRADUATE_LOGIN_V2 = 'https://www.lyzyy.love:8009/personal-info';
 const GRADUATE_LOGIN_V2_BACKUP = 'https://lyzyy.love:8009/personal-info';
 export const APP_AUTH_LOGIN = 'https://lyzyy.love:8081/api/v1/auth/login';
@@ -33,18 +35,48 @@ interface UndergradLoginResponse {
   dataObject?: TokenDataContent;
 }
 
+/**
+ * 研究生登录响应的原始形状：
+ * - Go 后端（Graduate/Support/loginPage）：data 直接是学生资料字段；
+ * - 旧 8009 服务：data 是 { status, message, login_error, data } 包装层，失败时外层 code 仍是 200。
+ */
+interface GraduateLoginPayload {
+  studentNumber?: string;
+  name?: string;
+  college?: string;
+  major?: string;
+  clazz?: string;
+  birthday?: string;
+  sex?: string;
+  nationality?: string;
+  hometown?: string;
+  idNumber?: string;
+  status?: string;
+  message?: string;
+  login_error?: string;
+  data?: GraduateLoginPayload;
+}
+
+/** Go 后端把提示放在 message 而不是 msg，两种都要读。 */
+interface GraduateLoginResponse<T> {
+  code: number;
+  msg?: string;
+  message?: string;
+  data?: T;
+}
+
 export class ApiService {
   private static undergradSessionBackend: string = 'https://lyzyy.love:8081';
 
   static async sendUndergradVerifyCode(state: string): Promise<BaseResponse<{ cooldown_seconds?: number }>> {
     const result = await HttpRequest.postJsonPinned<BaseResponse<{ cooldown_seconds?: number }>>(
-      `${ApiService.undergradSessionBackend}${UG_TWO_VERIFY_SEND_PATH}`, { state });
+      `${ApiService.undergradSessionBackend}${UG_TWO_VERIFY_SEND_PATH}`, { state }, undefined, true);
     return result.data;
   }
 
   static async verifyUndergradCode(state: string, code: string): Promise<BaseResponse<TokenDataContent>> {
     const result = await HttpRequest.postJsonPinned<BaseResponse<TokenDataContent>>(
-      `${ApiService.undergradSessionBackend}${UG_TWO_VERIFY_CHECK_PATH}`, { state, code });
+      `${ApiService.undergradSessionBackend}${UG_TWO_VERIFY_CHECK_PATH}`, { state, code }, undefined, true);
     return result.data;
   }
   /** Mock helper: wrap success response */
@@ -68,7 +100,8 @@ export class ApiService {
     let data: UndergradLoginResponse | undefined = undefined;
     for (const endpoint of endpoints) {
       try {
-        const result = await HttpRequest.postJson<UndergradLoginResponse>(endpoint, { username: studentId, password });
+        const result = await HttpRequest.postJson<UndergradLoginResponse>(endpoint, { username: studentId, password },
+          undefined, undefined, true);
         const candidate = result.data;
         // 只有结构化业务响应才停止回退；网关 HTML、空响应等继续尝试备用入口。
         if (candidate && typeof candidate === 'object' && candidate.code !== undefined) {
@@ -119,19 +152,94 @@ export class ApiService {
         idNumber: '420106200301010000',
       });
     }
+    const body: Record<string, string> = { student_id: studentId, password };
+    const headers: Record<string, string> = { Platform: 'android' };
+    let primary: BaseResponse<GraduateLoginDataContent> = { code: -1, msg: '登录请求失败' };
     try {
-      const result = await HttpRequest.postJson<BaseResponse<GraduateLoginDataContent>>(
-        GRADUATE_LOGIN_V2,
-        { student_id: studentId, password },
-      );
-      return result.data;
+      // 研究生课表需要 Go 后端用同一份学号密码换取研究生系统 Cookie，
+      // 从同一入口登录可以保证「能登录」与「能取课表」的凭据口径一致。
+      const result = await HttpRequest.postJson<GraduateLoginResponse<GraduateLoginPayload>>(
+        GRADUATE_LOGIN_GO, body, headers, 45000, true);
+      primary = ApiService.normalizeGraduateLogin(result.data);
+      if (primary.code === 200 || String(primary.code) === '200') return primary;
+      console.warn('ApiService', `go graduate login failed: ${primary.msg}`);
     } catch {
-      const result = await HttpRequest.postJson<BaseResponse<GraduateLoginDataContent>>(
-        GRADUATE_LOGIN_V2_BACKUP,
-        { student_id: studentId, password },
-      );
-      return result.data;
+      console.warn('ApiService', 'go graduate login request error');
     }
+
+    // 主服务明确拒绝凭据（密码错误/账号被锁）时不再尝试旧服务：
+    // 换一个服务重放同样的密码只会加速触发上游锁定。
+    if (ApiService.isCredentialRejection(primary)) return primary;
+
+    // 兼容旧 8009 个人信息服务：它只做研究生系统登录，失败时外层仍返回 200。
+    const legacyUrls: string[] = [GRADUATE_LOGIN_V2, GRADUATE_LOGIN_V2_BACKUP];
+    for (let i = 0; i < legacyUrls.length; i++) {
+      try {
+        const legacy = await HttpRequest.postJson<GraduateLoginResponse<GraduateLoginPayload>>(legacyUrls[i], body,
+          undefined, undefined, true);
+        const normalized = ApiService.normalizeGraduateLogin(legacy.data);
+        if (normalized.code === 200 || String(normalized.code) === '200') return normalized;
+        // 旧节点明确拒绝凭据时同样立刻停止，避免继续打下一个入口、加速账号锁定。
+        if (ApiService.isCredentialRejection(normalized)) return normalized;
+      } catch {
+        console.warn('ApiService', 'legacy graduate login request failed');
+      }
+    }
+    return primary;
+  }
+
+  /** 把两种后端的研究生登录响应归一成 BaseResponse<GraduateLoginDataContent>。 */
+  private static normalizeGraduateLogin(
+    resp: GraduateLoginResponse<GraduateLoginPayload> | undefined,
+  ): BaseResponse<GraduateLoginDataContent> {
+    if (!resp) return { code: -1, msg: '登录失败' };
+    const payload = resp.data;
+    const successCode = resp.code === 200 || resp.code === 0 || resp.code === 10000;
+    const respMsg = (resp.msg || resp.message || '').trim();
+    if (payload) {
+      const nested = payload.data;
+      let profile: GraduateLoginPayload | undefined = undefined;
+      if (nested && (nested.studentNumber || nested.name)) {
+        profile = nested;
+      } else if (payload.studentNumber || payload.name) {
+        profile = payload;
+      }
+      if (successCode && profile) {
+        return { code: 200, msg: respMsg || '登录成功', data: ApiService.toGraduateContent(profile) };
+      }
+      const failureMsg = (payload.login_error || payload.message || '').trim();
+      if (!successCode || payload.status === 'failure' || failureMsg) {
+        return { code: successCode ? 500 : resp.code, msg: failureMsg || respMsg || '登录失败' };
+      }
+    }
+    if (successCode) {
+      // code=200 但没有任何用户信息：按失败处理，避免登录页误判成功。
+      return { code: 500, msg: respMsg || '登录响应缺少用户信息' };
+    }
+    return { code: resp.code, msg: respMsg || '登录失败' };
+  }
+
+  /** 是否为「凭据被明确拒绝」：这类失败换服务重试只会加速账号锁定。 */
+  private static isCredentialRejection(resp: BaseResponse<GraduateLoginDataContent>): boolean {
+    if (resp.code === 401 || resp.code === 403) return true;
+    const msg = (resp.msg || '').toLowerCase();
+    return msg.includes('invalid password') || msg.includes('密码') || msg.includes('口令') ||
+      msg.includes('账号') || msg.includes('帐号') || msg.includes('锁定');
+  }
+
+  private static toGraduateContent(profile: GraduateLoginPayload): GraduateLoginDataContent {
+    return {
+      studentNumber: profile.studentNumber ?? '',
+      name: profile.name ?? '',
+      college: profile.college ?? '',
+      major: profile.major ?? '',
+      clazz: profile.clazz ?? '',
+      birthday: profile.birthday ?? '',
+      sex: profile.sex ?? '',
+      nationality: profile.nationality ?? '',
+      hometown: profile.hometown ?? '',
+      idNumber: profile.idNumber ?? '',
+    };
   }
 
   /** App Auth 登录 */
@@ -157,10 +265,12 @@ export class ApiService {
     };
     const headers = { 'X-Wust-Skip-Auth-Interceptor': 'true' };
     try {
-      const result = await HttpRequest.postJson<BaseResponse<AppAuthDataContent>>(APP_AUTH_LOGIN, body, headers);
+      const result = await HttpRequest.postJson<BaseResponse<AppAuthDataContent>>(APP_AUTH_LOGIN, body, headers,
+        undefined, true);
       return result.data;
     } catch {
-      const result = await HttpRequest.postJson<BaseResponse<AppAuthDataContent>>(APP_AUTH_LOGIN_BACKUP, body, headers);
+      const result = await HttpRequest.postJson<BaseResponse<AppAuthDataContent>>(APP_AUTH_LOGIN_BACKUP, body, headers,
+        undefined, true);
       return result.data;
     }
   }
