@@ -305,8 +305,10 @@ export struct CoursePage {
       // 预取可能刚好在页面读完缓存之后才写入：先等它结束（最多 2.5s），
       // 再用最新缓存渲染，避免停在旧数据上。
       await LaunchPrefetchService.awaitPrefetch();
-      if (LaunchPrefetchService.coursePrefetchedRecently()) {
-        // 启动页已经预取到课表：重新读一次存档并直接展示，不再重复请求。
+      const prefetchSid = await s.getStudentId();
+      const prefetchGraduate = await s.getIsGraduate();
+      if (LaunchPrefetchService.coursePrefetchedRecently(prefetchSid, prefetchGraduate, this.currentSemester)) {
+        // 启动页已经预取到同一账号、同一学期的课表：重新读一次存档并直接展示。
         await this.loadCurrentArchiveCourses();
         this.loading = false;
         console.info(TAG, 'reuse prefetched courses');

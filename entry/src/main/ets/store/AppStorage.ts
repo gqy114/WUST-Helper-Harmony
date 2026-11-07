@@ -89,10 +89,24 @@ export class AppStorage {
   async getUseMock(): Promise<boolean> { return this.getBool('useMock', false); }
   async setUseMock(v: boolean): Promise<void> { return this.putBool('useMock', v); }
 
+  /**
+   * 账号/学期版本号：切换账号或学期时自增。
+   * 异步任务（如启动页预取）用它判断自己的结果是否已经过期，
+   * 避免把旧账号/旧学期的数据写进当前缓存。
+   */
+  private sessionEpoch: number = 0;
+
+  getSessionEpoch(): number { return this.sessionEpoch; }
+
+  private bumpSessionEpoch(): void { this.sessionEpoch = this.sessionEpoch + 1; }
+
   // ── 学期 ──
 
   async getSemester(): Promise<string> { return this.getStr('semester'); }
-  async setSemester(v: string): Promise<void> { return this.putStr('semester', v); }
+  async setSemester(v: string): Promise<void> {
+    this.bumpSessionEpoch();
+    return this.putStr('semester', v);
+  }
   async getSelectSemester(): Promise<string> { return this.getStr('selectSemester'); }
   async setSelectSemester(v: string): Promise<void> { return this.putStr('selectSemester', v); }
 
@@ -114,7 +128,10 @@ export class AppStorage {
   async getToken(): Promise<string> { return this.getStr('token'); }
   async setToken(v: string): Promise<void> { return this.putStr('token', v); }
   async getStudentId(): Promise<string> { return this.getStr('studentId'); }
-  async setStudentId(v: string): Promise<void> { return this.putStr('studentId', v); }
+  async setStudentId(v: string): Promise<void> {
+    this.bumpSessionEpoch();
+    return this.putStr('studentId', v);
+  }
   async getPassword(): Promise<string> { return this.getStr('password'); }
   async setPassword(v: string): Promise<void> { return this.putStr('password', v); }
   async getPhysicalExperimentPassword(): Promise<string> { return this.getStr('physicalExperimentPassword'); }
@@ -122,7 +139,10 @@ export class AppStorage {
   async getMessage(): Promise<string> { return this.getStr('login_msg'); }
   async setMessage(v: string): Promise<void> { return this.putStr('login_msg', v); }
   async getIsGraduate(): Promise<boolean> { return this.getBool('isGraduate'); }
-  async setIsGraduate(v: boolean): Promise<void> { return this.putBool('isGraduate', v); }
+  async setIsGraduate(v: boolean): Promise<void> {
+    this.bumpSessionEpoch();
+    return this.putBool('isGraduate', v);
+  }
   async getTokenUpdateTime(): Promise<number> { return this.getNum('token_update_time'); }
   async setTokenUpdateTime(v: number): Promise<void> { return this.putNum('token_update_time', v); }
   async getTokenLastUseTime(): Promise<number> { return this.getNum('token_last_use_time'); }
