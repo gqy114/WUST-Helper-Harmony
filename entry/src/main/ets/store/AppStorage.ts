@@ -23,7 +23,7 @@ export class AppStorage {
     return AppStorage.instance;
   }
 
-  async init(context: common.UIAbilityContext): Promise<void> {
+  async init(context: common.Context): Promise<void> {
     this.kvStore = await preferences.getPreferences(context, STORE_NAME);
   }
 

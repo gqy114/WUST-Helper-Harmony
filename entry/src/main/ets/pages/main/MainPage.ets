@@ -49,7 +49,7 @@ const hotFuncList: CardItem[] = [
   { title: "图书馆", desc: "检索借阅与图书", bgColor: "#FFE5E5", titleColor: "#e53935", icon: $r('app.media.ic_library_normal'), route: "pages/library/LibraryPage" },
   { title: "培养方案", desc: "掌握修读情况", bgColor: "#FFF3E0", titleColor: "#f57c00", icon: $r('app.media.ic_credit'), route: "pages/campus/TrainingPlanPage" },
   { title: "教室查询", desc: "空教室与课程", bgColor: "#F3E5F5", titleColor: "#7b1fa2", icon: $r('app.media.ic_emptyroom'), route: "pages/campus/ClassroomQueryPage" },
-  { title: "双创学分", desc: "创新创业学分", bgColor: "#E0F7FA", titleColor: "#009688", icon: $r('app.media.ic_double_create_credit'), route: "pages/common/WebPage", url: "" },
+  { title: "双创学分", desc: "创新创业学分", bgColor: "#E0F7FA", titleColor: "#009688", icon: $r('app.media.ic_double_create_credit'), route: "pages/campus/InnovationCreditPage" },
   { title: "AI问答", desc: "智能问答助手", bgColor: "#E8EAF6", titleColor: "#5c6bc0", icon: $r('app.media.ic_ai_chat'), route: "pages/ai/AIAssistantPage" },
   { title: "主修进度", desc: "学分完成情况", bgColor: "#F5E5DC", titleColor: "#8d6e63", icon: $r('app.media.ic_graduation_audit'), route: "pages/campus/MajorProgressPage" }
 ]
@@ -175,9 +175,11 @@ struct MainPage {
 
   private startTeachingSessionRetry(): void {
     if (this.teachingRetryTimer !== -1) return;
+    // 只在校验中发现 Token 过期时才重新登录教务。此前每分钟强制刷新一次，
+    // 会不断替换 Token 并在课表请求期间制造 401，导致课表偶发加载失败。
     this.teachingRetryTimer = setInterval(() => {
-      TeachingSessionService.ensureSession(true).then((ok: boolean) => {
-        if (ok) console.info(TAG, 'teaching session restored in background');
+      TeachingSessionService.ensureFreshSession().then((ok: boolean) => {
+        if (ok) console.info(TAG, 'teaching session keepalive ok');
       });
     }, 60_000);
   }
