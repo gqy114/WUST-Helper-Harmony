@@ -2,7 +2,6 @@ import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { common, Want } from '@kit.AbilityKit';
-import { call } from '@kit.TelephonyKit';
 import { AppStorage } from '../../store/AppStorage';
 import { SecondHandBookApi, SecondhandBook, SecondhandDetail, SecondhandListing, SecondhandReply } from '../../net/SecondHandBookApi';
 import { CampusWallApi, CampusWallPost } from '../../net/CampusWallApi';
@@ -18,6 +17,8 @@ struct SecondHandBookDetailPage {
   @State private loading: boolean = true;
   @State private replyOpen: boolean = false;
   @State private replyText: string = '';
+  @State private replyTargetName: string = '';
+  @State private replyTargetExcerpt: string = '';
   @State private sending: boolean = false;
   @State private contactOpen: boolean = false;
   @State private myAvatar: string = '';
@@ -148,10 +149,6 @@ struct SecondHandBookDetailPage {
   }
 
   private openSellerContact(): void {
-    if (!(this.listing.contact || '').trim()) {
-      promptAction.showToast({ message: '卖家暂未公开联系方式', duration: 1500 });
-      return;
-    }
     this.contactOpen = true;
   }
 
@@ -171,7 +168,7 @@ struct SecondHandBookDetailPage {
     if (type.indexOf('qq') >= 0) return '复制并打开 QQ';
     if (type.indexOf('微信') >= 0 || type.indexOf('wechat') >= 0) return '复制并打开微信';
     if (type.indexOf('手机') >= 0 || type.indexOf('电话') >= 0 || type.indexOf('phone') >= 0) return '复制并打开拨号';
-    return '复制并打开对应应用';
+    return '';
   }
 
   private async copyAndOpenContact(): Promise<void> {
@@ -188,7 +185,9 @@ struct SecondHandBookDetailPage {
     }
     if (type.indexOf('手机') >= 0 || type.indexOf('电话') >= 0 || type.indexOf('phone') >= 0) {
       try {
-        await call.makeCall(value);
+        const context = getContext(this) as common.UIAbilityContext;
+        const dialWant: Want = { action: 'ohos.want.action.dial', uri: `tel:${value}` };
+        await context.startAbility(dialWant);
         this.contactOpen = false;
       } catch { promptAction.showToast({ message: '号码已复制，未能打开拨号界面', duration: 1800 }); }
       return;
@@ -210,9 +209,20 @@ struct SecondHandBookDetailPage {
     }
   }
 
+  private openReplyTo(reply: SecondhandReply): void {
+    this.replyTargetName = (reply.displayName || reply.realName || reply.studentId || '同学').trim() || '同学';
+    const excerpt = (reply.content || '').replace(/\s+/g, ' ').trim();
+    this.replyTargetExcerpt = excerpt.length > 48 ? `${excerpt.substring(0, 48)}…` : excerpt;
+    this.replyOpen = true;
+  }
+
   private async sendReply(): Promise<void> {
-    const content = this.replyText.trim();
-    if (!content || this.sending) return;
+    const message = this.replyText.trim();
+    if (!message || this.sending) return;
+    const replyTargetName = this.replyTargetName || '';
+    const replyTargetExcerpt = this.replyTargetExcerpt || '';
+    const quote = replyTargetExcerpt ? `「${replyTargetExcerpt}」` : '';
+    const content = replyTargetName ? `回复 ${replyTargetName}${quote}：${message}` : message;
     const isCommunity = this.communityPostId > 0 || this.listing.source === 'community';
     const targetId = isCommunity ? this.communityPostId : Number(this.listing.id || 0);
     if (!Number.isSafeInteger(targetId) || targetId <= 0) {
@@ -223,8 +233,11 @@ struct SecondHandBookDetailPage {
     try {
       if (isCommunity) await CampusWallApi.reply(targetId, content);
       else await SecondHandBookApi.reply(targetId, content);
-      if (this.replyText.trim() === content) {
+      if (this.replyText.trim() === message && (this.replyTargetName || '') === replyTargetName &&
+        (this.replyTargetExcerpt || '') === replyTargetExcerpt) {
         this.replyText = '';
+        this.replyTargetName = '';
+        this.replyTargetExcerpt = '';
         this.replyOpen = false;
       }
       const refreshed = await this.load(false, true);
@@ -261,7 +274,11 @@ struct SecondHandBookDetailPage {
         }.width('100%')
         if (reply.college || reply.major) { Text(reply.college || reply.major || '').fontSize(14).fontColor('#999999').margin({ top: 2 }) }
         Text(reply.content || '').fontSize(18).fontColor('#333333').lineHeight(28).margin({ top: 12 })
-        Text(this.dateLabel(reply.createdAt)).fontSize(14).fontColor('#AAAAAA').margin({ top: 12 })
+        Row() {
+          Text(this.dateLabel(reply.createdAt)).fontSize(14).fontColor('#AAAAAA').layoutWeight(1)
+          Text('回复').fontSize(15).fontColor('#20A982').padding({ left: 12, right: 12, top: 8, bottom: 8 })
+            .onClick(() => this.openReplyTo(reply))
+        }.width('100%').margin({ top: 6 })
       }.layoutWeight(1).alignItems(HorizontalAlign.Start)
     }.width('100%').padding({ left: 30, right: 30, top: 20, bottom: 20 }).backgroundColor(Color.White)
       .border({ width: { bottom: 1 }, color: '#EEEEEE' })
@@ -345,7 +362,11 @@ struct SecondHandBookDetailPage {
 
         Row() {
           Image(this.myAvatar || $r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).objectFit(ImageFit.Cover).margin({ right: 12 })
-          Text('留言咨询...').fontSize(18).fontColor('#999999').layoutWeight(1).onClick(() => { this.replyOpen = true; })
+          Text('留言咨询...').fontSize(18).fontColor('#999999').layoutWeight(1).onClick(() => {
+            this.replyTargetName = '';
+            this.replyTargetExcerpt = '';
+            this.replyOpen = true;
+          })
           Text('联系卖家').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#20C894')
             .onClick(() => this.openSellerContact())
         }.width('92%').height(72).padding({ left: 16, right: 22 }).backgroundColor(Color.White).borderRadius(36).shadow({ radius: 10, color: '#33000000', offsetY: 3 }).margin({ bottom: 16 })
@@ -395,6 +416,12 @@ struct SecondHandBookDetailPage {
         Stack({ alignContent: Alignment.Center }) {
           Column().width('100%').height('100%').backgroundColor('#66000000').onClick(() => { this.replyOpen = false; })
           Column() {
+            if (this.replyTargetName) {
+              Text(`回复 ${this.replyTargetName}`).fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%')
+              if (this.replyTargetExcerpt) {
+                Text(this.replyTargetExcerpt).fontSize(14).fontColor('#999999').maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%').margin({ top: 6, bottom: 8 })
+              }
+            }
             TextArea({ placeholder: '请输入留言', text: this.replyText }).width('100%').height(230).fontSize(20).backgroundColor(Color.White).onChange((value: string) => { this.replyText = value; })
             Row() {
               Text('收起').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#777777').layoutWeight(1).textAlign(TextAlign.Center).onClick(() => { this.replyOpen = false; })
@@ -409,13 +436,16 @@ struct SecondHandBookDetailPage {
           Column().width('100%').height('100%').backgroundColor('#66000000').onClick(() => { this.contactOpen = false; })
           Column() {
             Text(this.contactParts()[0]).fontSize(24).fontWeight(FontWeight.Bold).fontColor('#444444')
-            Text(this.contactParts()[1]).fontSize(23).fontWeight(FontWeight.Bold).fontColor('#666666').margin({ top: 26, bottom: 26 }).copyOption(CopyOptions.LocalDevice)
-            Row({ space: 28 }) {
-              Button('关闭').width(132).height(52).fontSize(19).fontWeight(FontWeight.Bold).backgroundColor('#E86B55').onClick(() => { this.contactOpen = false; })
-              Button('复制').width(132).height(52).fontSize(19).fontWeight(FontWeight.Bold).backgroundColor('#55D600').onClick(() => this.copyContact())
+            Text(this.contactParts()[1] || '卖家暂未公开联系方式').fontSize(23).fontWeight(FontWeight.Bold).fontColor('#666666').margin({ top: 26, bottom: 26 }).copyOption(CopyOptions.LocalDevice)
+            Row({ space: 12 }) {
+              Button('关闭').layoutWeight(1).height(52).fontSize(19).fontWeight(FontWeight.Bold).backgroundColor('#E86B55').onClick(() => { this.contactOpen = false; })
+              Button('复制').layoutWeight(1).height(52).fontSize(19).fontWeight(FontWeight.Bold).backgroundColor('#55D600')
+                .enabled(this.contactParts()[1].length > 0).onClick(() => this.copyContact())
+            }.width('100%')
+            if (this.contactParts()[1] && this.contactActionLabel()) {
+              Button(this.contactActionLabel()).width('100%').height(52).fontSize(18).fontWeight(FontWeight.Bold)
+                .backgroundColor('#20C894').margin({ top: 16 }).onClick(() => this.copyAndOpenContact())
             }
-            Button(this.contactActionLabel()).width('100%').height(52).fontSize(18).fontWeight(FontWeight.Bold)
-              .backgroundColor('#20C894').margin({ top: 16 }).onClick(() => this.copyAndOpenContact())
           }.width('78%').padding({ left: 26, right: 26, top: 30, bottom: 30 }).backgroundColor(Color.White).borderRadius(24).alignItems(HorizontalAlign.Center)
         }.width('100%').height('100%')
       }
