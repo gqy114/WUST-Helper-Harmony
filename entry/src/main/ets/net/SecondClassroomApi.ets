@@ -63,7 +63,7 @@ export class SecondClassroomApi {
       password,
       page: `${page}`,
       page_size: `${pageSize}`
-    });
+    }, undefined, undefined, true);
     const response = result.data;
     const code = response.code;
     if ((code !== undefined && code !== 0 && code !== 200) || !response.data) {

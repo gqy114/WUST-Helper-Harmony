@@ -277,7 +277,7 @@ export class TrainingPlanApi {
     const result = await HttpRequest.postJson<string>('https://www.lyzyy.love:8007/cultivation-plan', {
       student_id: await storage.getStudentId(),
       password: await storage.getPassword()
-    });
+    }, undefined, undefined, true);
     const html = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
     const text = html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ');
     if (text.trim().length === 0) throw new Error('培养方案数据为空');

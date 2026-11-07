@@ -84,7 +84,7 @@ export class CultivationPlanApi {
     const result = await HttpRequest.postJson<string>('https://www.lyzyy.love:8007/cultivation-plan', {
       student_id: await storage.getStudentId(),
       password: await storage.getPassword()
-    });
+    }, undefined, undefined, true);
     if (typeof result.data === 'string' && result.data.trim().length > 0) return result.data;
 
     const response = result.data as CultivationPlanResponse;

@@ -54,6 +54,7 @@ export class PhysicalExperimentApi {
     };
     const result = await HttpRequest.postJson<PhysicalExperimentResponse>(
       PhysicalExperimentApi.URL, request, { Accept: 'application/json', Platform: 'android' },
+      undefined, true,
     );
     if (result.data.code !== undefined && result.data.code !== 0 && result.data.code !== 200 && result.data.code !== 10000) {
       throw new Error(result.data.message ?? result.data.msg ?? '物理实验课表获取失败');
