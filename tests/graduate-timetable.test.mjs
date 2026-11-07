@@ -111,8 +111,9 @@ test('研究生登录成功后必须落盘学号密码（课表接口依赖它�
 test('切换账号必须清掉上一个账号的课表存档', async () => {
   const login = await source(`${root}/ets/pages/login/LoginPage.ets`);
   assert.match(login, /prevSid !== sid/);
-  assert.match(login, /setCurrentCourses\(\[\]\)/);
-  assert.match(login, /setPhysicalExperimentCourses\(\[\]\)/);
+  assert.match(login, /resetCourseCache\(\)/);
+  // setCurrentCourses([]) 会把旧 currentCourses 里的实验课迁移回来，切号必须用专用清空。
+  assert.doesNotMatch(login, /setCurrentCourses\(\[\]\)/);
   // 磁盘删了但内存 CourseStore 还在，断网时仍会显示上一个账号的课表。
   assert.match(login, /CourseStore\.getInstance\(\)\.setCourses\(\[\]\)/);
 });
@@ -135,6 +136,19 @@ test('code=200 但没有用户信息时按失败处理', async () => {
   assert.notEqual(resp.code, 200);
 });
 
+test('旧服务明确拒绝凭据时也不再尝试下一个旧服务', async () => {
+  const { calls, api } = await createApiService((url) => {
+    if (url.includes('/Graduate/Support/loginPage')) {
+      return { code: 503, message: 'service unavailable', data: null };
+    }
+    // 第一个旧服务明确返回密码错误
+    return { code: 200, data: { status: 'failure', login_error: '密码错误', message: '登录失败' } };
+  });
+  const resp = await api.loginGraduate('20240001', 'wrong-password');
+  assert.equal(calls.length, 2, '主服务 + 第一个旧服务后应停止');
+  assert.notEqual(resp.code, 200);
+});
+
 test('含学号密码的课表请求只允许 HTTPS', async () => {
   const course = await source(`${root}/ets/net/CourseApi.ets`);
   // 不允许把研究生课表回退到 http 备用节点。
@@ -143,6 +157,8 @@ test('含学号密码的课表请求只允许 HTTPS', async () => {
   const http = await source(`${root}/ets/net/HttpRequest.ts`);
   assert.match(http, /secure: boolean = false/);
   assert.match(http, /startsWith\('https:\/\/'\)/);
+  // 未识别域名的 http:// 地址也要被 secure 拒绝，不能再原样返回。
+  assert.doesNotMatch(http, /if \(!matched\) return \[\{ url, index: -1 \}\];/);
 });
 
 test('研究生课表 401 不再刷新本科教务 Token，而是展示后端原因', async () => {

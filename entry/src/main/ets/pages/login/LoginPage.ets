@@ -280,8 +280,8 @@ struct LoginPage {
         const prevGraduate = await s.getIsGraduate();
         await s.setIsGraduate(this.isGraduate);
         if (prevSid && (prevSid !== sid || prevGraduate !== this.isGraduate)) {
-          await s.setCurrentCourses([]);
-          await s.setPhysicalExperimentCourses([]);
+          // 不能调用 setCurrentCourses 清空：它会先把旧账号的实验课迁移回来。
+          await s.resetCourseCache();
           await s.setToken('');
           // 只清磁盘不够：CourseStore 里的内存课表也要清，避免断网时仍显示上一个账号的课程。
           CourseStore.getInstance().setCourses([]);
