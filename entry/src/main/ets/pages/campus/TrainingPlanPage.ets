@@ -37,6 +37,10 @@ struct TrainingPlanPage {
     this.errorText = '';
     this.html = '';
     this.renderAttempts = 0;
+    // loading 会把 Web 组件从树下移除，controller 随之解绑；
+    // 这里同步复位，等新组件 onControllerAttached 后再 loadData，
+    // 避免在旧 controller 已经解绑的情况下渲染。
+    this.controllerAttached = false;
     try {
       this.html = await CultivationPlanApi.fetchHtml();
     } catch (error) {
