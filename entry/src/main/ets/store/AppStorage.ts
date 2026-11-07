@@ -229,26 +229,42 @@ export class AppStorage {
     return sid ? `${base}_${sid}` : base;
   }
 
-  async getCourseArchives(): Promise<CourseArchive[]> {
-    const key = await this.archiveKey('courseArchives');
-    let raw = await this.getStr(key, '');
-    if (!raw) {
-      // 升级迁移：旧版本只有全局档案，首次读取时归到当前账号。
-      const legacy = await this.getStr('courseArchives', '');
-      if (legacy) {
-        await this.putStr(key, legacy);
-        raw = legacy;
-      }
-    }
-    if (!raw) {
-      return [];
-    }
+  private parseArchives(raw: string): CourseArchive[] {
+    if (!raw) return [];
     try {
       const parsed = JSON.parse(raw) as CourseArchive[];
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
+  }
+
+  async getCourseArchives(): Promise<CourseArchive[]> {
+    const sid = await this.getStudentId();
+    if (!sid) {
+      // 还没登录：不认领旧档案，避免升级后第一个点开档案页的账号被动接收。
+      return this.parseArchives(await this.getStr('courseArchives', ''));
+    }
+    const key = await this.archiveKey('courseArchives');
+    let raw = await this.getStr(key, '');
+    if (!raw) {
+      // 旧版本只有全局档案：只允许升级后首次启动的那个账号认领一次，
+      // 之后其它账号不再继承，避免 A 的档案出现在 B 的列表里。
+      const migrated = await this.getBool('courseArchivesMigrated', false);
+      if (!migrated) {
+        const legacy = await this.getStr('courseArchives', '');
+        if (legacy) {
+          await this.putStr(key, legacy);
+          raw = legacy;
+        }
+        const legacyId = await this.getStr('currentArchiveId', '');
+        if (legacyId) {
+          await this.putStr(await this.archiveKey('currentArchiveId'), legacyId);
+        }
+        await this.putBool('courseArchivesMigrated', true);
+      }
+    }
+    return this.parseArchives(raw);
   }
 
   async setCourseArchives(value: CourseArchive[]): Promise<void> {
@@ -371,16 +387,21 @@ export class AppStorage {
   }
 
   async setCurrentCourses(value: CourseData[], marker?: string): Promise<void> {
-    // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
-    this.courseCacheMarker = marker !== undefined ? marker : `courses_${Date.now()}`;
+    // 写入是异步的：期间若切换账号/学期，就放弃这次写入，
+    // 避免旧请求的结果覆盖新账号刚保存的课表。
+    const epochAtStart = this.sessionEpoch;
     const savedExperiments = await this.getPhysicalExperimentCourses();
     const incomingExperiments: CourseData[] = [];
     for (let i = 0; i < value.length; i++) {
       if (this.isPhysicalExperimentCourse(value[i])) incomingExperiments.push(value[i]);
     }
     const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
+    if (this.sessionEpoch !== epochAtStart) return;
     await this.setPhysicalExperimentCourses(experiments);
+    if (this.sessionEpoch !== epochAtStart) return;
     const merged = this.mergePhysicalExperiments(value, experiments);
+    // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
+    this.courseCacheMarker = marker !== undefined ? marker : `courses_${Date.now()}`;
     await this.putStr('currentCourses', JSON.stringify(merged));
   }
 

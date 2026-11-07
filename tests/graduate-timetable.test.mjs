@@ -168,6 +168,8 @@ test('课表档案与所选档案按账号隔离，切换账号不会载入别�
   assert.match(storage, /archiveKey\('currentArchiveId'\)/);
   // 旧版本只有全局 key，升级时迁移到当前账号，而不是继续共享。
   assert.match(storage, /const legacy = await this\.getStr\('courseArchives', ''\);/);
+  // 旧档案只允许一个账号认领一次。
+  assert.match(storage, /courseArchivesMigrated/);
 });
 
 test('研究生课表 401 不再刷新本科教务 Token，而是展示后端原因', async () => {
