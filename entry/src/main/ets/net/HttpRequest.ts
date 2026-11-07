@@ -98,16 +98,20 @@ export class HttpRequest {
 
       let requestUrl = url;
       let requestMethod = method === 'GET' ? http.RequestMethod.GET : http.RequestMethod.POST;
+      // 代理请求会把原始 header（可能含令牌/Cookie）打包进 body，
+      // 所以要在改写之前先判断是否敏感。
+      let secureRequest = HttpRequest.needsSecure(options, header);
       if (await HttpRequest.shouldUseCampusProxy(url)) {
         extraData = JSON.stringify({ method, url, headers: header, body: extraData ?? '' });
         requestUrl = 'https://lyzyy.love:8081/CampusProxy/Support/request';
         requestMethod = http.RequestMethod.POST;
         header = { 'Content-Type': 'application/json' };
+        // 信封里带着原始认证信息，代理请求一律只走 HTTPS 节点。
+        secureRequest = true;
         console.info(TAG, `campus proxy enabled for ${method} ${url}`);
       }
 
-      const targets = HttpRequest.backendTargets(requestUrl, options?.pinBackend ?? false,
-        HttpRequest.needsSecure(options, header));
+      const targets = HttpRequest.backendTargets(requestUrl, options?.pinBackend ?? false, secureRequest);
       if (targets.length === 0) {
         // 敏感请求找不到 HTTPS 节点时直接失败，绝不降级到 HTTP。
         throw new Error('sensitive request requires https backend');
