@@ -498,7 +498,9 @@ export struct CoursePage {
       return false;
     }
     this.store.setCourses(currentCourses);
-    this.allCourseList = [...currentCourses];
+    // 必须用 store 里重新上过色的列表：本地存档没有 color 字段，
+    // 直接用原数组会让所有课程都落到默认绿色。
+    this.allCourseList = [...this.store.courses];
     this.applyOnlyThisWeekFilter();
     this.empty = this.allCourseList.length === 0;
     this.filterVisibleCourses();

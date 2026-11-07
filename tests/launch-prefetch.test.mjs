@@ -45,3 +45,11 @@ test('主页内容：预取后 60 秒内复用缓存', async () => {
   assert.match(code, /bannersCache/);
   assert.match(code, /noticesCache/);
 });
+
+test('复用预取存档时要用上过色的课表列表', async () => {
+  const page = await source(`${root}/ets/pages/course/CoursePage.ets`);
+  const load = page.slice(page.indexOf('private async loadCurrentArchiveCourses'));
+  // 本地存档没有 color 字段，直接用原数组会让所有课程变成默认绿色。
+  assert.match(load, /this\.allCourseList = \[\.\.\.this\.store\.courses\];/);
+  assert.doesNotMatch(load, /this\.allCourseList = \[\.\.\.currentCourses\];/);
+});
