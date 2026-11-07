@@ -106,6 +106,34 @@ test('A 的写入卡在落盘阶段时，B 保存完成后不会被覆盖', asyn
   assert.equal(saved.some((item) => item.courseName === '迟到的A课'), false, 'A 的旧数据不应残留');
 });
 
+test('旧预取的回滚排在新课表写入之后也不会清空新课表', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  await storage.setSemester('2025-2026-1');
+  await storage.setCurrentCourses(courses('旧学期课'), 'prefetch_old');
+
+  // 切换学期：新课表的写入先入队
+  await storage.setSemester('2025-2026-2');
+  const newWrite = storage.setCurrentCourses(courses('新学期课'), 'new_semester');
+  // 旧预取此时才回滚：判断必须发生在队列内，看到的是新课表的标记
+  const rolledBack = await storage.resetCourseCacheIfMarker('prefetch_old');
+  await newWrite;
+
+  assert.equal(rolledBack, false, '不是自己的写入就不应清空');
+  const saved = await storage.getCurrentCourses();
+  assert.equal(saved.some((item) => item.courseName === '新学期课'), true, '新课表不能被清空');
+});
+
+test('条件清空：仍是自己的写入时才清空', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  await storage.setCurrentCourses(courses('我的课'), 'mine');
+  const rolledBack = await storage.resetCourseCacheIfMarker('mine');
+  assert.equal(rolledBack, true);
+  const saved = await storage.getCurrentCourses();
+  assert.equal(saved.length, 0, '自己的写入应被清空');
+});
+
 test('旧档案只被升级后的第一个账号认领一次，其它账号看不到', async () => {
   const { storage, store } = await createStorage();
   store.set('courseArchives', JSON.stringify(JSON.stringify(legacyData())));

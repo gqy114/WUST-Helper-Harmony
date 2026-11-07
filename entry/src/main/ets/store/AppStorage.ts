@@ -14,11 +14,6 @@ export class AppStorage {
   private static instance: AppStorage;
   private kvStore: preferences.Preferences | null = null;
 
-  /** 最近一次课表缓存的写入标记：异步写入者用它判断自己是否仍是最后一次写入。 */
-  private courseCacheMarker: string = '';
-
-  getCourseCacheMarker(): string { return this.courseCacheMarker; }
-
   private constructor() {}
 
   static getInstance(): AppStorage {
@@ -134,7 +129,12 @@ export class AppStorage {
    */
   private sessionEpoch: number = 0;
 
+  /** 最近一次课表缓存的写入标记：异步写入者用它判断自己是否仍是最后一次写入。 */
+  private courseCacheMarker: string = '';
+
   getSessionEpoch(): number { return this.sessionEpoch; }
+
+  getCourseCacheMarker(): string { return this.courseCacheMarker; }
 
   private bumpSessionEpoch(): void { this.sessionEpoch = this.sessionEpoch + 1; }
 
@@ -413,6 +413,23 @@ export class AppStorage {
     });
   }
 
+  /**
+   * 条件清空：只有缓存仍然是 marker 那次写入时才清空。
+   * 判断和清空必须在同一个写入队列任务里完成，否则旧任务的清空会排在
+   * 新课表写入之后执行，把新学期的课表清掉。
+   */
+  async resetCourseCacheIfMarker(marker: string): Promise<boolean> {
+    return this.enqueueCourseWrite(async () => {
+      if (this.courseCacheMarker !== marker) {
+        return false;
+      }
+      this.courseCacheMarker = `reset_${Date.now()}`;
+      await this.putStr('currentCourses', '[]');
+      await this.putStr('physicalExperimentCourses', '[]');
+      return true;
+    });
+  }
+
   async getCurrentCourses(): Promise<CourseData[]> {
     const current = await this.getStoredCourses('currentCourses');
     const experiments = await this.getPhysicalExperimentCourses();
@@ -429,7 +446,7 @@ export class AppStorage {
    */
   private courseWriteChain: Promise<void> = Promise.resolve();
 
-  private enqueueCourseWrite(task: () => Promise<void>): Promise<void> {
+  private enqueueCourseWrite<T>(task: () => Promise<T>): Promise<T> {
     const run = this.courseWriteChain.then(task, task);
     this.courseWriteChain = run.then(() => {}, () => {});
     return run;
