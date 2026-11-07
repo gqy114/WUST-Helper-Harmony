@@ -30,6 +30,39 @@ export class AppStorage {
 
   async init(context: common.UIAbilityContext): Promise<void> {
     this.kvStore = await preferences.getPreferences(context, STORE_NAME);
+    // 升级后第一次启动就确定旧档案归属，而不是等用户点开档案页。
+    await this.claimLegacyArchives();
+  }
+
+  /**
+   * 旧版本只有全局课表档案。认领必须发生在「首个账号启动/登录」时点，
+   * 否则 A 升级后没打开档案页就切到 B，B 会误认领 A 的档案。
+   * 旧数据只复制不删除。
+   */
+  private async claimLegacyArchives(): Promise<void> {
+    const migrated = await this.getBool('courseArchivesMigrated', false);
+    if (migrated) {
+      return;
+    }
+    const sid = await this.getStudentId();
+    if (!sid) {
+      return;
+    }
+    const legacy = await this.getStr('courseArchives', '');
+    if (legacy) {
+      const scopedKey = await this.archiveKey('courseArchives');
+      if (!(await this.getStr(scopedKey, ''))) {
+        await this.putStr(scopedKey, legacy);
+      }
+    }
+    const legacyId = await this.getStr('currentArchiveId', '');
+    if (legacyId) {
+      const scopedIdKey = await this.archiveKey('currentArchiveId');
+      if (!(await this.getStr(scopedIdKey, ''))) {
+        await this.putStr(scopedIdKey, legacyId);
+      }
+    }
+    await this.putBool('courseArchivesMigrated', true);
   }
 
   // ── 低层读写 ──
@@ -119,7 +152,11 @@ export class AppStorage {
   async getToken(): Promise<string> { return this.getStr('token'); }
   async setToken(v: string): Promise<void> { return this.putStr('token', v); }
   async getStudentId(): Promise<string> { return this.getStr('studentId'); }
-  async setStudentId(v: string): Promise<void> { return this.putStr('studentId', v); }
+  async setStudentId(v: string): Promise<void> {
+    await this.putStr('studentId', v);
+    // 升级后还没重启过就登录：在这里补一次旧档案认领，保证在切号前完成。
+    await this.claimLegacyArchives();
+  }
   async getPassword(): Promise<string> { return this.getStr('password'); }
   async setPassword(v: string): Promise<void> { return this.putStr('password', v); }
   async getPhysicalExperimentPassword(): Promise<string> { return this.getStr('physicalExperimentPassword'); }
