@@ -128,6 +128,39 @@ test('another user can still reply to a native listing', async () => {
   assert.equal(mock.toasts.at(-1), '留言成功');
 });
 
+test('reply to a specific comment includes its author and excerpt for the existing API', async () => {
+  const { page, mock } = await pageHarness();
+  page.replyTargetName = '小明';
+  page.replyTargetExcerpt = '这本书还在吗？';
+  page.replyText = '还在';
+  await page.sendReply();
+  assert.equal(mock.calls[0].content, '回复 小明「这本书还在吗？」：还在');
+  assert.equal(page.replyText, '');
+  assert.equal(page.replyTargetName, '');
+  assert.equal(page.replyTargetExcerpt, '');
+});
+
+test('specific reply failure retains both draft and reply target', async () => {
+  const { page, mock } = await pageHarness();
+  page.replyTargetName = '小明';
+  page.replyTargetExcerpt = '还在吗？';
+  page.replyText = '还在';
+  mock.fail = true;
+  await page.sendReply();
+  assert.equal(page.replyText, '还在');
+  assert.equal(page.replyTargetName, '小明');
+  assert.equal(page.replyTargetExcerpt, '还在吗？');
+  assert.equal(page.replyOpen, true);
+});
+
+test('empty specific reply does not send only a quote', async () => {
+  const { page, mock } = await pageHarness();
+  page.replyTargetName = '小明';
+  page.replyText = '  ';
+  await page.sendReply();
+  assert.equal(mock.calls.length, 0);
+});
+
 test('seller replies to community post using post ID, never listing ID', async () => {
   const { page, mock } = await pageHarness();
   page.listing = { id: 12, source: 'community', sellerId: 'self' };
