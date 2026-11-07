@@ -189,7 +189,12 @@ export class SecondHandBookApi {
       } catch (error) {
         // Older backends may not have the replies endpoint. A normal details
         // load can still show the book, but a post-send refresh must report it.
-        if (requireReplies) throw error;
+        if (requireReplies) {
+          // ArkTS 限制：catch 到的值类型不确定，不能直接 throw，
+          // 统一转换成 Error 再抛出，保留原始错误信息。
+          const reason: string = error instanceof Error ? error.message : '留言刷新失败';
+          throw new Error(reason);
+        }
       }
     }
     if (book) {
