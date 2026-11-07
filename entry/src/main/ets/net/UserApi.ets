@@ -113,13 +113,13 @@ export class UserApi {
   private static async parseStudentPage(page: string, studentId: string): Promise<StudentApiResponse> {
     const login = await HttpRequest.request<ParseTokenResponse>(
       UG_PARSE_LOGIN_URL + encodeURIComponent(studentId), 'POST',
-      { headers: { Accept: 'application/json' } });
+      { headers: { Accept: 'application/json' }, secure: true });
     const authData = login.data.data ?? '';
     if (!authData) return { code: -1, msg: '解析服务登录失败' };
     const parsed = await HttpRequest.postJson<StudentApiResponse>(UG_PARSE_INFO_URL, { webpage: page }, {
       Authorization: `Wuster ${authData}`,
       Accept: 'application/json',
-    });
+    }, undefined, true);
     const parsedResponse = parsed.data;
     const parsedInfo = normalizeStudentInfo(parsedResponse);
     console.info('UserApi', `parsed student info=${JSON.stringify(parsedInfo)}`);
@@ -132,6 +132,7 @@ export class UserApi {
     const result = await HttpRequest.request<StudentApiResponse>(GRADUATE_STUDENT_INFO_URL, 'POST', {
       headers: { Accept: 'application/json' },
       body: { student_id: studentId, password },
+      secure: true,
     });
     const response: StudentApiResponse = result.data;
     const normalized = normalizeStudentInfo(response);
