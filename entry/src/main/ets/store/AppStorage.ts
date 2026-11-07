@@ -30,6 +30,39 @@ export class AppStorage {
 
   async init(context: common.Context): Promise<void> {
     this.kvStore = await preferences.getPreferences(context, STORE_NAME);
+    // 升级后第一次启动就确定旧档案归属，而不是等用户点开档案页。
+    await this.claimLegacyArchives();
+  }
+
+  /**
+   * 旧版本只有全局课表档案。认领必须发生在「首个账号启动/登录」时点，
+   * 否则 A 升级后没打开档案页就切到 B，B 会误认领 A 的档案。
+   * 旧数据只复制不删除。
+   */
+  private async claimLegacyArchives(): Promise<void> {
+    const migrated = await this.getBool('courseArchivesMigrated', false);
+    if (migrated) {
+      return;
+    }
+    const sid = await this.getStudentId();
+    if (!sid) {
+      return;
+    }
+    const legacy = await this.getStr('courseArchives', '');
+    if (legacy) {
+      const scopedKey = await this.archiveKey('courseArchives');
+      if (!(await this.getStr(scopedKey, ''))) {
+        await this.putStr(scopedKey, legacy);
+      }
+    }
+    const legacyId = await this.getStr('currentArchiveId', '');
+    if (legacyId) {
+      const scopedIdKey = await this.archiveKey('currentArchiveId');
+      if (!(await this.getStr(scopedIdKey, ''))) {
+        await this.putStr(scopedIdKey, legacyId);
+      }
+    }
+    await this.putBool('courseArchivesMigrated', true);
   }
 
   // ── 低层读写 ──
@@ -135,7 +168,9 @@ export class AppStorage {
   async getStudentId(): Promise<string> { return this.getStr('studentId'); }
   async setStudentId(v: string): Promise<void> {
     this.bumpSessionEpoch();
-    return this.putStr('studentId', v);
+    await this.putStr('studentId', v);
+    // 升级后还没重启过就登录：在这里补一次旧档案认领，保证在切号前完成。
+    await this.claimLegacyArchives();
   }
   async getPassword(): Promise<string> { return this.getStr('password'); }
   async setPassword(v: string): Promise<void> { return this.putStr('password', v); }
@@ -371,9 +406,11 @@ export class AppStorage {
    * 实验课缓存再合并回来，导致上一个账号的实验课残留。
    */
   async resetCourseCache(): Promise<void> {
-    this.courseCacheMarker = `reset_${Date.now()}`;
-    await this.putStr('currentCourses', '[]');
-    await this.putStr('physicalExperimentCourses', '[]');
+    return this.enqueueCourseWrite(async () => {
+      this.courseCacheMarker = `reset_${Date.now()}`;
+      await this.putStr('currentCourses', '[]');
+      await this.putStr('physicalExperimentCourses', '[]');
+    });
   }
 
   async getCurrentCourses(): Promise<CourseData[]> {
@@ -386,23 +423,38 @@ export class AppStorage {
     return merged;
   }
 
+  /**
+   * 课表缓存写入串行化：两次异步写入不能交错，
+   * 否则 A 的写入可能在 B 保存完成后才落盘，把 B 的数据覆盖掉。
+   */
+  private courseWriteChain: Promise<void> = Promise.resolve();
+
+  private enqueueCourseWrite(task: () => Promise<void>): Promise<void> {
+    const run = this.courseWriteChain.then(task, task);
+    this.courseWriteChain = run.then(() => {}, () => {});
+    return run;
+  }
+
   async setCurrentCourses(value: CourseData[], marker?: string): Promise<void> {
     // 写入是异步的：期间若切换账号/学期，就放弃这次写入，
     // 避免旧请求的结果覆盖新账号刚保存的课表。
     const epochAtStart = this.sessionEpoch;
-    const savedExperiments = await this.getPhysicalExperimentCourses();
-    const incomingExperiments: CourseData[] = [];
-    for (let i = 0; i < value.length; i++) {
-      if (this.isPhysicalExperimentCourse(value[i])) incomingExperiments.push(value[i]);
-    }
-    const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
-    if (this.sessionEpoch !== epochAtStart) return;
-    await this.setPhysicalExperimentCourses(experiments);
-    if (this.sessionEpoch !== epochAtStart) return;
-    const merged = this.mergePhysicalExperiments(value, experiments);
-    // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
-    this.courseCacheMarker = marker !== undefined ? marker : `courses_${Date.now()}`;
-    await this.putStr('currentCourses', JSON.stringify(merged));
+    return this.enqueueCourseWrite(async () => {
+      if (this.sessionEpoch !== epochAtStart) return;
+      const savedExperiments = await this.getPhysicalExperimentCourses();
+      const incomingExperiments: CourseData[] = [];
+      for (let i = 0; i < value.length; i++) {
+        if (this.isPhysicalExperimentCourse(value[i])) incomingExperiments.push(value[i]);
+      }
+      const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
+      if (this.sessionEpoch !== epochAtStart) return;
+      await this.setPhysicalExperimentCourses(experiments);
+      if (this.sessionEpoch !== epochAtStart) return;
+      const merged = this.mergePhysicalExperiments(value, experiments);
+      // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
+      this.courseCacheMarker = marker !== undefined ? marker : `courses_${Date.now()}`;
+      await this.putStr('currentCourses', JSON.stringify(merged));
+    });
   }
 
   async getCachedGrades(): Promise<string> { return this.getStr('cachedGrades', ''); }

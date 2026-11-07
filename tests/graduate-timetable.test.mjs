@@ -172,6 +172,15 @@ test('课表档案与所选档案按账号隔离，切换账号不会载入别�
   assert.match(storage, /courseArchivesMigrated/);
 });
 
+test('旧档案在首个账号启动/登录时完成认领，不等打开档案页', async () => {
+  const storage = await source(`${root}/ets/store/AppStorage.ts`);
+  assert.match(storage, /private async claimLegacyArchives\(\): Promise<void>/);
+  // init：升级后第一次启动就认领
+  assert.match(storage, /this\.kvStore = await preferences\.getPreferences\(context, STORE_NAME\);\s*\n\s*\/\/[^\n]*\n\s*await this\.claimLegacyArchives\(\);/);
+  // 登录：升级后没重启就登录的情况
+  assert.match(storage, /await this\.putStr\('studentId', v\);\s*\n\s*\/\/[^\n]*\n\s*await this\.claimLegacyArchives\(\);/);
+});
+
 test('研究生课表 401 不再刷新本科教务 Token，而是展示后端原因', async () => {
   const course = await source(`${root}/ets/pages/course/CoursePage.ets`);
   assert.match(course, /!retried && !isGraduate && await TeachingSessionService\.ensureSession\(true\)/);
