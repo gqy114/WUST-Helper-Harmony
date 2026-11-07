@@ -98,3 +98,25 @@ test('接口与页面注册：新页面要写进 main_pages', async () => {
   assert.match(pages, /pages\/profile\/QQGroupPage/);
   assert.match(pages, /pages\/campus\/InnovationCreditPage/);
 });
+
+test('小组件：每周课表展示整周，不能只按今天过滤', async () => {
+  const widget = await source(`${root}/ets/widget/WidgetData.ets`);
+  assert.match(widget, /const weekly = mode === WIDGET_MODE_WEEKLY/);
+  // 只有非每周模式才按今天过滤。
+  assert.match(widget, /if \(!weekly && course\.dayOfWeek !== dayOfWeek\) continue;/);
+  assert.doesNotMatch(widget, /if \(course\.dayOfWeek !== dayOfWeek\) continue;\s*\n\s*if \(!isCourseInWeek/);
+});
+
+test('双创学分：请求只走 HTTPS，错误信息同时读 msg/message', async () => {
+  const api = await source(`${root}/ets/net/InnovationCreditApi.ets`);
+  assert.match(api, /message\?: string;/);
+  assert.match(api, /envelope\.msg \|\| envelope\.message/);
+  assert.match(api, /undefined, undefined, true,/);
+});
+
+test('培养方案：每次加载重新等待 controller 绑定', async () => {
+  const page = await source(`${root}/ets/pages/campus/TrainingPlanPage.ets`);
+  const load = page.slice(page.indexOf('private async load()'));
+  assert.match(load, /this\.controllerAttached = false;/);
+  assert.match(load, /this\.renderAttempts = 0;/);
+});

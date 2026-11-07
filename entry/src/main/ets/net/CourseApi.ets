@@ -17,7 +17,6 @@ const UG_TERM_STARTDATE_BACKUP_URL = 'https://www.lyzyy.love/UnderGraduate/Suppo
  * 必须把学号与密码放在 POST 请求体里，由后端换取教务 Cookie。
  */
 const GRAD_COURSE_TABLE_URL = 'https://lyzyy.love/Graduate/Support/getCoursesPage';
-const GRAD_COURSE_TABLE_BACKUP_URL = 'http://port.happylandmc.cc:52144/Graduate/Support/getCoursesPage';
 
 /** 一步式课表接口原始返回项。字段名与教务处接口保持一致。 */
 export interface CourseApiRawItem {
@@ -140,7 +139,7 @@ export class CourseApi {
       Authorization: token.trim().startsWith('Bearer ') ? token.trim() : `Bearer ${token.trim()}`,
       Platform: 'android', Accept: 'application/json'
     };
-    const result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_SEARCH_URL}?${params.join('&')}`, headers);
+    const result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_SEARCH_URL}?${params.join('&')}`, headers, true);
     const response = result.data;
     if (!response || (response.code !== 0 && response.code !== 200 && response.code !== 10000)) {
       throw new Error(response?.msg || '课程查询失败');
@@ -165,12 +164,12 @@ export class CourseApi {
       };
       let result: CourseHttpResult<CourseApiEnvelope>;
       try {
-        result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_URL}?term=${encodeURIComponent(semester)}`, headers);
+        result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_URL}?term=${encodeURIComponent(semester)}`, headers, true);
       } catch {
         try {
-          result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_BACKUP_URL}?term=${encodeURIComponent(semester)}`, headers);
+          result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_BACKUP_URL}?term=${encodeURIComponent(semester)}`, headers, true);
         } catch {
-          result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_LEGACY_URL}?term=${encodeURIComponent(semester)}`, headers);
+          result = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_LEGACY_URL}?term=${encodeURIComponent(semester)}`, headers, true);
         }
       }
       let resp = result.data;
@@ -181,7 +180,7 @@ export class CourseApi {
           Accept: 'application/json',
         };
         try {
-          const legacyResult = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_LEGACY_URL}?term=${encodeURIComponent(semester)}`, legacyHeaders);
+          const legacyResult = await HttpRequest.get<CourseApiEnvelope>(`${UG_COURSE_TABLE_LEGACY_URL}?term=${encodeURIComponent(semester)}`, legacyHeaders, true);
           resp = legacyResult.data;
         } catch {
           console.warn('CourseApi', 'legacy course authorization retry failed');
@@ -218,10 +217,11 @@ export class CourseApi {
     const body: GraduateCourseBody = { username: username, password: password };
     const headers: GraduateCourseHeaders = { Platform: 'android', Accept: 'application/json' };
     let lastMessage: string = '网络请求失败';
-    const urls: string[] = [GRAD_COURSE_TABLE_URL, GRAD_COURSE_TABLE_BACKUP_URL];
+    // 只保留 HTTPS 入口：学号密码不允许在节点故障时降级到 HTTP。
+    const urls: string[] = [GRAD_COURSE_TABLE_URL];
     for (let i = 0; i < urls.length; i++) {
       try {
-        const result = await HttpRequest.postJson<CourseApiEnvelope>(urls[i], body, headers, 45000);
+        const result = await HttpRequest.postJson<CourseApiEnvelope>(urls[i], body, headers, 45000, true);
         const resp = result.data;
         if (resp && (resp.code === 10000 || resp.code === 200 || resp.code === 0) && resp.data) {
           const list: CourseData[] = [];
@@ -250,9 +250,9 @@ export class CourseApi {
     try {
       let result: CourseHttpResult<TermStartDateEnvelope>;
       try {
-        result = await HttpRequest.get<TermStartDateEnvelope>(UG_TERM_STARTDATE_URL, { Authorization: `Bearer ${token}` });
+        result = await HttpRequest.get<TermStartDateEnvelope>(UG_TERM_STARTDATE_URL, { Authorization: `Bearer ${token}` }, true);
       } catch {
-        result = await HttpRequest.get<TermStartDateEnvelope>(UG_TERM_STARTDATE_BACKUP_URL, { Authorization: `Bearer ${token}` });
+        result = await HttpRequest.get<TermStartDateEnvelope>(UG_TERM_STARTDATE_BACKUP_URL, { Authorization: `Bearer ${token}` }, true);
       }
       const resp = result.data;
 

@@ -755,6 +755,13 @@ export struct CoursePage {
     }
 
     const s = PreferenceStorage.getInstance();
+    const isGraduate = await s.getIsGraduate();
+    if (isGraduate) {
+      // 研究生课表接口不接收 term（后端只按默认学期返回），不能假装切换成功。
+      promptAction.showToast({ message: '研究生课表暂不支持切换学期', duration: 2000 });
+      this.currentSemester = this.store.semester;
+      return;
+    }
     this.currentSemester = semester;
     this.store.setSemester(semester);
     await s.setSemester(semester);
