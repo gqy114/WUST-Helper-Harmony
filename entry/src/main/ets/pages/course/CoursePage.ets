@@ -5,6 +5,7 @@
  */
 import { AppStorage as PreferenceStorage } from '../../store/AppStorage';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
+import { LaunchPrefetchService } from '../../service/LaunchPrefetchService';
 import { CourseApi } from '../../net/CourseApi';
 import { CourseStore } from '../../store/CourseStore';
 import { WeekSelector } from '../../components/WeekSelector';
@@ -301,8 +302,20 @@ export struct CoursePage {
         this.scheduleSessionRestore();
         return;
       }
-      await this.fetchCourses();
-      this.loading = false;
+      // 预取可能刚好在页面读完缓存之后才写入：先等它结束（最多 2.5s），
+      // 再用最新缓存渲染，避免停在旧数据上。
+      await LaunchPrefetchService.awaitPrefetch();
+      const prefetchSid = await s.getStudentId();
+      const prefetchGraduate = await s.getIsGraduate();
+      if (LaunchPrefetchService.coursePrefetchedRecently(prefetchSid, prefetchGraduate, this.currentSemester)) {
+        // 启动页已经预取到同一账号、同一学期的课表：重新读一次存档并直接展示。
+        await this.loadCurrentArchiveCourses();
+        this.loading = false;
+        console.info(TAG, 'reuse prefetched courses');
+      } else {
+        await this.fetchCourses();
+        this.loading = false;
+      }
     } catch {
       console.error(TAG, 'verifyAndLoad error');
       this.loading = false;
@@ -485,7 +498,9 @@ export struct CoursePage {
       return false;
     }
     this.store.setCourses(currentCourses);
-    this.allCourseList = [...currentCourses];
+    // 必须用 store 里重新上过色的列表：本地存档没有 color 字段，
+    // 直接用原数组会让所有课程都落到默认绿色。
+    this.allCourseList = [...this.store.courses];
     this.applyOnlyThisWeekFilter();
     this.empty = this.allCourseList.length === 0;
     this.filterVisibleCourses();

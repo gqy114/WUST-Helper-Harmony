@@ -14,11 +14,6 @@ export class AppStorage {
   private static instance: AppStorage;
   private kvStore: preferences.Preferences | null = null;
 
-  /** 最近一次课表缓存的写入标记：异步写入者用它判断自己是否仍是最后一次写入。 */
-  private courseCacheMarker: string = '';
-
-  getCourseCacheMarker(): string { return this.courseCacheMarker; }
-
   private constructor() {}
 
   static getInstance(): AppStorage {
@@ -127,10 +122,29 @@ export class AppStorage {
   async getUseMock(): Promise<boolean> { return this.getBool('useMock', false); }
   async setUseMock(v: boolean): Promise<void> { return this.putBool('useMock', v); }
 
+  /**
+   * 账号/学期版本号：切换账号或学期时自增。
+   * 异步任务（如启动页预取）用它判断自己的结果是否已经过期，
+   * 避免把旧账号/旧学期的数据写进当前缓存。
+   */
+  private sessionEpoch: number = 0;
+
+  /** 最近一次课表缓存的写入标记：异步写入者用它判断自己是否仍是最后一次写入。 */
+  private courseCacheMarker: string = '';
+
+  getSessionEpoch(): number { return this.sessionEpoch; }
+
+  getCourseCacheMarker(): string { return this.courseCacheMarker; }
+
+  private bumpSessionEpoch(): void { this.sessionEpoch = this.sessionEpoch + 1; }
+
   // ── 学期 ──
 
   async getSemester(): Promise<string> { return this.getStr('semester'); }
-  async setSemester(v: string): Promise<void> { return this.putStr('semester', v); }
+  async setSemester(v: string): Promise<void> {
+    this.bumpSessionEpoch();
+    return this.putStr('semester', v);
+  }
   async getSelectSemester(): Promise<string> { return this.getStr('selectSemester'); }
   async setSelectSemester(v: string): Promise<void> { return this.putStr('selectSemester', v); }
 
@@ -153,6 +167,7 @@ export class AppStorage {
   async setToken(v: string): Promise<void> { return this.putStr('token', v); }
   async getStudentId(): Promise<string> { return this.getStr('studentId'); }
   async setStudentId(v: string): Promise<void> {
+    this.bumpSessionEpoch();
     await this.putStr('studentId', v);
     // 升级后还没重启过就登录：在这里补一次旧档案认领，保证在切号前完成。
     await this.claimLegacyArchives();
@@ -164,7 +179,10 @@ export class AppStorage {
   async getMessage(): Promise<string> { return this.getStr('login_msg'); }
   async setMessage(v: string): Promise<void> { return this.putStr('login_msg', v); }
   async getIsGraduate(): Promise<boolean> { return this.getBool('isGraduate'); }
-  async setIsGraduate(v: boolean): Promise<void> { return this.putBool('isGraduate', v); }
+  async setIsGraduate(v: boolean): Promise<void> {
+    this.bumpSessionEpoch();
+    return this.putBool('isGraduate', v);
+  }
   async getTokenUpdateTime(): Promise<number> { return this.getNum('token_update_time'); }
   async setTokenUpdateTime(v: number): Promise<void> { return this.putNum('token_update_time', v); }
   async getTokenLastUseTime(): Promise<number> { return this.getNum('token_last_use_time'); }
@@ -388,9 +406,28 @@ export class AppStorage {
    * 实验课缓存再合并回来，导致上一个账号的实验课残留。
    */
   async resetCourseCache(): Promise<void> {
-    this.courseCacheMarker = `reset_${Date.now()}`;
-    await this.putStr('currentCourses', '[]');
-    await this.putStr('physicalExperimentCourses', '[]');
+    return this.enqueueCourseWrite(async () => {
+      this.courseCacheMarker = `reset_${Date.now()}`;
+      await this.putStr('currentCourses', '[]');
+      await this.putStr('physicalExperimentCourses', '[]');
+    });
+  }
+
+  /**
+   * 条件清空：只有缓存仍然是 marker 那次写入时才清空。
+   * 判断和清空必须在同一个写入队列任务里完成，否则旧任务的清空会排在
+   * 新课表写入之后执行，把新学期的课表清掉。
+   */
+  async resetCourseCacheIfMarker(marker: string): Promise<boolean> {
+    return this.enqueueCourseWrite(async () => {
+      if (this.courseCacheMarker !== marker) {
+        return false;
+      }
+      this.courseCacheMarker = `reset_${Date.now()}`;
+      await this.putStr('currentCourses', '[]');
+      await this.putStr('physicalExperimentCourses', '[]');
+      return true;
+    });
   }
 
   async getCurrentCourses(): Promise<CourseData[]> {
@@ -403,18 +440,38 @@ export class AppStorage {
     return merged;
   }
 
+  /**
+   * 课表缓存写入串行化：两次异步写入不能交错，
+   * 否则 A 的写入可能在 B 保存完成后才落盘，把 B 的数据覆盖掉。
+   */
+  private courseWriteChain: Promise<void> = Promise.resolve();
+
+  private enqueueCourseWrite<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.courseWriteChain.then(task, task);
+    this.courseWriteChain = run.then(() => {}, () => {});
+    return run;
+  }
+
   async setCurrentCourses(value: CourseData[], marker?: string): Promise<void> {
-    // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
-    this.courseCacheMarker = marker !== undefined ? marker : `courses_${Date.now()}`;
-    const savedExperiments = await this.getPhysicalExperimentCourses();
-    const incomingExperiments: CourseData[] = [];
-    for (let i = 0; i < value.length; i++) {
-      if (this.isPhysicalExperimentCourse(value[i])) incomingExperiments.push(value[i]);
-    }
-    const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
-    await this.setPhysicalExperimentCourses(experiments);
-    const merged = this.mergePhysicalExperiments(value, experiments);
-    await this.putStr('currentCourses', JSON.stringify(merged));
+    // 写入是异步的：期间若切换账号/学期，就放弃这次写入，
+    // 避免旧请求的结果覆盖新账号刚保存的课表。
+    const epochAtStart = this.sessionEpoch;
+    return this.enqueueCourseWrite(async () => {
+      if (this.sessionEpoch !== epochAtStart) return;
+      const savedExperiments = await this.getPhysicalExperimentCourses();
+      const incomingExperiments: CourseData[] = [];
+      for (let i = 0; i < value.length; i++) {
+        if (this.isPhysicalExperimentCourse(value[i])) incomingExperiments.push(value[i]);
+      }
+      const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
+      if (this.sessionEpoch !== epochAtStart) return;
+      await this.setPhysicalExperimentCourses(experiments);
+      if (this.sessionEpoch !== epochAtStart) return;
+      const merged = this.mergePhysicalExperiments(value, experiments);
+      // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
+      this.courseCacheMarker = marker !== undefined ? marker : `courses_${Date.now()}`;
+      await this.putStr('currentCourses', JSON.stringify(merged));
+    });
   }
 
   async getCachedGrades(): Promise<string> { return this.getStr('cachedGrades', ''); }
