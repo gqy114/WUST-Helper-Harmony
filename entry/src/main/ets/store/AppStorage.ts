@@ -14,6 +14,11 @@ export class AppStorage {
   private static instance: AppStorage;
   private kvStore: preferences.Preferences | null = null;
 
+  /** 最近一次课表缓存的写入标记：异步写入者用它判断自己是否仍是最后一次写入。 */
+  private courseCacheMarker: string = '';
+
+  getCourseCacheMarker(): string { return this.courseCacheMarker; }
+
   private constructor() {}
 
   static getInstance(): AppStorage {
@@ -218,8 +223,23 @@ export class AppStorage {
     return this.putStr('importedEventIds', JSON.stringify(value));
   }
 
+  /** 课表档案按账号隔离：同一台设备上不同学号互不可见。 */
+  private async archiveKey(base: string): Promise<string> {
+    const sid = await this.getStudentId();
+    return sid ? `${base}_${sid}` : base;
+  }
+
   async getCourseArchives(): Promise<CourseArchive[]> {
-    const raw = await this.getStr('courseArchives', '');
+    const key = await this.archiveKey('courseArchives');
+    let raw = await this.getStr(key, '');
+    if (!raw) {
+      // 升级迁移：旧版本只有全局档案，首次读取时归到当前账号。
+      const legacy = await this.getStr('courseArchives', '');
+      if (legacy) {
+        await this.putStr(key, legacy);
+        raw = legacy;
+      }
+    }
     if (!raw) {
       return [];
     }
@@ -232,15 +252,15 @@ export class AppStorage {
   }
 
   async setCourseArchives(value: CourseArchive[]): Promise<void> {
-    return this.putStr('courseArchives', JSON.stringify(value));
+    return this.putStr(await this.archiveKey('courseArchives'), JSON.stringify(value));
   }
 
   async getCurrentArchiveId(): Promise<string> {
-    return this.getStr('currentArchiveId', 'mine');
+    return this.getStr(await this.archiveKey('currentArchiveId'), 'mine');
   }
 
   async setCurrentArchiveId(value: string): Promise<void> {
-    return this.putStr('currentArchiveId', value);
+    return this.putStr(await this.archiveKey('currentArchiveId'), value);
   }
 
   private async getStoredCourses(key: string): Promise<CourseData[]> {
@@ -335,6 +355,7 @@ export class AppStorage {
    * 实验课缓存再合并回来，导致上一个账号的实验课残留。
    */
   async resetCourseCache(): Promise<void> {
+    this.courseCacheMarker = `reset_${Date.now()}`;
     await this.putStr('currentCourses', '[]');
     await this.putStr('physicalExperimentCourses', '[]');
   }
@@ -349,7 +370,9 @@ export class AppStorage {
     return merged;
   }
 
-  async setCurrentCourses(value: CourseData[]): Promise<void> {
+  async setCurrentCourses(value: CourseData[], marker?: string): Promise<void> {
+    // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
+    this.courseCacheMarker = marker !== undefined ? marker : `courses_${Date.now()}`;
     const savedExperiments = await this.getPhysicalExperimentCourses();
     const incomingExperiments: CourseData[] = [];
     for (let i = 0; i < value.length; i++) {
