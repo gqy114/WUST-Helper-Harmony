@@ -251,7 +251,7 @@ struct CountdownPage {
         .width('100%')
         .backgroundColor('#20C78A')
 
-        Stack({ alignContent: Alignment.Center }) {
+        Stack({ alignContent: Alignment.Top }) {
           if (this.loading) {
             LoadingProgress().width(44).height(44)
           } else if (this.events.length === 0) {
@@ -280,7 +280,7 @@ struct CountdownPage {
               }.width('92%').padding({ left: 12, right: 16, top: 16, bottom: 16 }).backgroundColor(Color.White)
                 .borderRadius(16).shadow({ radius: 6, color: '#18000000', offsetY: 2 }).margin({ bottom: 14 }),
                 (item: CountdownItem) => item.uuid);
-            }.width('100%').alignItems(HorizontalAlign.Center) }.width('100%').height('100%').scrollBar(BarState.Off)
+            }.width('100%').alignItems(HorizontalAlign.Center) }.width('100%').height('100%').scrollBar(BarState.Off).align(Alignment.Top)
           }
         }
         .layoutWeight(1)

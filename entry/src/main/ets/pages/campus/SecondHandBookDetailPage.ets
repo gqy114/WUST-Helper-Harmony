@@ -357,8 +357,8 @@ struct SecondHandBookDetailPage {
               Text('回复').fontSize(22).fontWeight(FontWeight.Bold).width('100%').padding({ left: 30, top: 20, bottom: 14 }).backgroundColor('#F5F6F8')
               ForEach(this.replies, (reply: SecondhandReply) => { this.replyItem(reply) }, (reply: SecondhandReply) => `${reply.id || reply.createdAt || reply.content}`)
             }
-          }.width('100%')
-        }.layoutWeight(1).scrollBar(BarState.Off)
+          }.width('100%').constraintSize({ minHeight: '100%' })
+        }.layoutWeight(1).scrollBar(BarState.Off).align(Alignment.Top)
 
         Row() {
           Image(this.myAvatar || $r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).objectFit(ImageFit.Cover).margin({ right: 12 })
