@@ -302,10 +302,14 @@ export struct CoursePage {
         this.scheduleSessionRestore();
         return;
       }
+      // 预取可能刚好在页面读完缓存之后才写入：先等它结束（最多 2.5s），
+      // 再用最新缓存渲染，避免停在旧数据上。
+      await LaunchPrefetchService.awaitPrefetch();
       if (LaunchPrefetchService.coursePrefetchedRecently()) {
-        // 启动页已经把课表预取进本地存档，直接展示，避免首屏再等一次网络。
+        // 启动页已经预取到课表：重新读一次存档并直接展示，不再重复请求。
+        await this.loadCurrentArchiveCourses();
         this.loading = false;
-        console.info(TAG, 'skip fetch: courses prefetched during splash');
+        console.info(TAG, 'reuse prefetched courses');
       } else {
         await this.fetchCourses();
         this.loading = false;

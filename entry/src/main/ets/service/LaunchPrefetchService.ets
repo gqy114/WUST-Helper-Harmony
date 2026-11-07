@@ -23,14 +23,30 @@ const COURSE_FRESH_MS = 15_000;
 export class LaunchPrefetchService {
   private static started: boolean = false;
   private static coursePrefetchedAt: number = 0;
+  private static task: Promise<void> | null = null;
 
   /** 启动页调用一次即可；重复调用无副作用。 */
   static start(): void {
     if (LaunchPrefetchService.started) return;
     LaunchPrefetchService.started = true;
-    LaunchPrefetchService.run().catch((err: Error) => {
+    LaunchPrefetchService.task = LaunchPrefetchService.run().catch((err: Error) => {
       console.warn(TAG, `prefetch failed: ${err.message}`);
     });
+  }
+
+  /**
+   * 等待预取结束（最多 timeoutMs）。课表页用它把「读缓存」和「预取写缓存」
+   * 排好顺序，避免正好卡在中间时显示旧数据。
+   */
+  static async awaitPrefetch(timeoutMs: number = 2500): Promise<void> {
+    const task = LaunchPrefetchService.task;
+    if (task === null) return;
+    let timer: number = -1;
+    const timeout = new Promise<void>((resolve: () => void) => {
+      timer = setTimeout(() => resolve(), timeoutMs);
+    });
+    await Promise.race([task, timeout]);
+    if (timer !== -1) clearTimeout(timer);
   }
 
   /** 课表是否刚刚已经被启动页预取过。 */
@@ -46,14 +62,15 @@ export class LaunchPrefetchService {
     if (!sid) return;
     const courseAsHome = await storage.getCourseAsHome();
     if (courseAsHome) {
-      await LaunchPrefetchService.prefetchCourse(storage);
+      await LaunchPrefetchService.prefetchCourse(storage, sid);
     } else {
       await HomeContentApi.preload();
     }
   }
 
   /** 预算课表：写进本地存档，课表页 mount 后立刻有数据。 */
-  private static async prefetchCourse(storage: AppStorage): Promise<void> {
+  private static async prefetchCourse(storage: AppStorage, expectedSid: string): Promise<void> {
+    const expectedGraduate = await storage.getIsGraduate();
     let token = (await storage.getToken()).trim();
     if (!token) {
       // 开机/升级后 Token 可能为空，先恢复会话，成功再继续。
@@ -62,7 +79,7 @@ export class LaunchPrefetchService {
     }
     if (!token) return;
 
-    const isGraduate = await storage.getIsGraduate();
+    const isGraduate = expectedGraduate;
     let list: CourseData[] = [];
     try {
       if (isGraduate) {
@@ -82,6 +99,14 @@ export class LaunchPrefetchService {
       return;
     }
     if (list.length === 0) return;
+
+    // 请求期间可能已经退出旧账号并登录新账号：先核对身份，再写共享的课表缓存。
+    const currentSid = await storage.getStudentId();
+    const currentGraduate = await storage.getIsGraduate();
+    if (currentSid !== expectedSid || currentGraduate !== expectedGraduate) {
+      console.info(TAG, 'account changed during prefetch, discard result');
+      return;
+    }
     await storage.setCurrentCourses(list);
     LaunchPrefetchService.coursePrefetchedAt = Date.now();
     console.info(TAG, `prefetched ${list.length} courses`);
