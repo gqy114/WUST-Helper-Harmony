@@ -29,3 +29,12 @@ test('学生信息解析：登录与解析都只走 HTTPS', async () => {
   assert.match(code, /\}, undefined, true\);/);
   assert.match(code, /secure: true,\s*\n\s*\}\);/);
 });
+
+test('公共请求层：带认证头的请求自动按敏感处理', async () => {
+  const code = await source(`${root}/HttpRequest.ts`);
+  // 只要 header 里有 Authorization / Cookie / Token，就只允许 HTTPS，
+  // 不再依赖每个调用方记得传 secure。
+  assert.match(code, /private static needsSecure\(/);
+  assert.match(code, /key === 'authorization' \|\| key === 'cookie' \|\| key === 'token'/);
+  assert.match(code, /HttpRequest\.needsSecure\(options, header\)/);
+});
