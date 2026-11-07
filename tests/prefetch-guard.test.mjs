@@ -21,11 +21,13 @@ async function createService(scenario) {
   const resets = [];
   let epoch = 0;
   let switched = false;
+  let marker = '';
   const context = createContext({ console, setTimeout, clearTimeout });
 
   const storage = new SyntheticModule(['AppStorage'], function () {
     const instance = {
       getSessionEpoch: () => epoch,
+      getCourseCacheMarker: () => marker,
       getStudentId: async () => (switched ? 'new-sid' : 'old-sid'),
       getCourseAsHome: async () => true,
       getToken: async () => 'token',
@@ -34,7 +36,7 @@ async function createService(scenario) {
       getPassword: async () => 'pwd',
       getTermStartDate: async () => '2026-08-31',
       setTermStartDate: async () => {},
-      setCurrentCourses: async (list) => {
+      setCurrentCourses: async (list, writeMarker) => {
         if (scenario === 'switch-during-write') {
           // 模拟写入期间用户切号：版本号先变，写入随后落盘
           switched = true;
@@ -42,6 +44,12 @@ async function createService(scenario) {
         }
         await delay(10);
         writes.push(list);
+        marker = writeMarker !== undefined ? writeMarker : `other_${writes.length}`;
+        if (scenario === 'newer-write') {
+          // 模拟 A 写完之后、回滚检查之前，B 又保存了自己的课表
+          epoch += 1;
+          marker = 'newer_write_from_B';
+        }
       },
       resetCourseCache: async () => { resets.push(1); },
     };
@@ -98,6 +106,14 @@ test('写入过程中切换账号时回滚预取结果', async () => {
   service.start();
   await service.awaitPrefetch(3000);
   assert.equal(resets.length >= 1, true, '切号后应清空刚写入的课表');
+  assert.equal(service.coursePrefetchedRecently('new-sid', false, '2026-2027-1'), false);
+});
+
+test('新账号随后已保存课表时，旧预取不得回滚清空', async () => {
+  const { resets, service } = await createService('newer-write');
+  service.start();
+  await service.awaitPrefetch(3000);
+  assert.equal(resets.length, 0, '检测到更新的写入时不应调用 resetCourseCache');
   assert.equal(service.coursePrefetchedRecently('new-sid', false, '2026-2027-1'), false);
 });
 

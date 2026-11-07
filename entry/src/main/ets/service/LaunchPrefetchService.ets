@@ -114,18 +114,23 @@ export class LaunchPrefetchService {
       console.info(TAG, 'account/semester changed during prefetch, discard result');
       return;
     }
-    await storage.setCurrentCourses(list);
+    const writeMarker = `prefetch_${epoch}_${Date.now()}`;
+    await storage.setCurrentCourses(list, writeMarker);
     LaunchPrefetchService.prefetchedSid = expectedSid;
     LaunchPrefetchService.prefetchedGraduate = expectedGraduate;
     LaunchPrefetchService.prefetchedSemester = semester;
     LaunchPrefetchService.coursePrefetchedAt = Date.now();
     console.info(TAG, `prefetched ${list.length} courses`);
 
-    // 写入过程本身也可能是异步的：写完再核对一次，若期间切号/切学期就把刚写的数据撤掉，
-    // 否则会污染新账号的课表缓存。
+    // 写入过程本身也可能是异步的：写完再核对一次，若期间切号/切学期就把刚写的数据撤掉。
+    // 只有自己仍是最后一次写入时才回滚，避免把新账号随后保存的课表一并清掉。
     if (storage.getSessionEpoch() !== epoch) {
-      console.info(TAG, 'switched during write, rollback prefetched courses');
-      await storage.resetCourseCache();
+      if (storage.getCourseCacheMarker() !== writeMarker) {
+        console.info(TAG, 'newer course write detected, skip rollback');
+      } else {
+        console.info(TAG, 'switched during write, rollback prefetched courses');
+        await storage.resetCourseCache();
+      }
       LaunchPrefetchService.coursePrefetchedAt = 0;
       LaunchPrefetchService.prefetchedSid = '';
       LaunchPrefetchService.prefetchedSemester = '';

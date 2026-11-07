@@ -29,7 +29,7 @@ test('预取：按「课表作为首页」决定预取课表还是主页', async
   assert.match(code, /HomeContentApi\.preload\(\)/);
   assert.match(code, /getGraduateCourseTable/);
   assert.match(code, /getCourseTable/);
-  assert.match(code, /setCurrentCourses\(list\)/);
+  assert.match(code, /setCurrentCourses\(list, writeMarker\)/);
 });
 
 test('课表页：预取刚完成时不再重复请求', async () => {
