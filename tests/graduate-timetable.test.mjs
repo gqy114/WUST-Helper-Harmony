@@ -82,10 +82,11 @@ test('旧 8009 服务在外层 code=200 时也可能登录失败，必须识别 
   assert.equal(resp.data, undefined);
 });
 
-test('旧 8009 登录成功时取包装层里的 data 字段', async () => {
+test('主服务不可用（非密码错误）时回退旧 8009 并取包装层里的 data', async () => {
   const { api } = await createApiService((url) => {
     if (url.includes('/Graduate/Support/loginPage')) {
-      return { code: 500, message: '学校网关统一认证：invalid password', data: null };
+      // 传输/服务级失败，不是凭据被拒绝，允许回退。
+      return { code: 503, message: 'service unavailable', data: null };
     }
     return {
       code: 200,
@@ -112,6 +113,36 @@ test('切换账号必须清掉上一个账号的课表存档', async () => {
   assert.match(login, /prevSid !== sid/);
   assert.match(login, /setCurrentCourses\(\[\]\)/);
   assert.match(login, /setPhysicalExperimentCourses\(\[\]\)/);
+  // 磁盘删了但内存 CourseStore 还在，断网时仍会显示上一个账号的课表。
+  assert.match(login, /CourseStore\.getInstance\(\)\.setCourses\(\[\]\)/);
+});
+
+test('主服务明确拒绝凭据后不再请求旧服务（避免加速锁定）', async () => {
+  const { calls, api } = await createApiService(() => ({
+    code: 500,
+    message: '学校网关统一认证：invalid password',
+    data: null,
+  }));
+  const resp = await api.loginGraduate('20240001', 'wrong-password');
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/Graduate\/Support\/loginPage/);
+  assert.notEqual(resp.code, 200);
+});
+
+test('code=200 但没有用户信息时按失败处理', async () => {
+  const { api } = await createApiService(() => ({ code: 200, message: 'Success', data: null }));
+  const resp = await api.loginGraduate('20240001', 'pwd');
+  assert.notEqual(resp.code, 200);
+});
+
+test('含学号密码的课表请求只允许 HTTPS', async () => {
+  const course = await source(`${root}/ets/net/CourseApi.ets`);
+  // 不允许把研究生课表回退到 http 备用节点。
+  assert.doesNotMatch(course, /http:\/\/port\.happylandmc\.cc/);
+  assert.match(course, /postJson<CourseApiEnvelope>\(urls\[i\], body, headers, 45000, true\)/);
+  const http = await source(`${root}/ets/net/HttpRequest.ts`);
+  assert.match(http, /secure: boolean = false/);
+  assert.match(http, /startsWith\('https:\/\/'\)/);
 });
 
 test('研究生课表 401 不再刷新本科教务 Token，而是展示后端原因', async () => {
