@@ -38,3 +38,11 @@ test('公共请求层：带认证头的请求自动按敏感处理', async () =>
   assert.match(code, /key === 'authorization' \|\| key === 'cookie' \|\| key === 'token'/);
   assert.match(code, /HttpRequest\.needsSecure\(options, header\)/);
 });
+
+test('校园代理请求把原始认证头打包进 body，也必须走 HTTPS', async () => {
+  const code = await source(`${root}/HttpRequest.ts`);
+  // 改写前先用原始 header 判断敏感性，代理信封一律按敏感处理。
+  assert.match(code, /let secureRequest = HttpRequest\.needsSecure\(options, header\);/);
+  assert.match(code, /secureRequest = true;/);
+  assert.match(code, /backendTargets\(requestUrl, options\?\.pinBackend \?\? false, secureRequest\)/);
+});
