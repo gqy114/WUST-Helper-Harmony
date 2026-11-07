@@ -123,14 +123,12 @@ export class LaunchPrefetchService {
     console.info(TAG, `prefetched ${list.length} courses`);
 
     // 写入过程本身也可能是异步的：写完再核对一次，若期间切号/切学期就把刚写的数据撤掉。
-    // 只有自己仍是最后一次写入时才回滚，避免把新账号随后保存的课表一并清掉。
+    // 判断「是否仍是我的写入」必须和清空一起放进写入队列，否则旧任务的清空会排在
+    // 新课表写入之后执行，把新学期的课表清空。
     if (storage.getSessionEpoch() !== epoch) {
-      if (storage.getCourseCacheMarker() !== writeMarker) {
-        console.info(TAG, 'newer course write detected, skip rollback');
-      } else {
-        console.info(TAG, 'switched during write, rollback prefetched courses');
-        await storage.resetCourseCache();
-      }
+      const rolledBack = await storage.resetCourseCacheIfMarker(writeMarker);
+      console.info(TAG, rolledBack ? 'switched during write, rollback prefetched courses'
+        : 'newer course write detected, skip rollback');
       LaunchPrefetchService.coursePrefetchedAt = 0;
       LaunchPrefetchService.prefetchedSid = '';
       LaunchPrefetchService.prefetchedSemester = '';

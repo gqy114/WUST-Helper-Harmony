@@ -52,6 +52,12 @@ async function createService(scenario) {
         }
       },
       resetCourseCache: async () => { resets.push(1); },
+      resetCourseCacheIfMarker: async (expected) => {
+        if (marker !== expected) return false;
+        resets.push(1);
+        marker = 'reset';
+        return true;
+      },
     };
     this.setExport('AppStorage', { getInstance: () => instance });
   });
@@ -123,7 +129,8 @@ test('预取状态绑定账号、身份和学期', async () => {
   assert.match(code, /prefetchedSid === sid/);
   assert.match(code, /prefetchedSemester === semester/);
   assert.match(code, /getSessionEpoch\(\) !== epoch/);
-  assert.match(code, /resetCourseCache\(\)/);
+  // 回滚必须走「条件清空」，判断和清空在同一个写入队列任务里完成。
+  assert.match(code, /resetCourseCacheIfMarker\(writeMarker\)/);
 });
 
 test('课表页先等预取结束再决定是否复用', async () => {
