@@ -1,4 +1,4 @@
-﻿/**
+/**
  * LibraryApi — 图书馆网络接口
  *
  * 对应安卓 NewApiHelper → RequestCenter.getWithoutToken(LIBRARY_CURRENT_LOANS_V2)
@@ -141,6 +141,141 @@ export class LibraryApi {
       return { code: -1, msg: '网络请求失败', data: {} };
     }
   }
+
+  /** 最新通知：对应安卓 LIBRARY_NOTICE_V2，无需登录。 */
+  static async latestNotice(): Promise<LibraryNotice | null> {
+    try {
+      const result = await HttpRequest.request<NoticeWrapper>(NOTICE_URL, 'GET', { headers: { Platform: 'android' } });
+      const resp = result.data;
+      if (resp && (resp.code === 200 || resp.code === 0) && resp.data && (resp.data.id || 0) > 0) {
+        return resp.data;
+      }
+      return null;
+    } catch {
+      console.warn('LibraryApi', 'latestNotice error');
+      return null;
+    }
+  }
+
+  /** 首页推荐图片：对应安卓 LIBRARY_HOME_ARTICLES_V2。 */
+  static async homeArticles(): Promise<LibraryHomeArticle[]> {
+    try {
+      const result = await HttpRequest.request<HomeArticleWrapper>(HOME_ARTICLE_URL, 'GET', { headers: { Platform: 'android' } });
+      const resp = result.data;
+      if (resp && (resp.code === 200 || resp.code === 0) && Array.isArray(resp.data)) {
+        return visibleHomeArticles(resp.data);
+      }
+      return [];
+    } catch {
+      console.warn('LibraryApi', 'homeArticles error');
+      return [];
+    }
+  }
+
+  /** 活动/通知/讲座列表：对应安卓 LIBRARY_ACTIVITY_ARTICLES_V2。 */
+  static async articles(): Promise<LibraryArticle[]> {
+    try {
+      const result = await HttpRequest.request<ArticleListWrapper>(ARTICLE_LIST_URL, 'GET', { headers: { Platform: 'android' } });
+      const resp = result.data;
+      if (resp && (resp.code === 200 || resp.code === 0) && resp.data && Array.isArray(resp.data.rows)) {
+        return visibleArticles(resp.data.rows);
+      }
+      return [];
+    } catch {
+      console.warn('LibraryApi', 'articles error');
+      return [];
+    }
+  }
+
+  /** 资源导航：对应安卓 LIBRARY_RESOURCES_V2，resourceType 1..4，0 为全部。 */
+  static async resources(resourceType: number): Promise<LibraryResource[]> {
+    try {
+      const url = `${RESOURCE_LIST_URL}?resourceType=${resourceType}`;
+      const result = await HttpRequest.request<ResourceWrapper>(url, 'GET', { headers: { Platform: 'android' } });
+      const resp = result.data;
+      if (resp && (resp.code === 200 || resp.code === 0) && resp.data && Array.isArray(resp.data.rows)) {
+        return resp.data.rows;
+      }
+      return [];
+    } catch {
+      console.warn('LibraryApi', 'resources error');
+      return [];
+    }
+  }
+}
+
+const NOTICE_URL = 'https://smarttool.wust.edu.cn:3001/api/wx/notice/new';
+const HOME_ARTICLE_URL = 'https://smarttool.wust.edu.cn:3001/api/wx/home/getHomeArticle';
+const ARTICLE_LIST_URL = 'https://smarttool.wust.edu.cn:3001/api/wx/article/getArticleList';
+const RESOURCE_LIST_URL = 'https://smarttool.wust.edu.cn:3001/api/wx/resource/getResourcesList';
+
+export interface LibraryNotice {
+  id?: number;
+  title?: string;
+  publisher?: string;
+  content?: string;
+  createdAt?: string;
+}
+
+export interface LibraryHomeArticle {
+  id?: number;
+  pictureLink?: string;
+  articleLink?: string;
+  show?: number;
+  totalView?: number;
+}
+
+export interface LibraryArticle {
+  id?: number;
+  title?: string;
+  link?: string;
+  tag?: string;
+  type?: number;
+  sortNum?: number;
+  show?: number;
+  totalView?: number;
+}
+
+export interface LibraryResource {
+  id?: number;
+  title?: string;
+  type?: number;
+  content?: string;
+  inLink?: string;
+  outLink?: string;
+  serviceStatus?: number;
+}
+
+interface NoticeWrapper { code?: number; msg?: string; data?: LibraryNotice; }
+interface HomeArticleWrapper { code?: number; msg?: string; data?: LibraryHomeArticle[]; }
+interface ArticleListWrapper { code?: number; msg?: string; data?: LibraryArticlePage; }
+interface LibraryArticlePage { count?: number; rows?: LibraryArticle[]; }
+interface ResourceWrapper { code?: number; msg?: string; data?: LibraryResourcePage; }
+interface LibraryResourcePage { count?: number; rows?: LibraryResource[]; }
+
+/** 首页推荐只展示 show=1 的条目（后端还有 show=0 的隐藏项）。 */
+export function visibleHomeArticles(items: LibraryHomeArticle[]): LibraryHomeArticle[] {
+  return items.filter((item: LibraryHomeArticle) => item.show === 1 && !!(item.pictureLink || item.articleLink));
+}
+
+/** 活动资讯只展示 show=1 的条目，顺序沿用后端 sortNum/返回顺序。 */
+export function visibleArticles(rows: LibraryArticle[]): LibraryArticle[] {
+  return rows.filter((row: LibraryArticle) => row.show === 1 && !!(row.title || row.link));
+}
+
+export function articleTagLabel(tag?: string): string {
+  const value = (tag || '').trim();
+  if (value === '活动' || value === '通知' || value === '讲座') return value;
+  return value || '通知';
+}
+
+/** 资源导航按 type 分组时的标题。 */
+export function resourceTypeLabel(type: number): string {
+  if (type === 1) return '中文资源';
+  if (type === 2) return '外文资源';
+  if (type === 3) return '开放资源';
+  if (type === 4) return '智能服务';
+  return '其他资源';
 }
 
 
