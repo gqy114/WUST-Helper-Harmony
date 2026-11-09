@@ -4,6 +4,7 @@ import { CampusWallApi, CampusWallPost, CampusWallReply, campusWallExtra, decode
 import { AppStorage } from '../../store/AppStorage';
 import { CampusRichText } from '../../components/CampusRichText';
 import { CommunityPostImage } from '../../components/CommunityPostImage';
+import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
 interface DetailParams extends Record<string, string> { id: string; }
 interface FormattedRun {
@@ -73,11 +74,14 @@ struct CampusPostDetailPage {
     try {
       if (this.actionTarget === 'post') {
         await CampusWallApi.deletePost(this.postId);
+        CommunityNavigationStore.getInstance().markCampusPostDeleted(this.postId);
         this.deleteDialogOpen = false;
         promptAction.showToast({ message: '帖子已删除', duration: 1200 });
         router.back();
       } else {
         await CampusWallApi.deleteReply(this.postId, this.actionReplyId);
+        // 删掉回复（尤其是已采纳的回答）会改变帖子状态和回复数，返回列表时要补拉这一条。
+        CommunityNavigationStore.getInstance().markCampusPostUpdated(this.postId);
         this.deleteDialogOpen = false;
         promptAction.showToast({ message: '回复已删除', duration: 1200 });
         await this.load();
@@ -156,6 +160,7 @@ struct CampusPostDetailPage {
     this.actionOpen = false;
     try {
       await CampusWallApi.acceptReply(this.postId, this.actionReplyId);
+      CommunityNavigationStore.getInstance().markCampusPostUpdated(this.postId);
       await this.load();
       promptAction.showToast({ message: '回答已采纳', duration: 1200 });
     } catch {
@@ -185,6 +190,7 @@ struct CampusPostDetailPage {
   private async react(type: string): Promise<void> {
     try {
       await CampusWallApi.toggleReaction(this.postId, type);
+      CommunityNavigationStore.getInstance().markCampusPostUpdated(this.postId);
       await this.load();
     } catch { promptAction.showToast({ message: '当前帖子暂不支持表态', duration: 1200 }); }
   }
@@ -215,6 +221,7 @@ struct CampusPostDetailPage {
     this.sending = true;
     try {
       await CampusWallApi.reply(this.postId, this.replyText.trim());
+      CommunityNavigationStore.getInstance().markCampusPostUpdated(this.postId);
       this.replyText = '';
       await this.load();
     } catch {

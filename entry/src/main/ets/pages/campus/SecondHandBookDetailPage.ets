@@ -5,6 +5,7 @@ import { common, Want } from '@kit.AbilityKit';
 import { AppStorage } from '../../store/AppStorage';
 import { SecondHandBookApi, SecondhandBook, SecondhandDetail, SecondhandListing, SecondhandReply } from '../../net/SecondHandBookApi';
 import { CampusWallApi, CampusWallPost } from '../../net/CampusWallApi';
+import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
 interface DetailParams { listing?: string; postId?: string; source?: string; }
 
@@ -124,8 +125,15 @@ struct SecondHandBookDetailPage {
     if (this.deleting || !this.isOwnPost()) return;
     this.deleting = true;
     try {
-      if (this.communityPostId > 0) await CampusWallApi.deletePost(this.communityPostId);
-      else await SecondHandBookApi.removeListing(this.listing.id || 0);
+      const navigation = CommunityNavigationStore.getInstance();
+      if (this.communityPostId > 0) {
+        await CampusWallApi.deletePost(this.communityPostId);
+        navigation.markCampusPostDeleted(this.communityPostId);
+      } else {
+        const listingId = this.listing.id || 0;
+        await SecondHandBookApi.removeListing(listingId);
+        navigation.markSecondhandDeleted(listingId);
+      }
       this.deleteDialogOpen = false;
       promptAction.showToast({ message: '帖子已删除', duration: 1200 });
       router.back();

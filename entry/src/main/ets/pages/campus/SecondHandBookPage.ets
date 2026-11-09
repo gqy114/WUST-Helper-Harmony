@@ -2,6 +2,7 @@ import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { SecondHandBookApi, SecondhandListing } from '../../net/SecondHandBookApi';
 import { AppStorage } from '../../store/AppStorage';
+import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
 @Entry
 @Component
@@ -32,10 +33,37 @@ struct SecondHandBookPage {
   @State private pendingCampus: string = '全部校区';
   @State private activeSort: string = '默认排序';
   @State private pendingSort: string = '默认排序';
+  @State private refreshing: boolean = false;
+  private listScroller: Scroller = new Scroller();
+  private pendingRestoreOffset: number = -1;
+  private readonly pageKey: string = 'secondhand';
 
   aboutToAppear(): void { this.loadProfile(); this.loadMajors(); }
-  onPageShow(): void { this.load(); }
-
+  onPageShow(): void {
+    const navigation = CommunityNavigationStore.getInstance();
+    const deletedCampusIds = navigation.consumeDeletedCampusPostIds();
+    const deletedSecondhandIds = navigation.consumeDeletedSecondhandIds();
+    if (deletedCampusIds.length > 0 || deletedSecondhandIds.length > 0) {
+      this.listings = this.listings.filter((item: SecondhandListing) => item.source === 'community'
+        ? deletedCampusIds.indexOf(item.communityPostId || item.id || 0) < 0
+        : deletedSecondhandIds.indexOf(item.id || 0) < 0);
+    }
+    const returnOffset = navigation.consumeListReturnOffset(this.pageKey);
+    if (returnOffset >= 0) {
+      this.pendingRestoreOffset = returnOffset;
+      if (this.listings.length > 0) {
+        this.restoreListOffset();
+      } else {
+        this.load().then((): void => { this.restoreListOffset(); });
+      }
+      return;
+    }
+    this.load();
+  }
+  private openDetail(item: SecondhandListing): void {
+    CommunityNavigationStore.getInstance().rememberListReturn(this.pageKey, this.listScroller.currentOffset().yOffset);
+    router.pushUrl({ url: 'pages/campus/SecondHandBookDetailPage', params: { listing: JSON.stringify(item) } });
+  }
   private async loadProfile(): Promise<void> {
     const storage = AppStorage.getInstance();
     this.avatarUrl = await storage.getAvatarUrl();
@@ -46,6 +74,23 @@ struct SecondHandBookPage {
     try { this.majors = await SecondHandBookApi.majors(); } catch { this.majors = []; }
   }
 
+  private restoreListOffset(): void {
+    if (this.pendingRestoreOffset < 0) return;
+    const offset = this.pendingRestoreOffset;
+    this.pendingRestoreOffset = -1;
+    setTimeout((): void => {
+      this.listScroller.scrollTo({ xOffset: 0, yOffset: offset, animation: false });
+    }, 80);
+  }
+  private async refreshList(): Promise<void> {
+    if (this.refreshing) return;
+    this.refreshing = true;
+    try {
+      await this.load();
+    } finally {
+      this.refreshing = false;
+    }
+  }
   private async load(): Promise<void> {
     const generation = ++this.requestGeneration;
     this.loading = true;
@@ -277,7 +322,8 @@ struct SecondHandBookPage {
         }.width('92%').height(52).padding({ left: 16, right: 12 }).backgroundColor(Color.White).borderRadius(26).margin({ bottom: 10 });
       }
 
-      List() {
+      Refresh({ refreshing: this.refreshing }) {
+        List({ scroller: this.listScroller }) {
           if (this.loading) {
             ListItem() { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
           } else if (this.visibleListings().length === 0) {
@@ -294,12 +340,12 @@ struct SecondHandBookPage {
                   Text(this.money(item.price)).fontSize(21).fontWeight(FontWeight.Bold).fontColor('#B26E2A').margin({ top: 8 });
                 }.layoutWeight(1);
               }.width('92%').padding(16).backgroundColor(Color.White).borderRadius(16).margin({ top: 10 })
-                .onClick(() => router.pushUrl({ url: 'pages/campus/SecondHandBookDetailPage',
-                  params: { listing: JSON.stringify(item) } })); }
+                .onClick(() => this.openDetail(item)); }
             }, (item: SecondhandListing) => `${item.source || 'secondhand'}-${item.id || item.bookId || item.bookTitle}`)
           }
           if (!this.loading && this.listings.length > 0) { ListItem() { Row() { if (this.loadingMore) { LoadingProgress().width(22).height(22).color('#857A25'); Text('正在加载更多…').fontSize(15).fontColor('#888888').margin({ left: 8 }); } else if (!this.nativeHasMore && !this.communityHasMore) { Text('已经到底了').fontSize(15).fontColor('#AAAAAA'); } }.width('100%').height(54).justifyContent(FlexAlign.Center); } }
-      }.width('100%').layoutWeight(1).backgroundColor('#F5F6F8').onReachEnd(() => this.loadMore());
+        }.width('100%').layoutWeight(1).backgroundColor('#F5F6F8').onReachEnd(() => this.loadMore());
+      }.width('100%').layoutWeight(1).onRefreshing((): void => { this.refreshList(); });
 
       Row() {
         Text('发布二手书').fontSize(19).fontWeight(FontWeight.Bold).fontColor(Color.White)
