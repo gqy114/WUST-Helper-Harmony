@@ -229,6 +229,26 @@ test('删除失败时保留对应的事件 key，避免重新导入重复', asyn
   assert.deepEqual(JSON.parse(settingWrites['physicalExperimentCalendarKeys']), ['k22']);
 });
 
+test('删除新版日程时保留旧版只有 key 的导入记录', async () => {
+  const keys = ['legacy-k1', 'legacy-k2', 'new-k31', 'new-k32'];
+  const { page, deleted, settingWrites } = await makeCalendarPage([31, 32], [], keys);
+  await page.removeFromCalendar();
+
+  assert.deepEqual(deleted, [31, 32]);
+  assert.equal(settingWrites['physicalExperimentCalendarEventIds'], '');
+  assert.deepEqual(JSON.parse(settingWrites['physicalExperimentCalendarKeys']), ['legacy-k1', 'legacy-k2'],
+    '旧版去重 key 不能随新版日程一起清除');
+});
+
+test('新版日程部分删除失败时同时保留旧版 key 和失败项 key', async () => {
+  const keys = ['legacy-k1', 'new-k41', 'new-k42'];
+  const { page, settingWrites } = await makeCalendarPage([41, 42], [42], keys);
+  await page.removeFromCalendar();
+
+  assert.deepEqual(JSON.parse(settingWrites['physicalExperimentCalendarEventIds']), [42]);
+  assert.deepEqual(JSON.parse(settingWrites['physicalExperimentCalendarKeys']), ['legacy-k1', 'new-k42']);
+});
+
 test('页面提供删除日程按钮、确认弹窗，并在导入时记录事件 id', async () => {
   const code = await source(pagePath);
   assert.match(code, /Button\('删除实验日程'\)/, '缺少删除日程按钮');

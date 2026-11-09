@@ -385,10 +385,16 @@ export struct PhysicalExperimentPage {
       const manager = calendarManager.getCalendarManager(getContext(this) as common.Context);
       const calendar = await manager.getCalendar();
       const keptIds: number[] = [];
-      const keptKeys: string[] = [];
+      // 旧版本只保存去重 key、没有保存事件 id。升级后新导入的数据会继续
+      // 追加到两个数组尾部，所以能和 id 对应的是 keys 的最后 ids.length 项，
+      // 前面的 key 都是旧版记录，删除时必须保留，避免以后重复导入。
+      const pairedKeyStart = Math.max(0, keys.length - ids.length);
+      const legacyKeys = keys.slice(0, pairedKeyStart);
+      const pairedKeys = keys.slice(pairedKeyStart);
+      const keptKeys: string[] = legacyKeys.slice();
       let deleted = 0;
       for (let i = 0; i < ids.length; i++) {
-        const key = i < keys.length ? keys[i] : '';
+        const key = i < pairedKeys.length ? pairedKeys[i] : '';
         try {
           await calendar.deleteEvent(ids[i]);
           deleted++;
