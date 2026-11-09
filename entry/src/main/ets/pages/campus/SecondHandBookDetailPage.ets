@@ -21,6 +21,7 @@ struct SecondHandBookDetailPage {
   @State private replyTargetExcerpt: string = '';
   @State private sending: boolean = false;
   @State private contactOpen: boolean = false;
+  @State private contactLoading: boolean = false;
   @State private myAvatar: string = '';
   @State private myStudentId: string = '';
   @State private myName: string = '';
@@ -148,7 +149,22 @@ struct SecondHandBookDetailPage {
     return parts.length > 1 ? [parts[0].trim(), parts.slice(1).join(separator).trim()] : ['联系方式', value];
   }
 
-  private openSellerContact(): void {
+  private async openSellerContact(): Promise<void> {
+    if (this.contactLoading) return;
+    if (this.communityPostId > 0 || this.listing.source === 'community') {
+      if (!(this.listing.contact || '').trim()) {
+        this.contactLoading = true;
+        try {
+          this.listing.contact = await SecondHandBookApi.communityContact(this.communityPostId);
+        } catch (error) {
+          const message = error instanceof Error && error.message ? error.message : '获取联系方式失败，请稍后重试';
+          promptAction.showToast({ message, duration: 1800 });
+          return;
+        } finally {
+          this.contactLoading = false;
+        }
+      }
+    }
     this.contactOpen = true;
   }
 
@@ -367,7 +383,7 @@ struct SecondHandBookDetailPage {
             this.replyTargetExcerpt = '';
             this.replyOpen = true;
           })
-          Text('联系卖家').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#20C894')
+          Text(this.contactLoading ? '获取中…' : '联系卖家').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#20C894')
             .onClick(() => this.openSellerContact())
         }.width('92%').height(72).padding({ left: 16, right: 22 }).backgroundColor(Color.White).borderRadius(36).shadow({ radius: 10, color: '#33000000', offsetY: 3 }).margin({ bottom: 16 })
       }.width('100%').height('100%').backgroundColor('#F5F6F8')
