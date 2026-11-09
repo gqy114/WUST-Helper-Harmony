@@ -91,6 +91,15 @@ async function loadFavorites(initialRaw = '[]', options = {}) {
       }
     },
     setSettingString: async (key, value) => { store.set(key, JSON.stringify(value)); },
+    getSettingBool: async (key, def) => {
+      const raw = store.has(key) ? store.get(key) : JSON.stringify(def);
+      try {
+        return JSON.parse(raw) === true;
+      } catch {
+        return def;
+      }
+    },
+    setSettingBool: async (key, value) => { store.set(key, JSON.stringify(value)); },
   };
   const context = createContext({ console, JSON, Array });
   const app = new SyntheticModule(['AppStorage'], function () {

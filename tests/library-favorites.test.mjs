@@ -94,12 +94,19 @@ test('服务端收藏：401 视为接口不可用而不是空列表', async () =
 async function loadFavorites(options = {}) {
   const {
     initialRaw = '[]', sid = '', serverOk = true, remoteItems = [], store: sharedStore, sidRef,
+    alreadySynced = false, listDelayMs = 0, legacyRaw = null,
   } = options;
   const store = sharedStore || new Map();
   const currentSid = () => (sidRef ? sidRef.sid : sid);
   const key = currentSid() ? `libraryFavorites_${currentSid()}` : 'libraryFavorites';
   if (!sharedStore) {
     store.set(key, JSON.stringify(JSON.stringify(initialRaw)));
+    if (alreadySynced) {
+      store.set(`${key}_synced`, JSON.stringify(true));
+    }
+  }
+  if (legacyRaw !== null) {
+    store.set('libraryFavorites', JSON.stringify(JSON.stringify(legacyRaw)));
   }
   const storage = {
     getStudentId: async () => currentSid(),
@@ -112,6 +119,15 @@ async function loadFavorites(options = {}) {
       }
     },
     setSettingString: async (name, value) => { store.set(name, JSON.stringify(value)); },
+    getSettingBool: async (name, def) => {
+      const raw = store.has(name) ? store.get(name) : JSON.stringify(def);
+      try {
+        return JSON.parse(raw) === true;
+      } catch {
+        return def;
+      }
+    },
+    setSettingBool: async (name, value) => { store.set(name, JSON.stringify(value)); },
   };
   const calls = [];
   const serverItems = remoteItems.map((item) => ({ ...item }));
@@ -131,7 +147,12 @@ async function loadFavorites(options = {}) {
       if (index >= 0) serverItems.splice(index, 1);
       return true;
     },
-    listFavorites: async () => (serverOk ? serverItems.map((item) => ({ ...item })) : null),
+    listFavorites: async () => {
+      if (listDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, listDelayMs));
+      }
+      return serverOk ? serverItems.map((item) => ({ ...item })) : null;
+    },
   };
   const context = createContext({ console, JSON, Array, String });
   const app = new SyntheticModule(['AppStorage'], function () {
@@ -212,6 +233,7 @@ test('联网后拉取云端列表覆盖本机', async () => {
   const online = await loadFavorites({
     remoteItems: [{ kind: 'resource', itemId: 3, title: '知网', link: 'https://x', tag: '资源' }],
     initialRaw: [{ kind: 'article', id: 7, title: '旧缓存', link: 'https://a', tag: '通知' }],
+    alreadySynced: true,
   });
   assert.equal(await online.favorites.syncFromServer(), true);
   assert.equal(online.favorites.isSynced(), true);
@@ -246,44 +268,50 @@ test('本机缓存按学号隔离，不串账号', async () => {
   assert.deepEqual(Array.from(await favorites.list(), (item) => item.id), [5]);
 });
 
-test('未按学号隔离的旧缓存会迁移到当前账号', async () => {
+test('旧全局收藏迁移给首个账号，首次同步先上传不会被清空', async () => {
+  const legacy = [{ kind: 'article', id: 2, title: '旧收藏', link: 'https://a', tag: '通知' }];
   const store = new Map();
-  store.set('libraryFavorites', JSON.stringify(JSON.stringify([
-    { kind: 'article', id: 2, title: '旧收藏', link: 'https://a', tag: '通知' },
-  ])));
-  const storage = {
-    getStudentId: async () => '2024002',
-    getSettingString: async (name, def) => {
-      const raw = store.has(name) ? store.get(name) : JSON.stringify(def);
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return def;
-      }
-    },
-    setSettingString: async (name, value) => { store.set(name, JSON.stringify(value)); },
-  };
-  const context = createContext({ console, JSON, Array, String });
-  const app = new SyntheticModule(['AppStorage'], function () {
-    this.setExport('AppStorage', { getInstance: () => storage });
-  }, { context });
-  const libraryApi = new SyntheticModule(['LibraryApi', 'LibraryFavoriteEntry'], function () {
-    this.setExport('LibraryApi', {
-      addFavorite: async () => false,
-      removeFavorite: async () => false,
-      listFavorites: async () => null,
-    });
-    this.setExport('LibraryFavoriteEntry', undefined);
-  }, { context });
-  const code = stripTypeScriptTypes(await source(`${root}/store/LibraryFavorites.ets`), { mode: 'transform' });
-  const mod = new SourceTextModule(code, { context });
-  await mod.link((name) => {
-    if (name === './AppStorage') return app;
-    if (name === '../net/LibraryApi') return libraryApi;
-    throw new Error(`Unexpected import: ${name}`);
+  const loaded = await loadFavorites({ sid: '2024002', store, legacyRaw: legacy });
+  assert.deepEqual(Array.from(await loaded.favorites.list(), (item) => item.id), [2]);
+
+  assert.equal(await loaded.favorites.syncFromServer(), true);
+  assert.deepEqual(loaded.calls.filter((call) => call.op === 'add').map((call) => call.item.itemId), [2],
+    '旧收藏应补传到服务端');
+  assert.deepEqual(Array.from(await loaded.favorites.list(), (item) => item.id), [2], '同步后收藏仍在');
+  assert.equal(JSON.parse(store.get('libraryFavoritesMigrationOwner')), '2024002', '旧收藏归属首个账号');
+});
+
+test('旧全局收藏不会被第二个账号再次认领', async () => {
+  const legacy = [{ kind: 'article', id: 2, title: '旧收藏', link: 'https://a', tag: '通知' }];
+  const store = new Map();
+  const first = await loadFavorites({ sid: '2024001', store, legacyRaw: legacy });
+  assert.deepEqual(Array.from(await first.favorites.list(), (item) => item.id), [2]);
+
+  const second = await loadFavorites({ sid: '2024002', store });
+  assert.deepEqual(Array.from(await second.favorites.list()), [], 'B 不能继承 A 的旧收藏');
+
+  const again = await loadFavorites({ sid: '2024001', store });
+  assert.deepEqual(Array.from(await again.favorites.list(), (item) => item.id), [2],
+    'A 重新登录仍能看到自己的收藏');
+});
+
+test('同步过程中切换账号，旧账号结果不会写进新账号', async () => {
+  const sidRef = { sid: '2024001' };
+  const store = new Map();
+  const loaded = await loadFavorites({
+    sidRef, store, listDelayMs: 30,
+    initialRaw: [{ kind: 'article', id: 5, title: 'A 的收藏', link: 'https://a', tag: '通知' }],
   });
-  await mod.evaluate();
-  const favorites = mod.namespace.LibraryFavorites.getInstance();
-  assert.deepEqual(Array.from(await favorites.list(), (item) => item.id), [2]);
-  assert.ok(store.has('libraryFavorites_2024002'), '旧缓存应迁移到按学号的键');
+  const syncing = loaded.favorites.syncFromServer();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  store.set('libraryFavorites_2024002',
+    JSON.stringify(JSON.stringify([{ kind: 'resource', id: 3, title: 'B 的收藏', link: 'https://x', tag: '资源' }])));
+  sidRef.sid = '2024002';
+
+  const result = await syncing;
+  assert.equal(result, false, '账号已切换，旧同步应放弃');
+  assert.deepEqual(Array.from(await loaded.favorites.list(), (item) => item.id), [3], 'B 只看到自己的收藏');
+  assert.deepEqual(JSON.parse(JSON.parse(store.get('libraryFavorites_2024002'))),
+    [{ kind: 'resource', id: 3, title: 'B 的收藏', link: 'https://x', tag: '资源' }],
+    '旧账号数据不能覆盖新账号');
 });
