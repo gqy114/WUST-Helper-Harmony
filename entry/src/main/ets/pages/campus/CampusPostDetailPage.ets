@@ -4,6 +4,7 @@ import { CampusWallApi, CampusWallPost, CampusWallReply, campusWallExtra, decode
 import { AppStorage } from '../../store/AppStorage';
 import { CampusRichText } from '../../components/CampusRichText';
 import { CommunityPostImage } from '../../components/CommunityPostImage';
+import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
 interface DetailParams extends Record<string, string> { id: string; }
 interface FormattedRun {
@@ -73,6 +74,7 @@ struct CampusPostDetailPage {
     try {
       if (this.actionTarget === 'post') {
         await CampusWallApi.deletePost(this.postId);
+        CommunityNavigationStore.getInstance().markCampusPostDeleted(this.postId);
         this.deleteDialogOpen = false;
         promptAction.showToast({ message: '帖子已删除', duration: 1200 });
         router.back();

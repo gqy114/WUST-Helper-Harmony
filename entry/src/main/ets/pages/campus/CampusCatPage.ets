@@ -5,6 +5,7 @@ import { CampusCatApi, CampusCatPost } from '../../net/CampusCatApi';
 import { campusWallRelativeTime } from '../../net/CampusWallApi';
 import { CampusRichText } from '../../components/CampusRichText';
 import { CommunityPostImage } from '../../components/CommunityPostImage';
+import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
 @Entry @Component
 struct CampusCatPage {
@@ -22,9 +23,28 @@ struct CampusCatPage {
   private readonly pageSize: number = 20;
   // 每次刷新递增；旧的分页/首屏响应只有在代次未变时才允许写回列表和页码。
   private requestGeneration: number = 0;
+  private listScroller: Scroller = new Scroller();
+  private returningFromDetail: boolean = false;
+  private savedListOffset: number = 0;
   private async loadAvatar(): Promise<void> { this.avatarUrl = await AppStorage.getInstance().getAvatarUrl(); }
   aboutToAppear(): void { this.loadAvatar(); }
-  onPageShow(): void { this.load(); }
+  onPageShow(): void {
+    if (this.returningFromDetail) {
+      this.returningFromDetail = false;
+      const deleted = CommunityNavigationStore.getInstance();
+      this.posts = this.posts.filter((post: CampusCatPost) => !deleted.isCatPostDeleted(post.id || 0));
+      setTimeout((): void => {
+        this.listScroller.scrollTo({ xOffset: 0, yOffset: this.savedListOffset, animation: false });
+      }, 0);
+      return;
+    }
+    this.load();
+  }
+  private openDetail(postId: number): void {
+    this.savedListOffset = this.listScroller.currentOffset().yOffset;
+    this.returningFromDetail = true;
+    router.pushUrl({ url: 'pages/campus/CampusCatDetailPage', params: { id: String(postId) } });
+  }
   private async load(): Promise<void> {
     const generation = ++this.requestGeneration;
     this.loading = true;
@@ -108,7 +128,7 @@ struct CampusCatPage {
       if (this.searching) {
         Row() { Text('⌕').fontSize(30).fontColor('#555555'); TextInput({ placeholder: '搜索当前板块', text: this.query }).layoutWeight(1).fontSize(20).onChange((value: string) => { this.query = value; }); Text('×').fontSize(32).fontColor('#777777').onClick(() => { this.query = ''; animateTo({ duration: 260, curve: Curve.EaseInOut }, () => { this.searching = false; }); }); }.width('92%').height(58).padding({ left: 16, right: 14 }).backgroundColor(Color.White).borderRadius(30).margin({ bottom: 12 });
       }
-      List() {
+      List({ scroller: this.listScroller }) {
         if (this.loading) {
           ListItem() { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
         } else if (this.posts.length === 0) {
@@ -128,7 +148,7 @@ struct CampusCatPage {
                 Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA');
               }.width('100%').padding({ left: 34, right: 34, top: 20, bottom: 22 }).backgroundColor(Color.White)
                 .border({ width: { bottom: 1 }, color: '#EEEEEE' })
-                .onClick(() => router.pushUrl({ url: 'pages/campus/CampusCatDetailPage', params: { id: String(post.id || 0) } }));
+                .onClick(() => this.openDetail(post.id || 0));
             }
           }, (post: CampusCatPost, index: number) => `${post.id || post.createdAt || 'post'}-${index}`)
           if (this.loadingMore) {

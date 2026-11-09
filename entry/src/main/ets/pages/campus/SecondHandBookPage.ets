@@ -2,6 +2,7 @@ import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { SecondHandBookApi, SecondhandListing } from '../../net/SecondHandBookApi';
 import { AppStorage } from '../../store/AppStorage';
+import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
 @Entry
 @Component
@@ -32,9 +33,31 @@ struct SecondHandBookPage {
   @State private pendingCampus: string = '全部校区';
   @State private activeSort: string = '默认排序';
   @State private pendingSort: string = '默认排序';
+  private listScroller: Scroller = new Scroller();
+  private returningFromDetail: boolean = false;
+  private savedListOffset: number = 0;
 
   aboutToAppear(): void { this.loadProfile(); this.loadMajors(); }
-  onPageShow(): void { this.load(); }
+  onPageShow(): void {
+    if (this.returningFromDetail) {
+      this.returningFromDetail = false;
+      const deleted = CommunityNavigationStore.getInstance();
+      this.listings = this.listings.filter((item: SecondhandListing) => item.source === 'community'
+        ? !deleted.isCampusPostDeleted(item.communityPostId || item.id || 0)
+        : !deleted.isSecondhandDeleted(item.id || 0));
+      setTimeout((): void => {
+        this.listScroller.scrollTo({ xOffset: 0, yOffset: this.savedListOffset, animation: false });
+      }, 0);
+      return;
+    }
+    this.load();
+  }
+
+  private openDetail(item: SecondhandListing): void {
+    this.savedListOffset = this.listScroller.currentOffset().yOffset;
+    this.returningFromDetail = true;
+    router.pushUrl({ url: 'pages/campus/SecondHandBookDetailPage', params: { listing: JSON.stringify(item) } });
+  }
 
   private async loadProfile(): Promise<void> {
     const storage = AppStorage.getInstance();
@@ -277,7 +300,7 @@ struct SecondHandBookPage {
         }.width('92%').height(52).padding({ left: 16, right: 12 }).backgroundColor(Color.White).borderRadius(26).margin({ bottom: 10 });
       }
 
-      List() {
+      List({ scroller: this.listScroller }) {
           if (this.loading) {
             ListItem() { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
           } else if (this.visibleListings().length === 0) {
@@ -294,8 +317,7 @@ struct SecondHandBookPage {
                   Text(this.money(item.price)).fontSize(21).fontWeight(FontWeight.Bold).fontColor('#B26E2A').margin({ top: 8 });
                 }.layoutWeight(1);
               }.width('92%').padding(16).backgroundColor(Color.White).borderRadius(16).margin({ top: 10 })
-                .onClick(() => router.pushUrl({ url: 'pages/campus/SecondHandBookDetailPage',
-                  params: { listing: JSON.stringify(item) } })); }
+                .onClick(() => this.openDetail(item)); }
             }, (item: SecondhandListing) => `${item.source || 'secondhand'}-${item.id || item.bookId || item.bookTitle}`)
           }
           if (!this.loading && this.listings.length > 0) { ListItem() { Row() { if (this.loadingMore) { LoadingProgress().width(22).height(22).color('#857A25'); Text('正在加载更多…').fontSize(15).fontColor('#888888').margin({ left: 8 }); } else if (!this.nativeHasMore && !this.communityHasMore) { Text('已经到底了').fontSize(15).fontColor('#AAAAAA'); } }.width('100%').height(54).justifyContent(FlexAlign.Center); } }

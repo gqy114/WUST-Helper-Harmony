@@ -5,6 +5,7 @@ import { campusWallRelativeTime } from '../../net/CampusWallApi';
 import { CampusRichText } from '../../components/CampusRichText';
 import { CommunityPostImage } from '../../components/CommunityPostImage';
 import { AppStorage } from '../../store/AppStorage';
+import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
 interface CampusCatDetailParams extends Record<string, string> { id: string; }
 
@@ -47,6 +48,7 @@ struct CampusCatDetailPage {
     this.deleting = true;
     try {
       await CampusCatApi.deletePost(this.postId);
+      CommunityNavigationStore.getInstance().markCatPostDeleted(this.postId);
       this.deleteDialogOpen = false;
       promptAction.showToast({ message: '帖子已删除', duration: 1200 });
       router.back();

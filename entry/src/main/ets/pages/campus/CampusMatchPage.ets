@@ -4,6 +4,7 @@ import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi, CampusWallPost, campusWallExtra, campusWallRelativeTime } from '../../net/CampusWallApi';
 import { CampusRichText } from '../../components/CampusRichText';
 import { CommunityPostImagePreview } from '../../components/CommunityPostImagePreview';
+import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
 @Entry @Component
 struct CampusMatchPage {
@@ -24,10 +25,29 @@ struct CampusMatchPage {
   @State private activeCollegeFilter: string = "全部";
   @State private activeTeamFilter: string = "全部";
   @State private selfCollege: string = "";
+  private listScroller: Scroller = new Scroller();
+  private returningFromDetail: boolean = false;
+  private savedListOffset: number = 0;
 
   private async loadAvatar(): Promise<void> { this.avatarUrl = await AppStorage.getInstance().getAvatarUrl(); }
   aboutToAppear(): void { this.loadAvatar(); }
-  onPageShow(): void { this.load(); }
+  onPageShow(): void {
+    if (this.returningFromDetail) {
+      this.returningFromDetail = false;
+      const deleted = CommunityNavigationStore.getInstance();
+      this.posts = this.posts.filter((post: CampusWallPost) => !deleted.isCampusPostDeleted(post.id || 0));
+      setTimeout((): void => {
+        this.listScroller.scrollTo({ xOffset: 0, yOffset: this.savedListOffset, animation: false });
+      }, 0);
+      return;
+    }
+    this.load();
+  }
+  private openDetail(postId: number): void {
+    this.savedListOffset = this.listScroller.currentOffset().yOffset;
+    this.returningFromDetail = true;
+    router.pushUrl({ url: 'pages/campus/CampusPostDetailPage', params: { id: String(postId) } });
+  }
 
   private async load(): Promise<void> {
     const generation = ++this.requestGeneration;
@@ -120,7 +140,7 @@ struct CampusMatchPage {
       if (this.searching) {
         Row() { Text('⌕').fontSize(30).fontColor('#555555'); TextInput({ placeholder: '搜索当前板块', text: this.query }).layoutWeight(1).fontSize(20).onChange((value: string) => { this.query = value; }); Text('×').fontSize(32).fontColor('#777777').onClick(() => { this.query = ''; animateTo({ duration: 260, curve: Curve.EaseInOut }, () => { this.searching = false; }); }); }.width('92%').height(58).padding({ left: 16, right: 14 }).backgroundColor(Color.White).borderRadius(30).margin({ bottom: 12 });
       }
-      List() {
+      List({ scroller: this.listScroller }) {
           if (this.loading) {
             ListItem() { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
           } else if (this.posts.filter((post: CampusWallPost) => this.filterMatch(post) && this.matchScore(post) > 0).length === 0) {
@@ -140,7 +160,7 @@ struct CampusMatchPage {
                 CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 });
                 if (post.images && post.images.length > 0) { CommunityPostImagePreview({ images: post.images }).margin({ top: 12 }); }
                 Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA').margin({ top: 18 });
-              }.width('100%').padding({ left: 34, right: 34, top: 22, bottom: 24 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => router.pushUrl({ url: 'pages/campus/CampusPostDetailPage', params: { id: String(post.id || 0) } })); }
+              }.width('100%').padding({ left: 34, right: 34, top: 22, bottom: 24 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => this.openDetail(post.id || 0)); }
             }, (post: CampusWallPost) => `${post.id || post.createdAt || post.content}`);
           }
           if (!this.loading && this.posts.length > 0) { ListItem() { Row() { if (this.loadingMore) { LoadingProgress().width(22).height(22).color('#20C894'); Text('正在加载更多…').fontSize(15).fontColor('#888888').margin({ left: 8 }); } else if (!this.hasMore) { Text('已经到底了').fontSize(15).fontColor('#AAAAAA'); } }.width('100%').height(54).justifyContent(FlexAlign.Center); } }
