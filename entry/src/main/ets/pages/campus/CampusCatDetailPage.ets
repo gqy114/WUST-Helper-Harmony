@@ -160,7 +160,8 @@ struct CampusCatDetailPage {
               }, (comment: CampusCatReply) => `${comment.id || comment.createdAt || comment.content}`)
             }
           }.width('100%').alignItems(HorizontalAlign.Start)
-        }.width('100%').layoutWeight(1).backgroundColor('#F5F6F8')
+            .constraintSize({ minHeight: '100%' })
+        }.width('100%').layoutWeight(1).backgroundColor('#F5F6F8').align(Alignment.Top)
         Row() {
           Image(this.myAvatar || $r('app.media.ic_default_avatar'))
             .width(42).height(42).borderRadius(21).objectFit(ImageFit.Cover).margin({ right: 10 })

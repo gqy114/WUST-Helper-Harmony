@@ -427,7 +427,8 @@ struct CampusPostDetailPage {
             }, (reply: CampusWallReply) => `${reply.id || reply.createdAt || reply.content}`)
           }
         }.width('100%').alignItems(HorizontalAlign.Center)
-      }.layoutWeight(1).width('100%').backgroundColor('#F5F6F8')
+          .constraintSize({ minHeight: '100%' })
+      }.layoutWeight(1).width('100%').backgroundColor('#F5F6F8').align(Alignment.Top)
 
       Row() {
         Image(this.myAvatar || $r('app.media.ic_default_avatar'))
