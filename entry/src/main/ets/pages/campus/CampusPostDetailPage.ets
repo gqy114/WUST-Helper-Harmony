@@ -158,6 +158,7 @@ struct CampusPostDetailPage {
     this.actionOpen = false;
     try {
       await CampusWallApi.acceptReply(this.postId, this.actionReplyId);
+      CommunityNavigationStore.getInstance().markCampusPostUpdated(this.postId);
       await this.load();
       promptAction.showToast({ message: '回答已采纳', duration: 1200 });
     } catch {
@@ -187,6 +188,7 @@ struct CampusPostDetailPage {
   private async react(type: string): Promise<void> {
     try {
       await CampusWallApi.toggleReaction(this.postId, type);
+      CommunityNavigationStore.getInstance().markCampusPostUpdated(this.postId);
       await this.load();
     } catch { promptAction.showToast({ message: '当前帖子暂不支持表态', duration: 1200 }); }
   }
@@ -217,6 +219,7 @@ struct CampusPostDetailPage {
     this.sending = true;
     try {
       await CampusWallApi.reply(this.postId, this.replyText.trim());
+      CommunityNavigationStore.getInstance().markCampusPostUpdated(this.postId);
       this.replyText = '';
       await this.load();
     } catch {

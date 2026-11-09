@@ -173,11 +173,11 @@ async function wallPageHarness() {
     } },
     promptAction: { showToast: ({ message }) => toasts.push(message) }
   });
-  const module = new SourceTextModule(transform(`export class TestPage {\n${extract('load')}\n${extract('loadMore')}\n${extract('appendUniquePosts')}\n}`), { context });
+  const module = new SourceTextModule(transform(`export class TestPage {\n${extract('load')}\n${extract('loadMore')}\n${extract('appendUniquePosts')}\n${extract('restoreListOffset')}\n}`), { context });
   await module.link(() => { throw new Error('No imports expected'); });
   await module.evaluate();
   const page = new module.namespace.TestPage();
-  Object.assign(page, { loading: false, loadingMore: false, posts: [], currentPage: 2, hasMore: true, pageSize: 20, requestGeneration: 0 });
+  Object.assign(page, { loading: false, loadingMore: false, posts: [], currentPage: 2, hasMore: true, pageSize: 20, requestGeneration: 0, pendingRestoreOffset: -1, listScroller: { scrollTo: () => {} } });
   return {
     page, requests, toasts,
     resolvePage: (pageNumber, items) => {

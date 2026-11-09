@@ -80,6 +80,7 @@ struct CampusCatDetailPage {
     this.sending = true;
     try {
       await CampusCatApi.reply(this.postId, content);
+      CommunityNavigationStore.getInstance().markCatPostUpdated(this.postId);
       this.replyText = '';
       this.comments = await CampusCatApi.comments(this.postId);
       this.post.commentCount = this.comments.length;
