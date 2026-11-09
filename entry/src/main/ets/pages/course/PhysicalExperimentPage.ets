@@ -248,16 +248,14 @@ export struct PhysicalExperimentPage {
     this.removing = true;
     try {
       const storage = PreferenceStorage.getInstance();
-      const current = await storage.getCurrentCourses();
-      const remaining: CourseData[] = current.filter((course: CourseData) => course.isPhysicalExperiment !== true);
-      const removed = current.length - remaining.length;
+      // 原子操作：清空实验缓存 + 重写普通课表在同一次写入里完成，
+      // 否则 setCurrentCourses() 会把实验课从旧课表里迁移回来。
+      const removed = await storage.removePhysicalExperimentCourses();
       if (removed === 0) {
         this.hasTimetableExperiments = false;
         promptAction.showToast({ message: '课表中没有实验课程' });
         return;
       }
-      await storage.setPhysicalExperimentCourses([]);
-      await storage.setCurrentCourses(remaining);
       const saved = await storage.getCurrentCourses();
       this.store.setCourses(saved);
       this.hasTimetableExperiments = saved.some((course: CourseData) => course.isPhysicalExperiment === true);
@@ -363,7 +361,12 @@ export struct PhysicalExperimentPage {
     }
   }
 
-  /** 删除本应用导入的实验日程：按保存的事件 id 逐条删除，删完清空记录，便于重新导入。 */
+  /**
+   * 删除本应用导入的实验日程：按保存的事件 id 逐条删除。
+   *
+   * 只有删除成功的条目才清除记录；删除失败的保留 id 与 key，
+   * 避免日程还留在系统日历里、App 却再也找不到它（重新导入时还会重复）。
+   */
   private async removeFromCalendar(): Promise<void> {
     if (this.removingCalendar) return;
     if (!await this.requestCalendarPermission()) return;
@@ -372,6 +375,8 @@ export struct PhysicalExperimentPage {
       const storage = PreferenceStorage.getInstance();
       const rawIds = await storage.getSettingString('physicalExperimentCalendarEventIds', '');
       const ids: number[] = rawIds ? JSON.parse(rawIds) as number[] : [];
+      const rawKeys = await storage.getSettingString('physicalExperimentCalendarKeys', '');
+      const keys: string[] = rawKeys ? JSON.parse(rawKeys) as string[] : [];
       if (ids.length === 0) {
         this.hasCalendarEvents = false;
         promptAction.showToast({ message: '没有需要删除的实验日程' });
@@ -379,19 +384,33 @@ export struct PhysicalExperimentPage {
       }
       const manager = calendarManager.getCalendarManager(getContext(this) as common.Context);
       const calendar = await manager.getCalendar();
+      const keptIds: number[] = [];
+      const keptKeys: string[] = [];
       let deleted = 0;
       for (let i = 0; i < ids.length; i++) {
+        const key = i < keys.length ? keys[i] : '';
         try {
           await calendar.deleteEvent(ids[i]);
           deleted++;
-        } catch {
-          // 用户可能已在系统日历里手动删掉这条，忽略继续删其他条目。
+        } catch (error) {
+          console.warn('PhysicalExperimentPage', `calendar delete failed for ${ids[i]}: ${JSON.stringify(error)}`);
+          keptIds.push(ids[i]);
+          if (key) keptKeys.push(key);
         }
       }
-      await storage.setSettingString('physicalExperimentCalendarEventIds', '');
-      await storage.setSettingString('physicalExperimentCalendarKeys', '');
-      this.hasCalendarEvents = false;
-      promptAction.showToast({ message: `已删除${deleted}条实验日程` });
+      await storage.setSettingString('physicalExperimentCalendarEventIds',
+        keptIds.length > 0 ? JSON.stringify(keptIds) : '');
+      await storage.setSettingString('physicalExperimentCalendarKeys',
+        keptKeys.length > 0 ? JSON.stringify(keptKeys) : '');
+      this.hasCalendarEvents = keptIds.length > 0;
+      if (keptIds.length === 0) {
+        promptAction.showToast({ message: `已删除${deleted}条实验日程` });
+      } else {
+        promptAction.showToast({
+          message: `已删除${deleted}条，${keptIds.length}条删除失败已保留记录，可重试`,
+          duration: 2500
+        });
+      }
     } catch (error) {
       console.error('PhysicalExperimentPage', `calendar removal error: ${JSON.stringify(error)}`);
       promptAction.showToast({ message: '删除实验日程失败，请检查日历权限', duration: 2000 });

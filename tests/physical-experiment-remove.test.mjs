@@ -18,17 +18,19 @@ async function makePage(initialCourses) {
 
   const toasts = [];
   let current = initialCourses.slice();
-  const writes = { experiments: 0, courses: 0 };
+  const writes = { remove: 0, courses: 0 };
   let storeSnapshot = [];
   const storage = {
     getCurrentCourses: async () => current.slice(),
-    setPhysicalExperimentCourses: async (list) => {
-      writes.experiments += 1;
-      assert.equal(list.length, 0, '移除时应清空实验课缓存');
-    },
-    setCurrentCourses: async (list) => {
-      writes.courses += 1;
-      current = list.slice();
+    // 真实实现里「清空实验缓存 + 重写课表」在同一个写入任务中完成。
+    removePhysicalExperimentCourses: async () => {
+      const kept = current.filter((course) => course.isPhysicalExperiment !== true);
+      const removed = current.length - kept.length;
+      if (removed > 0) {
+        writes.remove += 1;
+        current = kept;
+      }
+      return removed;
     },
   };
   const context = createContext({
@@ -59,28 +61,27 @@ test('移除只删实验课程，其他课程和顺序保持不变', async () =>
 
   const names = current().map((item) => item.courseName);
   assert.deepEqual(names, ['高等数学', '大学物理']);
-  assert.equal(writes.experiments, 1);
-  assert.equal(writes.courses, 1);
+  assert.equal(writes.remove, 1);
   assert.equal(page.hasTimetableExperiments, false);
   assert.deepEqual(storeSnapshot().map((item) => item.courseName), ['高等数学', '大学物理']);
   assert.equal(toasts.at(-1), '已移除2门实验课程');
 });
 
 test('课表里没有实验课程时不写存储，只提示', async () => {
-  const { page, toasts, writes } = await makePage([regular('高等数学')]);
+  const { page, toasts, writes, storeSnapshot } = await makePage([regular('高等数学')]);
   await page.removeFromTimetable();
-  assert.equal(writes.experiments, 0);
-  assert.equal(writes.courses, 0);
+  assert.equal(writes.remove, 0);
   assert.equal(page.hasTimetableExperiments, false);
+  assert.deepEqual(storeSnapshot(), [], '没有可删条目时不应刷新课表');
   assert.equal(toasts.at(-1), '课表中没有实验课程');
 });
 
 test('移除后再次调用不会重复写存储', async () => {
   const { page, writes } = await makePage([experiment('实验4-18')]);
   await page.removeFromTimetable();
-  assert.equal(writes.courses, 1);
+  assert.equal(writes.remove, 1);
   await page.removeFromTimetable();
-  assert.equal(writes.courses, 1);
+  assert.equal(writes.remove, 1);
 });
 
 test('页面提供移除按钮、确认弹窗，并在导入/进入时刷新状态', async () => {
@@ -92,16 +93,62 @@ test('页面提供移除按钮、确认弹窗，并在导入/进入时刷新状�
   assert.match(code, /private async refreshTimetableState\(storage: PreferenceStorage\): Promise<void>/, '缺少状态刷新方法');
   assert.match(code, /this\.hasTimetableExperiments = current\.some\(/, '进入页面时应检查课表');
   assert.match(code, /this\.hasTimetableExperiments = saved\.some\(/, '导入后应刷新按钮状态');
-  assert.match(code, /course\.isPhysicalExperiment !== true/, '移除时应只过滤实验课程');
-  assert.match(code, /setPhysicalExperimentCourses\(\[\]\)/, '移除时应清空实验课缓存');
+  assert.match(code, /removePhysicalExperimentCourses\(\)/, '移除应走原子方法，而不是分两步写');
+  assert.doesNotMatch(code, /setPhysicalExperimentCourses\(\[\]\)/, '不能再单独清空实验缓存');
   assert.match(code, /AppStorage\.setOrCreate<number>\('courseDataVersion', Date\.now\(\)\)/, '移除后应通知课表刷新');
+});
+
+test('移除在同一个写入任务里完成，避免实验课被迁移回课表', async () => {
+  const storeSource = await source('../entry/src/main/ets/store/AppStorage.ts');
+  const found = storeSource.match(/  async removePhysicalExperimentCourses\(\): Promise<number> \{[\s\S]*?\r?\n  \}/);
+  assert.ok(found, 'AppStorage.removePhysicalExperimentCourses 未找到');
+
+  const writes = [];
+  const context = createContext({ console, JSON, Date, Number, Array });
+  const mod = new SourceTextModule(stripTypeScriptTypes(`export class TestStore {\n${found[0]}\n}`, { mode: 'transform' }), { context });
+  await mod.link(() => { throw new Error('No imports expected'); });
+  await mod.evaluate();
+  const store = new mod.namespace.TestStore();
+  store.courseCacheMarker = '';
+  store.isPhysicalExperimentCourse = (course) => course.isPhysicalExperiment === true;
+  store.getStoredCourses = async () => [regular('高等数学'), experiment('实验4-18'), regular('大学物理')];
+  store.putStr = async (key, value) => { writes.push([key, value]); };
+  // 写入队列是同步执行的：不存在「清空实验缓存 → 读旧课表迁移 → 合并回课表」的中间态。
+  store.enqueueCourseWrite = async (task) => task();
+
+  const removed = await store.removePhysicalExperimentCourses();
+  assert.equal(removed, 1);
+  assert.deepEqual(writes.map((item) => item[0]), ['physicalExperimentCourses', 'currentCourses']);
+  assert.equal(writes[0][1], '[]', '应先清空实验课缓存');
+  assert.deepEqual(JSON.parse(writes[1][1]).map((item) => item.courseName), ['高等数学', '大学物理']);
+  assert.match(store.courseCacheMarker, /^remove_experiments_/, '应更新写入标记');
+});
+
+test('没有实验课时原子方法不写存储', async () => {
+  const storeSource = await source('../entry/src/main/ets/store/AppStorage.ts');
+  const found = storeSource.match(/  async removePhysicalExperimentCourses\(\): Promise<number> \{[\s\S]*?\r?\n  \}/);
+  const writes = [];
+  const context = createContext({ console, JSON, Date, Number, Array });
+  const mod = new SourceTextModule(stripTypeScriptTypes(`export class TestStore {\n${found[0]}\n}`, { mode: 'transform' }), { context });
+  await mod.link(() => { throw new Error('No imports expected'); });
+  await mod.evaluate();
+  const store = new mod.namespace.TestStore();
+  store.courseCacheMarker = 'unchanged';
+  store.isPhysicalExperimentCourse = (course) => course.isPhysicalExperiment === true;
+  store.getStoredCourses = async () => [regular('高等数学')];
+  store.putStr = async (key, value) => { writes.push([key, value]); };
+  store.enqueueCourseWrite = async (task) => task();
+
+  assert.equal(await store.removePhysicalExperimentCourses(), 0);
+  assert.deepEqual(writes, []);
+  assert.equal(store.courseCacheMarker, 'unchanged');
 });
 
 // ---------------------------------------------------------------------------
 // 删除已导入的实验日程
 // ---------------------------------------------------------------------------
 
-async function makeCalendarPage(initialIds, failingIds = []) {
+async function makeCalendarPage(initialIds, failingIds = [], initialKeys = []) {
   const pageSource = await source(pagePath);
   const found = pageSource.match(/  private async removeFromCalendar\(\): Promise<void> \{[\s\S]*?\r?\n  \}/);
   assert.ok(found, 'removeFromCalendar 方法未找到');
@@ -110,8 +157,11 @@ async function makeCalendarPage(initialIds, failingIds = []) {
   const deleted = [];
   const settingWrites = {};
   const storage = {
-    getSettingString: async (key) =>
-      key === 'physicalExperimentCalendarEventIds' ? JSON.stringify(initialIds) : '',
+    getSettingString: async (key) => {
+      if (key === 'physicalExperimentCalendarEventIds') return JSON.stringify(initialIds);
+      if (key === 'physicalExperimentCalendarKeys') return JSON.stringify(initialKeys);
+      return '';
+    },
     setSettingString: async (key, value) => { settingWrites[key] = value; },
   };
   const context = createContext({
@@ -163,11 +213,20 @@ test('没有保存的日程时不删除，只提示', async () => {
   assert.equal(toasts.at(-1), '没有需要删除的实验日程');
 });
 
-test('单条日程已被手动删除时，其余日程仍然删除成功', async () => {
-  const { page, toasts, deleted } = await makeCalendarPage([21, 22, 23], [22]);
+test('删除失败的那条保留记录，其余日程正常删除', async () => {
+  const { page, toasts, deleted, settingWrites } = await makeCalendarPage([21, 22, 23], [22]);
   await page.removeFromCalendar();
   assert.deepEqual(deleted, [21, 23]);
-  assert.equal(toasts.at(-1), '已删除2条实验日程');
+  assert.equal(settingWrites['physicalExperimentCalendarEventIds'], '[22]', '失败条目不能被清掉');
+  assert.equal(page.hasCalendarEvents, true, '还有未删除的日程');
+  assert.equal(toasts.at(-1), '已删除2条，1条删除失败已保留记录，可重试');
+});
+
+test('删除失败时保留对应的事件 key，避免重新导入重复', async () => {
+  const keys = ['k21', 'k22', 'k23'];
+  const { page, settingWrites } = await makeCalendarPage([21, 22, 23], [22], keys);
+  await page.removeFromCalendar();
+  assert.deepEqual(JSON.parse(settingWrites['physicalExperimentCalendarKeys']), ['k22']);
 });
 
 test('页面提供删除日程按钮、确认弹窗，并在导入时记录事件 id', async () => {

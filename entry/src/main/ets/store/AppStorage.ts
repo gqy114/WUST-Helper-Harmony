@@ -474,6 +474,33 @@ export class AppStorage {
     });
   }
 
+  /**
+   * 一键移除课表里的实验课程。
+   *
+   * 必须在一个写任务里同时清空实验缓存并重写普通课表：之前分两步做，
+   * 第二步 setCurrentCourses() 会调用 getPhysicalExperimentCourses()，
+   * 把刚清掉的实验课又从 currentCourses 里迁移回实验缓存并合并回课表。
+   */
+  async removePhysicalExperimentCourses(): Promise<number> {
+    return this.enqueueCourseWrite(async () => {
+      const current = await this.getStoredCourses('currentCourses');
+      const remaining: CourseData[] = [];
+      let removed = 0;
+      for (let i = 0; i < current.length; i++) {
+        if (this.isPhysicalExperimentCourse(current[i])) {
+          removed++;
+          continue;
+        }
+        remaining.push(current[i]);
+      }
+      if (removed === 0) return 0;
+      this.courseCacheMarker = `remove_experiments_${Date.now()}`;
+      await this.putStr('physicalExperimentCourses', '[]');
+      await this.putStr('currentCourses', JSON.stringify(remaining));
+      return removed;
+    });
+  }
+
   async getCachedGrades(): Promise<string> { return this.getStr('cachedGrades', ''); }
   async setCachedGrades(value: string): Promise<void> { return this.putStr('cachedGrades', value); }
 
