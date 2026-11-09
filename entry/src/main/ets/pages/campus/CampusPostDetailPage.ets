@@ -80,6 +80,8 @@ struct CampusPostDetailPage {
         router.back();
       } else {
         await CampusWallApi.deleteReply(this.postId, this.actionReplyId);
+        // 删掉回复（尤其是已采纳的回答）会改变帖子状态和回复数，返回列表时要补拉这一条。
+        CommunityNavigationStore.getInstance().markCampusPostUpdated(this.postId);
         this.deleteDialogOpen = false;
         promptAction.showToast({ message: '回复已删除', duration: 1200 });
         await this.load();

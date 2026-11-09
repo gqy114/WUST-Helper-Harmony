@@ -75,7 +75,10 @@ struct CampusCatPage {
       const id = ids[i];
       try {
         const fresh = await CampusCatApi.detail(id);
-        this.posts = this.posts.map((post: CampusCatPost) => (post.id || 0) === id ? fresh : post);
+        // 登录失效时 detail() 会返回空帖子：不能用它覆盖列表里的真实数据，否则会出现空白条目。
+        if ((fresh.id || 0) === id && ((fresh.title || '').length > 0 || (fresh.content || '').length > 0)) {
+          this.posts = this.posts.map((post: CampusCatPost) => (post.id || 0) === id ? fresh : post);
+        }
       } catch {
         // 拉取失败保留旧数据，不打断返回流程。
       }

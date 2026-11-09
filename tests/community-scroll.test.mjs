@@ -100,3 +100,49 @@ test('删除仍然只移除对应条目，不整表刷新', async () => {
   assert.match(wall, /this\.posts = this\.posts\.filter\(/, '删除后应只过滤对应 id');
   assert.doesNotMatch(wall, /onPageShow\(\): void \{\s*\n\s*this\.load\(\);\s*\n\s*\}/, '返回时不应无条件 load()');
 });
+
+test('删除回复后也标记帖子已更新，返回列表不会停留在旧状态', async () => {
+  const post = await source(`${root}/pages/campus/CampusPostDetailPage.ets`);
+  const deleteReply = post.match(/await CampusWallApi\.deleteReply\(this\.postId, this\.actionReplyId\);[\s\S]{0,260}/);
+  assert.ok(deleteReply, '没有找到删除回复的调用');
+  assert.match(deleteReply[0], /markCampusPostUpdated\(this\.postId\)/, '删除回复后没有标记帖子已更新');
+});
+
+async function makePatcher() {
+  const pageSource = await source(`${root}/pages/campus/CampusWallPage.ets`);
+  const found = pageSource.match(/  private async patchUpdatedPosts\(ids: number\[\]\): Promise<void> \{[\s\S]*?\r?\n  \}/);
+  assert.ok(found, 'patchUpdatedPosts 方法未找到');
+  const detailResults = {};
+  const context = createContext({
+    console,
+    Array,
+    CampusWallApi: { detail: async (id) => detailResults[id] },
+  });
+  const mod = new SourceTextModule(stripTypeScriptTypes(`export class TestPage {\n${found[0]}\n}`, { mode: 'transform' }), { context });
+  await mod.link(() => { throw new Error('No imports expected'); });
+  await mod.evaluate();
+  const page = new mod.namespace.TestPage();
+  page.posts = [
+    { id: 1, title: '旧标题', content: '旧内容', replyCount: 1 },
+    { id: 2, title: '另一条', content: '内容', replyCount: 0 },
+  ];
+  return { page, detailResults };
+}
+
+test('补拉失败返回空帖子时，保留列表里的旧数据而不是变成空白条目', async () => {
+  const { page, detailResults } = await makePatcher();
+  detailResults[1] = {};                                   // 登录失效：detail() 返回空对象
+  detailResults[2] = { id: 2, title: '另一条(已更新)', content: '内容' };
+  await page.patchUpdatedPosts([1, 2]);
+
+  assert.equal(page.posts[0].title, '旧标题', '空数据不应覆盖旧帖子');
+  assert.equal(page.posts[0].content, '旧内容');
+  assert.equal(page.posts[1].title, '另一条(已更新)', '有效的补拉结果应被采用');
+});
+
+test('补拉返回不同 id 的帖子时也不要替换', async () => {
+  const { page, detailResults } = await makePatcher();
+  detailResults[1] = { id: 99, title: '别人的帖子', content: 'x' };
+  await page.patchUpdatedPosts([1]);
+  assert.equal(page.posts[0].title, '旧标题');
+});
