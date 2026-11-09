@@ -70,7 +70,8 @@ test('标签与资源分组标题按后端取值映射', async () => {
   assert.equal(api.resourceTypeLabel(9), '其他资源');
 });
 
-async function loadFavorites(initialRaw = '[]') {
+async function loadFavorites(initialRaw = '[]', options = {}) {
+  const { delayedRead = false } = options;
   const code = stripTypeScriptTypes(await source(`${root}/store/LibraryFavorites.ets`), { mode: 'transform' });
   const store = new Map();
   // AppStorage 的 setSettingString 会再包一层 JSON，和真实存储保持一致。
@@ -78,6 +79,10 @@ async function loadFavorites(initialRaw = '[]') {
   const storage = {
     getStudentId: async () => '',
     getSettingString: async (key, def) => {
+      if (delayedRead) {
+        // 模拟磁盘读取慢：页面刚打开、收藏还没读完时用户就点了收藏。
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
       const raw = store.has(key) ? store.get(key) : JSON.stringify(def);
       try {
         return JSON.parse(raw);
@@ -123,6 +128,24 @@ test('收藏可添加、可取消，并立即写入 preferences', async () => {
   assert.deepEqual(Array.from(await favorites.list()), []);
 });
 
+test('旧收藏还没读完就添加新收藏，不会覆盖原有收藏', async () => {
+  const existing = { kind: 'resource', id: 3, title: '知网', link: 'https://x', tag: '资源' };
+  const { favorites, store } = await loadFavorites([existing], { delayedRead: true });
+  // 不等 list()：直接收藏，模拟「刚打开页面就点收藏」。
+  assert.equal(await favorites.toggle({ kind: 'article', id: 12, title: '新收藏', link: 'https://a', tag: '活动' }), true);
+  const saved = JSON.parse(JSON.parse(store.get('libraryFavorites')));
+  assert.deepEqual(saved.map((item) => item.id).sort((a, b) => a - b), [3, 12], '旧收藏不能被覆盖');
+});
+
+test('连续快速点收藏，写入按顺序生效', async () => {
+  const { favorites, store } = await loadFavorites();
+  const first = favorites.toggle({ kind: 'article', id: 1, title: '一', link: 'https://1', tag: '通知' });
+  const second = favorites.toggle({ kind: 'article', id: 2, title: '二', link: 'https://2', tag: '通知' });
+  assert.deepEqual([await first, await second], [true, true]);
+  const saved = JSON.parse(JSON.parse(store.get('libraryFavorites')));
+  assert.deepEqual(saved.map((item) => item.id).sort((a, b) => a - b), [1, 2]);
+});
+
 test('加载时过滤非法收藏记录，重复项只保留一次', async () => {
   const { favorites } = await loadFavorites([
     { kind: 'article', id: 1, title: '有效', link: 'https://a', tag: '通知' },
@@ -148,6 +171,9 @@ test('页面接入三个真实接口、bell 图标与收藏，占位 tab 全部�
   assert.match(page, /LibraryApi\.articles\(\)/, '活动资讯 tab 没有调用接口');
   assert.match(page, /LibraryApi\.resources\(0\)/, '资源导航 tab 没有调用接口');
   assert.match(page, /LibraryFavorites\.getInstance\(\)/, '没有接入收藏存储');
+  assert.match(page, /private tabErrors: string\[\]/, '缺少按栏目保存的错误状态');
+  assert.match(page, /this\.errorText = this\.tabErrors\[index\]/, '切回栏目时应恢复错误状态');
+  assert.match(page, /this\.tabsLoaded\[index\] = false/, '加载失败时应允许重新加载');
   assert.doesNotMatch(page, /this\.emptyContent\(\)/, '不应再有占位空内容分支');
   for (const title of ['我的收藏', '公告通知', '首页推荐', '活动资讯', '资源导航']) {
     assert.match(page, new RegExp(`'${title}'`), `缺少 tab：${title}`);

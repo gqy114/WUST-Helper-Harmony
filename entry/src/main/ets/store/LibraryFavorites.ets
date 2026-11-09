@@ -32,11 +32,16 @@ function toFavorite(entry: LibraryFavoriteEntry): LibraryFavorite {
  * - 收藏/取消收藏先改本机，再尝试同步服务端；同步失败进待同步队列，下次进页面时重试。
  * - 本机缓存按学号隔离，切换账号不会看到别人的收藏。
  * - 未登录时只写本机，登录后首次进入「我的收藏」会把本机条目推到服务端并拉取云端列表。
+ *
+ * 读取与写入都要经过同一个就绪 Promise 和写入队列：之前 ensureLoaded() 先把 loaded
+ * 置 true 再 await 读取，页面刚打开就点收藏时 items 还是空数组，写回会覆盖旧收藏。
  */
 export class LibraryFavorites {
   private static instance: LibraryFavorites;
   private items: LibraryFavorite[] = [];
   private loaded: boolean = false;
+  private loadPromise: Promise<void> | null = null;
+  private writeChain: Promise<void> = Promise.resolve();
   private storageKey: string = STORAGE_PREFIX;
   private synced: boolean = false;
   private pendingAdds: LibraryFavorite[] = [];
@@ -62,7 +67,14 @@ export class LibraryFavorites {
 
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return;
+    if (!this.loadPromise) {
+      this.loadPromise = this.loadFromStorage();
+    }
+    await this.loadPromise;
     this.loaded = true;
+  }
+
+  private async loadFromStorage(): Promise<void> {
     const storage = AppStorage.getInstance();
     const sid = (await storage.getStudentId()).trim();
     this.storageKey = sid ? `${STORAGE_PREFIX}_${sid}` : STORAGE_PREFIX;
@@ -107,6 +119,13 @@ export class LibraryFavorites {
   /** 切换收藏；返回切换后的状态（true=已收藏）。服务端同步失败时排队，不影响本机结果。 */
   async toggle(item: LibraryFavorite): Promise<boolean> {
     await this.ensureLoaded();
+    // 连续点击时按顺序执行，后一次不会用旧快照覆盖前一次的结果。
+    const run = this.writeChain.then(() => this.applyToggle(item));
+    this.writeChain = run.then(() => {}, () => {});
+    return run;
+  }
+
+  private async applyToggle(item: LibraryFavorite): Promise<boolean> {
     const key = this.keyOf(item.kind, item.id);
     const index = this.items.findIndex((value: LibraryFavorite) => this.keyOf(value.kind, value.id) === key);
     let favorited = false;
@@ -140,6 +159,13 @@ export class LibraryFavorites {
    */
   async syncFromServer(): Promise<boolean> {
     await this.ensureLoaded();
+    // 同步也进写入队列，避免和用户刚点的收藏互相覆盖。
+    const run = this.writeChain.then(() => this.applySync());
+    this.writeChain = run.then(() => {}, () => {});
+    return run;
+  }
+
+  private async applySync(): Promise<boolean> {
     const flushed = await this.flushPending();
     if (!flushed) return false;
     const remote = await LibraryApi.listFavorites();

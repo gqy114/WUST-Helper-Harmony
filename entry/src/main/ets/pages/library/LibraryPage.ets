@@ -31,6 +31,8 @@ struct LibraryPage {
   // 收藏状态存在非响应式 store 里，改这个计数器触发列表刷新。
   @State private favoriteTick: number = 0;
   private tabsLoaded: boolean[] = [true, false, false, false, false, false];
+  // 每个栏目自己的错误文案：切走再切回来时恢复，避免空白且没有重试入口。
+  private tabErrors: string[] = ['', '', '', '', '', ''];
   private favoritesStore: LibraryFavorites = LibraryFavorites.getInstance();
 
   private navTabs: string[] = ['图书服务', '我的收藏', '公告通知', '首页推荐', '活动资讯', '资源导航'];
@@ -60,15 +62,20 @@ struct LibraryPage {
       this.refreshFavorites(true);
       return;
     }
+    // 恢复该栏目自己的错误状态：否则从别的栏目切回来时错误已被清空，
+    // 数据又没加载成功，页面就成了没有重试入口的空白页。
+    this.errorText = this.tabErrors[index];
     if (!this.tabsLoaded[index]) {
-      this.tabsLoaded[index] = true;
       this.loadTab(index);
     }
   }
 
   private async loadTab(index: number): Promise<void> {
     this.loading = true;
-    this.errorText = '';
+    this.tabErrors[index] = '';
+    if (this.selectedTab === index) {
+      this.errorText = '';
+    }
     try {
       if (index === 2) {
         this.notice = (await LibraryApi.latestNotice()) || {};
@@ -84,10 +91,19 @@ struct LibraryPage {
         this.resources = await LibraryApi.resources(0);
       }
       if (this.isEmptyTab(index)) {
-        this.errorText = '暂时没有内容，请稍后重试';
+        this.tabErrors[index] = '暂时没有内容，请稍后重试';
+        this.tabsLoaded[index] = true;
+      } else {
+        this.tabErrors[index] = '';
+        this.tabsLoaded[index] = true;
       }
     } catch {
-      this.errorText = '加载失败，请稍后重试';
+      // 失败时不把该栏目标记为已加载：切回来会重新请求，错误页始终带「重新加载」。
+      this.tabErrors[index] = '加载失败，请稍后重试';
+      this.tabsLoaded[index] = false;
+    }
+    if (this.selectedTab === index) {
+      this.errorText = this.tabErrors[index];
     }
     this.loading = false;
   }
