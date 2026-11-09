@@ -146,3 +146,136 @@ test('补拉返回不同 id 的帖子时也不要替换', async () => {
   await page.patchUpdatedPosts([1]);
   assert.equal(page.posts[0].title, '旧标题');
 });
+
+// ---------------------------------------------------------------------------
+// 返回列表时的行为：不重新加载、恢复滚动位置、消费删除/更新记录
+// ---------------------------------------------------------------------------
+
+async function makeListPageHarness(state) {
+  const pageSource = await source(`${root}/pages/campus/CampusWallPage.ets`);
+  const extract = (name) => {
+    const found = pageSource.match(new RegExp(`  (?:private )?(?:async )?${name}\\(\\)[^{]*\\{[\\s\\S]*?\\r?\\n  \\}`));
+    assert.ok(found, `${name} 方法未找到`);
+    return found[0];
+  };
+  const calls = { load: 0, patched: [], scrolled: [], key: null };
+  const store = {
+    consumeDeletedCampusPostIds: () => state.deleted || [],
+    consumeUpdatedCampusPostIds: () => state.updated || [],
+    consumeListReturnOffset: (key) => { calls.key = key; return state.offset; },
+  };
+  const timers = [];
+  const served = state.served || [{ id: 1, title: 'a' }, { id: 2, title: 'b' }];
+  const context = createContext({
+    console,
+    Array,
+    JSON,
+    CommunityNavigationStore: { getInstance: () => store },
+    CampusWallApi: { list: async () => { calls.load += 1; return served; } },
+    promptAction: { showToast: () => {} },
+    setTimeout: (callback) => { timers.push(callback); },
+  });
+  // 连真实的 load() 一起抽出来：页面重建时 onPageShow 依赖 load 结束时恢复位置。
+  const mod = new SourceTextModule(
+    stripTypeScriptTypes(`export class TestPage {\n${extract('onPageShow')}\n${extract('restoreListOffset')}\n${extract('load')}\n}`, { mode: 'transform' }),
+    { context });
+  await mod.link(() => { throw new Error('No imports expected'); });
+  await mod.evaluate();
+  const page = new mod.namespace.TestPage();
+  page.posts = (state.posts || []).slice();
+  page.pageKey = 'campus-wall';
+  page.pendingRestoreOffset = -1;
+  page.requestGeneration = 0;
+  page.loading = false;
+  page.loadingMore = false;
+  page.currentPage = 1;
+  page.hasMore = true;
+  page.pageSize = 20;
+  page.patchUpdatedPosts = async (ids) => { calls.patched.push(ids); };
+  page.listScroller = { scrollTo: (options) => { calls.scrolled.push(options.yOffset); } };
+  return {
+    page, calls,
+    runTimers: () => { while (timers.length > 0) { const callback = timers.shift(); callback(); } },
+  };
+}
+
+test('从详情返回：不重新加载、过滤删除项、补拉更新项，并按保存的偏移恢复滚动', async () => {
+  const harness = await makeListPageHarness({
+    offset: 640, deleted: [1], updated: [9],
+    posts: [{ id: 1, title: 'a' }, { id: 2, title: 'b' }],
+  });
+  harness.page.onPageShow();
+
+  assert.equal(harness.calls.load, 0, '返回时不应重新加载列表');
+  assert.equal(harness.calls.key, 'campus-wall', '应按页面 key 读取偏移');
+  assert.deepEqual(Array.from(harness.page.posts, (post) => post.id), [2], '删除的条目应被移除');
+  assert.deepEqual(harness.calls.patched, [[9]], '更新过的帖子应补拉');
+  harness.runTimers();
+  assert.deepEqual(harness.calls.scrolled, [640], '应滚动回保存的位置');
+});
+
+test('首次进入（没有返回状态）时正常加载，且不触发滚动恢复', async () => {
+  const harness = await makeListPageHarness({ offset: -1, posts: [] });
+  harness.page.onPageShow();
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  assert.equal(harness.calls.load, 1, '首次进入应加载');
+  harness.runTimers();
+  assert.deepEqual(harness.calls.scrolled, [], '没有保存位置时不应滚动');
+});
+
+test('页面被重建（列表为空）时先加载，加载完仍恢复到保存的位置', async () => {
+  const harness = await makeListPageHarness({ offset: 300, posts: [] });
+  harness.page.onPageShow();
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  assert.equal(harness.calls.load, 1, '重建后需要重新加载数据');
+  harness.runTimers();
+  assert.deepEqual(harness.calls.scrolled, [300], '加载完成后应恢复滚动位置');
+});
+
+// ---------------------------------------------------------------------------
+// 删除回复后的列表同步
+// ---------------------------------------------------------------------------
+
+async function makeDeleteHarness(actionTarget) {
+  const pageSource = await source(`${root}/pages/campus/CampusPostDetailPage.ets`);
+  const found = pageSource.match(/  private async confirmDelete\(\): Promise<void> \{[\s\S]*?\r?\n  \}/);
+  assert.ok(found, 'confirmDelete 方法未找到');
+  const events = [];
+  const toasts = [];
+  const context = createContext({
+    console,
+    CampusWallApi: { deletePost: async () => {}, deleteReply: async () => {} },
+    CommunityNavigationStore: {
+      getInstance: () => ({
+        markCampusPostDeleted: (id) => { events.push(['deleted', id]); },
+        markCampusPostUpdated: (id) => { events.push(['updated', id]); },
+      }),
+    },
+    promptAction: { showToast: ({ message }) => toasts.push(message) },
+    router: { back: () => { events.push(['back']); } },
+  });
+  const mod = new SourceTextModule(stripTypeScriptTypes(`export class TestPage {\n${found[0]}\n}`, { mode: 'transform' }), { context });
+  await mod.link(() => { throw new Error('No imports expected'); });
+  await mod.evaluate();
+  const page = new mod.namespace.TestPage();
+  page.deleting = false;
+  page.deleteDialogOpen = true;
+  page.actionTarget = actionTarget;
+  page.postId = 605;
+  page.actionReplyId = 624;
+  page.load = async () => {};
+  return { page, events, toasts };
+}
+
+test('删除回复后标记帖子已更新（返回列表会补拉这条）', async () => {
+  const { page, events } = await makeDeleteHarness('reply');
+  await page.confirmDelete();
+  assert.deepEqual(events, [['updated', 605]], '删除回复应标记帖子更新，而不是删除帖子');
+  assert.equal(page.deleteDialogOpen, false);
+});
+
+test('删除帖子才是标记删除并返回上一页', async () => {
+  const { page, events } = await makeDeleteHarness('post');
+  await page.confirmDelete();
+  assert.deepEqual(events, [['deleted', 605], ['back']], '删除帖子应标记删除并返回');
+});
