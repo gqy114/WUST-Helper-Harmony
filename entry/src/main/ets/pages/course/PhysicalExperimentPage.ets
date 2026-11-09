@@ -20,6 +20,10 @@ export struct PhysicalExperimentPage {
   @State private studentId: string = '';
   @State private physicalPassword: string = '';
   @State private importingCalendar: boolean = false;
+  // 课表里是否还有从物理实验导入的课程：决定「移除实验课表」按钮是否显示。
+  @State private hasTimetableExperiments: boolean = false;
+  @State private confirmRemove: boolean = false;
+  @State private removing: boolean = false;
   private store: CourseStore = CourseStore.getInstance();
 
   aboutToAppear(): void { this.prepare(); }
@@ -29,11 +33,17 @@ export struct PhysicalExperimentPage {
     this.studentId = await storage.getStudentId();
     this.physicalPassword = await storage.getPhysicalExperimentPassword();
     await this.restoreCachedCourses(storage);
+    await this.refreshTimetableState(storage);
     if (!this.physicalPassword) {
       this.showLogin = true;
       return;
     }
     await this.loadCourses();
+  }
+
+  private async refreshTimetableState(storage: PreferenceStorage): Promise<void> {
+    const current = await storage.getCurrentCourses();
+    this.hasTimetableExperiments = current.some((course: CourseData) => course.isPhysicalExperiment === true);
   }
 
   private async confirmLogin(): Promise<void> {
@@ -213,11 +223,41 @@ export struct PhysicalExperimentPage {
       await storage.setCurrentCourses(merged);
       const saved = await storage.getCurrentCourses();
       this.store.setCourses(saved);
+      this.hasTimetableExperiments = saved.some((course: CourseData) => course.isPhysicalExperiment === true);
       AppStorage.setOrCreate<number>('courseDataVersion', Date.now());
       promptAction.showToast({ message: added > 0 ? `已导入${added}门实验课程` : '实验课程已在课表中' });
     } catch (error) {
       console.error('PhysicalExperimentPage', `course import error: ${JSON.stringify(error)}`);
       promptAction.showToast({ message: '导入课表失败，请稍后重试', duration: 1800 });
+    }
+  }
+
+  /** 一键移除课表里的实验课程：只删除 isPhysicalExperiment 的条目，其他课程原样保留。 */
+  private async removeFromTimetable(): Promise<void> {
+    if (this.removing) return;
+    this.removing = true;
+    try {
+      const storage = PreferenceStorage.getInstance();
+      const current = await storage.getCurrentCourses();
+      const remaining: CourseData[] = current.filter((course: CourseData) => course.isPhysicalExperiment !== true);
+      const removed = current.length - remaining.length;
+      if (removed === 0) {
+        this.hasTimetableExperiments = false;
+        promptAction.showToast({ message: '课表中没有实验课程' });
+        return;
+      }
+      await storage.setPhysicalExperimentCourses([]);
+      await storage.setCurrentCourses(remaining);
+      const saved = await storage.getCurrentCourses();
+      this.store.setCourses(saved);
+      this.hasTimetableExperiments = saved.some((course: CourseData) => course.isPhysicalExperiment === true);
+      AppStorage.setOrCreate<number>('courseDataVersion', Date.now());
+      promptAction.showToast({ message: `已移除${removed}门实验课程` });
+    } catch (error) {
+      console.error('PhysicalExperimentPage', `course removal error: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '移除实验课程失败，请稍后重试', duration: 1800 });
+    } finally {
+      this.removing = false;
     }
   }
 
@@ -345,6 +385,12 @@ export struct PhysicalExperimentPage {
               })
               Button('导入到课表').width('90%').height(48).backgroundColor('#1ec98d').fontColor(Color.White)
                 .margin({ top: 12, bottom: 10 }).onClick(() => this.importCourses())
+              if (this.hasTimetableExperiments) {
+                Button('移除实验课表').width('90%').height(48).backgroundColor(Color.White).fontColor('#E6584A')
+                  .border({ width: 1, color: '#E6584A' }).margin({ bottom: 10 })
+                  .enabled(!this.removing)
+                  .onClick(() => { this.confirmRemove = true; })
+              }
               Button(this.importingCalendar ? '正在导入日程...' : '导入到日程').width('90%').height(48)
                 .backgroundColor(Color.White).fontColor('#1ec98d').border({ width: 1, color: '#1ec98d' })
                 .margin({ bottom: 24 }).enabled(!this.importingCalendar).onClick(() => this.importToCalendar())
@@ -370,6 +416,26 @@ export struct PhysicalExperimentPage {
             Text('确认').fontSize(18).fontWeight(FontWeight.Medium).fontColor('#2785EF').width('100%').height(52)
               .textAlign(TextAlign.Center).onClick(() => this.confirmLogin())
           }.width('84%').padding({ left: 24, right: 24, top: 24 }).backgroundColor(Color.White).borderRadius(16)
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+          .backgroundColor('#99000000')
+      }
+      if (this.confirmRemove) {
+        Column() {
+          Column() {
+            Text('移除实验课表？').fontSize(22).fontWeight(FontWeight.Bold).fontColor('#222222').width('100%')
+            Text('只会移除从物理实验导入的课程，其他课程不受影响。')
+              .fontSize(15).fontColor('#888888').width('100%').margin({ top: 14, bottom: 24 })
+            Row() {
+              Button('取消').layoutWeight(1).height(48).backgroundColor('#F2F3F5').fontColor('#555555')
+                .onClick(() => { this.confirmRemove = false; })
+              Button(this.removing ? '移除中...' : '移除').layoutWeight(1).height(48).margin({ left: 12 })
+                .backgroundColor('#E6584A').fontColor(Color.White).enabled(!this.removing)
+                .onClick(() => {
+                  this.confirmRemove = false;
+                  this.removeFromTimetable();
+                })
+            }.width('100%')
+          }.width('84%').padding({ left: 24, right: 24, top: 24, bottom: 24 }).backgroundColor(Color.White).borderRadius(16)
         }.width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
           .backgroundColor('#99000000')
       }
