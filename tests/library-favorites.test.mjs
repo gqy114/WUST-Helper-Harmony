@@ -228,6 +228,16 @@ test('服务端不可用时不覆盖本机收藏', async () => {
   assert.deepEqual(Array.from(await offline.favorites.list(), (item) => item.id), [7]);
 });
 
+test('离线收藏后又取消，不会留下待补发操作', async () => {
+  const store = new Map();
+  const loaded = await loadFavorites({ sid: '2024003', store, serverOk: false });
+  const item = { kind: 'article', id: 11, title: '临时收藏', link: '', tag: '通知' };
+  assert.equal(await loaded.favorites.toggle(item), true);
+  assert.equal(await loaded.favorites.toggle(item), false);
+  assert.equal(JSON.parse(loaded.store.get('libraryFavorites_2024003_pending')), '', '待补发队列应为空');
+  assert.deepEqual(Array.from(await loaded.favorites.list()), []);
+});
+
 test('本机缓存按学号隔离，不串账号', async () => {
   const { favorites } = await loadFavorites({
     sid: '2024001',

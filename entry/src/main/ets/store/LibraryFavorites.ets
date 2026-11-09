@@ -198,6 +198,10 @@ export class LibraryFavorites {
   private async applyToggle(item: LibraryFavorite): Promise<boolean> {
     const key = this.keyOf(item.kind, item.id);
     const index = this.items.findIndex((value: LibraryFavorite) => this.keyOf(value.kind, value.id) === key);
+    // 这条收藏如果一直没同步成功（还在待补发队列里），取消时只需撤掉补发，
+    // 不需要再排一个删除请求。
+    const neverSynced = this.pendingAdds.some((value: LibraryFavorite) =>
+      this.keyOf(value.kind, value.id) === key);
     let favorited = false;
     if (index >= 0) {
       this.items.splice(index, 1);
@@ -216,7 +220,7 @@ export class LibraryFavorites {
       this.synced = true;
     } else if (favorited) {
       this.pendingAdds.push(item);
-    } else {
+    } else if (!neverSynced) {
       this.pendingRemoves.push(item);
     }
     this.lastToggleServerOk = ok;
