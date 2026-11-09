@@ -57,6 +57,29 @@ export class SecondHandBookApi {
   }
   static async categories(): Promise<string[]> { const response = await HttpRequest.get<Response<string[]>>('https://lyzyy.love:8081/api/v1/secondhand/categories', await SecondHandBookApi.headers()); return Array.isArray(response.data.data) ? response.data.data : []; }
 
+  /** 社区二手书帖子不会在普通详情中返回联系方式，需要单独按帖子 ID 获取。 */
+  static async communityContact(postId: number): Promise<string> {
+    if (!Number.isSafeInteger(postId) || postId <= 0) throw new Error('帖子信息不完整，请重新打开后重试');
+    const result = await HttpRequest.get<Response<SecondhandContactFields>>(
+      `https://lyzyy.love:8081/api/v1/campus-wall/posts/${postId}/contact`,
+      await SecondHandBookApi.headers(), true);
+    const status = result.response.responseCode;
+    const body = result.data;
+    const code = body && typeof body === 'object' ? body.code : undefined;
+    if (status === 401 || status === 403 || code === 401 || code === 403) {
+      throw new Error('无法查看联系方式，请检查登录状态');
+    }
+    if (status === 409 || code === 409) throw new Error('书籍已售出，无法查看联系方式');
+    if (status === 404 || code === 404) throw new Error('帖子不存在或联系方式暂不可用');
+    if (status < 200 || status >= 300 || !body || typeof body !== 'object' ||
+      (code !== 0 && code !== 200) || !body.data || typeof body.data !== 'object') {
+      throw new Error('获取联系方式失败，请稍后重试');
+    }
+    const contact = SecondHandBookApi.formatContact([SecondHandBookApi.contactPair(body.data)]);
+    if (!contact) throw new Error('联系方式暂不可用');
+    return contact;
+  }
+
   private static bookTradeExtra(post: CampusWallPost): BookTradeExtra {
     if (!post.extra) return {};
     try { return JSON.parse(post.extra) as BookTradeExtra; } catch { return {}; }
