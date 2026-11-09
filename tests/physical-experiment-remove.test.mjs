@@ -96,3 +96,88 @@ test('页面提供移除按钮、确认弹窗，并在导入/进入时刷新状�
   assert.match(code, /setPhysicalExperimentCourses\(\[\]\)/, '移除时应清空实验课缓存');
   assert.match(code, /AppStorage\.setOrCreate<number>\('courseDataVersion', Date\.now\(\)\)/, '移除后应通知课表刷新');
 });
+
+// ---------------------------------------------------------------------------
+// 删除已导入的实验日程
+// ---------------------------------------------------------------------------
+
+async function makeCalendarPage(initialIds, failingIds = []) {
+  const pageSource = await source(pagePath);
+  const found = pageSource.match(/  private async removeFromCalendar\(\): Promise<void> \{[\s\S]*?\r?\n  \}/);
+  assert.ok(found, 'removeFromCalendar 方法未找到');
+
+  const toasts = [];
+  const deleted = [];
+  const settingWrites = {};
+  const storage = {
+    getSettingString: async (key) =>
+      key === 'physicalExperimentCalendarEventIds' ? JSON.stringify(initialIds) : '',
+    setSettingString: async (key, value) => { settingWrites[key] = value; },
+  };
+  const context = createContext({
+    console,
+    JSON,
+    Number,
+    Array,
+    PreferenceStorage: { getInstance: () => storage },
+    promptAction: { showToast: ({ message }) => toasts.push(message) },
+    calendarManager: {
+      getCalendarManager: () => ({
+        getCalendar: async () => ({
+          deleteEvent: async (id) => {
+            if (failingIds.indexOf(id) >= 0) throw new Error('event not found');
+            deleted.push(id);
+          },
+        }),
+      }),
+    },
+    getContext: () => ({}),
+  });
+  const mod = new SourceTextModule(stripTypeScriptTypes(`export class TestPage {\n${found[0]}\n}`, { mode: 'transform' }), { context });
+  await mod.link(() => { throw new Error('No imports expected'); });
+  await mod.evaluate();
+  const page = new mod.namespace.TestPage();
+  page.removingCalendar = false;
+  page.hasCalendarEvents = true;
+  page.requestCalendarPermission = async () => true;
+  return { page, toasts, deleted, settingWrites };
+}
+
+test('删除日程按保存的事件 id 逐条删除并清空记录', async () => {
+  const { page, toasts, deleted, settingWrites } = await makeCalendarPage([11, 12, 13]);
+  await page.removeFromCalendar();
+
+  assert.deepEqual(deleted, [11, 12, 13]);
+  assert.equal(settingWrites['physicalExperimentCalendarEventIds'], '');
+  assert.equal(settingWrites['physicalExperimentCalendarKeys'], '', '删除后要允许重新导入');
+  assert.equal(page.hasCalendarEvents, false);
+  assert.equal(toasts.at(-1), '已删除3条实验日程');
+});
+
+test('没有保存的日程时不删除，只提示', async () => {
+  const { page, toasts, deleted, settingWrites } = await makeCalendarPage([]);
+  await page.removeFromCalendar();
+  assert.deepEqual(deleted, []);
+  assert.equal(settingWrites['physicalExperimentCalendarEventIds'], undefined);
+  assert.equal(page.hasCalendarEvents, false);
+  assert.equal(toasts.at(-1), '没有需要删除的实验日程');
+});
+
+test('单条日程已被手动删除时，其余日程仍然删除成功', async () => {
+  const { page, toasts, deleted } = await makeCalendarPage([21, 22, 23], [22]);
+  await page.removeFromCalendar();
+  assert.deepEqual(deleted, [21, 23]);
+  assert.equal(toasts.at(-1), '已删除2条实验日程');
+});
+
+test('页面提供删除日程按钮、确认弹窗，并在导入时记录事件 id', async () => {
+  const code = await source(pagePath);
+  assert.match(code, /Button\('删除实验日程'\)/, '缺少删除日程按钮');
+  assert.match(code, /if \(this\.hasCalendarEvents\)/, '按钮应只在有已导入日程时显示');
+  assert.match(code, /Text\('删除实验日程？'\)/, '缺少确认弹窗');
+  assert.match(code, /只会删除通过本应用导入到系统日历的实验日程/, '确认弹窗缺少说明');
+  assert.match(code, /physicalExperimentCalendarEventIds/, '导入时应记录日历事件 id');
+  assert.match(code, /const eventId = await calendar\.addEvent\(event\);/, '导入时没有保存 addEvent 返回值');
+  assert.match(code, /await calendar\.deleteEvent\(ids\[i\]\)/, '删除时应按事件 id 删除');
+  assert.match(code, /private async refreshCalendarState\(storage: PreferenceStorage\): Promise<void>/, '缺少日程状态刷新方法');
+});
