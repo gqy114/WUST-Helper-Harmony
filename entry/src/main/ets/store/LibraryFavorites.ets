@@ -14,11 +14,17 @@ const STORAGE_KEY = 'libraryFavorites';
 /**
  * 图书馆收藏：后端没有收藏接口，这里按「本机收藏」实现，
  * 条目存在 preferences 的 libraryFavorites 里，随 AppStorage 一起持久化。
+ *
+ * 读取与写入都要经过同一个就绪 Promise 和写入队列：
+ * 之前 ensureLoaded() 先把 loaded 置 true 再 await 读取，
+ * 页面刚打开就点收藏时 items 还是空数组，写回会把旧收藏覆盖掉。
  */
 export class LibraryFavorites {
   private static instance: LibraryFavorites;
   private items: LibraryFavorite[] = [];
   private loaded: boolean = false;
+  private loadPromise: Promise<void> | null = null;
+  private writeChain: Promise<void> = Promise.resolve();
 
   static getInstance(): LibraryFavorites {
     if (!LibraryFavorites.instance) {
@@ -29,7 +35,14 @@ export class LibraryFavorites {
 
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return;
+    if (!this.loadPromise) {
+      this.loadPromise = this.loadFromStorage();
+    }
+    await this.loadPromise;
     this.loaded = true;
+  }
+
+  private async loadFromStorage(): Promise<void> {
     const raw = await AppStorage.getInstance().getSettingString(STORAGE_KEY, '[]');
     try {
       const parsed = JSON.parse(raw) as LibraryFavorite[];
@@ -59,6 +72,13 @@ export class LibraryFavorites {
   /** 切换收藏；返回切换后的状态（true=已收藏）。 */
   async toggle(item: LibraryFavorite): Promise<boolean> {
     await this.ensureLoaded();
+    // 连续点击时按顺序落盘，后一次写入不会用旧快照覆盖前一次的结果。
+    const run = this.writeChain.then(() => this.applyToggle(item));
+    this.writeChain = run.then(() => {}, () => {});
+    return run;
+  }
+
+  private async applyToggle(item: LibraryFavorite): Promise<boolean> {
     const key = this.keyOf(item.kind, item.id);
     const index = this.items.findIndex((value: LibraryFavorite) => this.keyOf(value.kind, value.id) === key);
     let favorited = false;
