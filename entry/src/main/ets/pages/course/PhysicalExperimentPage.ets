@@ -20,6 +20,14 @@ export struct PhysicalExperimentPage {
   @State private studentId: string = '';
   @State private physicalPassword: string = '';
   @State private importingCalendar: boolean = false;
+  // 课表里是否还有从物理实验导入的课程：决定「移除实验课表」按钮是否显示。
+  @State private hasTimetableExperiments: boolean = false;
+  @State private confirmRemove: boolean = false;
+  @State private removing: boolean = false;
+  // 是否还有本应用导入过、可以删除的实验日程。
+  @State private hasCalendarEvents: boolean = false;
+  @State private confirmRemoveCalendar: boolean = false;
+  @State private removingCalendar: boolean = false;
   private store: CourseStore = CourseStore.getInstance();
 
   aboutToAppear(): void { this.prepare(); }
@@ -29,11 +37,23 @@ export struct PhysicalExperimentPage {
     this.studentId = await storage.getStudentId();
     this.physicalPassword = await storage.getPhysicalExperimentPassword();
     await this.restoreCachedCourses(storage);
+    await this.refreshTimetableState(storage);
+    await this.refreshCalendarState(storage);
     if (!this.physicalPassword) {
       this.showLogin = true;
       return;
     }
     await this.loadCourses();
+  }
+
+  private async refreshCalendarState(storage: PreferenceStorage): Promise<void> {
+    const raw = await storage.getSettingString('physicalExperimentCalendarEventIds', '');
+    this.hasCalendarEvents = raw.length > 0;
+  }
+
+  private async refreshTimetableState(storage: PreferenceStorage): Promise<void> {
+    const current = await storage.getCurrentCourses();
+    this.hasTimetableExperiments = current.some((course: CourseData) => course.isPhysicalExperiment === true);
   }
 
   private async confirmLogin(): Promise<void> {
@@ -213,11 +233,39 @@ export struct PhysicalExperimentPage {
       await storage.setCurrentCourses(merged);
       const saved = await storage.getCurrentCourses();
       this.store.setCourses(saved);
+      this.hasTimetableExperiments = saved.some((course: CourseData) => course.isPhysicalExperiment === true);
       AppStorage.setOrCreate<number>('courseDataVersion', Date.now());
       promptAction.showToast({ message: added > 0 ? `已导入${added}门实验课程` : '实验课程已在课表中' });
     } catch (error) {
       console.error('PhysicalExperimentPage', `course import error: ${JSON.stringify(error)}`);
       promptAction.showToast({ message: '导入课表失败，请稍后重试', duration: 1800 });
+    }
+  }
+
+  /** 一键移除课表里的实验课程：只删除 isPhysicalExperiment 的条目，其他课程原样保留。 */
+  private async removeFromTimetable(): Promise<void> {
+    if (this.removing) return;
+    this.removing = true;
+    try {
+      const storage = PreferenceStorage.getInstance();
+      // 原子操作：清空实验缓存 + 重写普通课表在同一次写入里完成，
+      // 否则 setCurrentCourses() 会把实验课从旧课表里迁移回来。
+      const removed = await storage.removePhysicalExperimentCourses();
+      if (removed === 0) {
+        this.hasTimetableExperiments = false;
+        promptAction.showToast({ message: '课表中没有实验课程' });
+        return;
+      }
+      const saved = await storage.getCurrentCourses();
+      this.store.setCourses(saved);
+      this.hasTimetableExperiments = saved.some((course: CourseData) => course.isPhysicalExperiment === true);
+      AppStorage.setOrCreate<number>('courseDataVersion', Date.now());
+      promptAction.showToast({ message: `已移除${removed}门实验课程` });
+    } catch (error) {
+      console.error('PhysicalExperimentPage', `course removal error: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '移除实验课程失败，请稍后重试', duration: 1800 });
+    } finally {
+      this.removing = false;
     }
   }
 
@@ -270,6 +318,8 @@ export struct PhysicalExperimentPage {
       const storage = PreferenceStorage.getInstance();
       const raw = await storage.getSettingString('physicalExperimentCalendarKeys', '');
       const savedKeys: string[] = raw ? JSON.parse(raw) as string[] : [];
+      const rawIds = await storage.getSettingString('physicalExperimentCalendarEventIds', '');
+      const savedIds: number[] = rawIds ? JSON.parse(rawIds) as number[] : [];
       const manager = calendarManager.getCalendarManager(getContext(this) as common.Context);
       const calendar = await manager.getCalendar();
       let imported = 0;
@@ -286,14 +336,19 @@ export struct PhysicalExperimentPage {
           skipped++;
           continue;
         }
-        await calendar.addEvent(event);
+        // 记住日历返回的事件 id：之后「删除实验日程」要靠它精确删除。
+        const eventId = await calendar.addEvent(event);
+        savedIds.push(eventId);
+        await storage.setSettingString('physicalExperimentCalendarEventIds', JSON.stringify(savedIds));
         savedKeys.push(key);
         await storage.setSettingString('physicalExperimentCalendarKeys', JSON.stringify(savedKeys));
         imported++;
       }
       if (imported > 0) {
+        this.hasCalendarEvents = savedIds.length > 0;
         promptAction.showToast({ message: `已按准确时间导入${imported}门实验到日程`, duration: 2000 });
       } else if (skipped > 0) {
+        this.hasCalendarEvents = savedIds.length > 0;
         promptAction.showToast({ message: '实验日程已导入，无需重复添加', duration: 1800 });
       } else {
         promptAction.showToast({ message: '没有可导入的实验日程', duration: 1800 });
@@ -303,6 +358,70 @@ export struct PhysicalExperimentPage {
       promptAction.showToast({ message: '导入日程失败，请检查日历权限', duration: 2000 });
     } finally {
       this.importingCalendar = false;
+    }
+  }
+
+  /**
+   * 删除本应用导入的实验日程：按保存的事件 id 逐条删除。
+   *
+   * 只有删除成功的条目才清除记录；删除失败的保留 id 与 key，
+   * 避免日程还留在系统日历里、App 却再也找不到它（重新导入时还会重复）。
+   */
+  private async removeFromCalendar(): Promise<void> {
+    if (this.removingCalendar) return;
+    if (!await this.requestCalendarPermission()) return;
+    this.removingCalendar = true;
+    try {
+      const storage = PreferenceStorage.getInstance();
+      const rawIds = await storage.getSettingString('physicalExperimentCalendarEventIds', '');
+      const ids: number[] = rawIds ? JSON.parse(rawIds) as number[] : [];
+      const rawKeys = await storage.getSettingString('physicalExperimentCalendarKeys', '');
+      const keys: string[] = rawKeys ? JSON.parse(rawKeys) as string[] : [];
+      if (ids.length === 0) {
+        this.hasCalendarEvents = false;
+        promptAction.showToast({ message: '没有需要删除的实验日程' });
+        return;
+      }
+      const manager = calendarManager.getCalendarManager(getContext(this) as common.Context);
+      const calendar = await manager.getCalendar();
+      const keptIds: number[] = [];
+      // 旧版本只保存去重 key、没有保存事件 id。升级后新导入的数据会继续
+      // 追加到两个数组尾部，所以能和 id 对应的是 keys 的最后 ids.length 项，
+      // 前面的 key 都是旧版记录，删除时必须保留，避免以后重复导入。
+      const pairedKeyStart = Math.max(0, keys.length - ids.length);
+      const legacyKeys = keys.slice(0, pairedKeyStart);
+      const pairedKeys = keys.slice(pairedKeyStart);
+      const keptKeys: string[] = legacyKeys.slice();
+      let deleted = 0;
+      for (let i = 0; i < ids.length; i++) {
+        const key = i < pairedKeys.length ? pairedKeys[i] : '';
+        try {
+          await calendar.deleteEvent(ids[i]);
+          deleted++;
+        } catch (error) {
+          console.warn('PhysicalExperimentPage', `calendar delete failed for ${ids[i]}: ${JSON.stringify(error)}`);
+          keptIds.push(ids[i]);
+          if (key) keptKeys.push(key);
+        }
+      }
+      await storage.setSettingString('physicalExperimentCalendarEventIds',
+        keptIds.length > 0 ? JSON.stringify(keptIds) : '');
+      await storage.setSettingString('physicalExperimentCalendarKeys',
+        keptKeys.length > 0 ? JSON.stringify(keptKeys) : '');
+      this.hasCalendarEvents = keptIds.length > 0;
+      if (keptIds.length === 0) {
+        promptAction.showToast({ message: `已删除${deleted}条实验日程` });
+      } else {
+        promptAction.showToast({
+          message: `已删除${deleted}条，${keptIds.length}条删除失败已保留记录，可重试`,
+          duration: 2500
+        });
+      }
+    } catch (error) {
+      console.error('PhysicalExperimentPage', `calendar removal error: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '删除实验日程失败，请检查日历权限', duration: 2000 });
+    } finally {
+      this.removingCalendar = false;
     }
   }
 
@@ -345,9 +464,21 @@ export struct PhysicalExperimentPage {
               })
               Button('导入到课表').width('90%').height(48).backgroundColor('#1ec98d').fontColor(Color.White)
                 .margin({ top: 12, bottom: 10 }).onClick(() => this.importCourses())
+              if (this.hasTimetableExperiments) {
+                Button('移除实验课表').width('90%').height(48).backgroundColor(Color.White).fontColor('#E6584A')
+                  .border({ width: 1, color: '#E6584A' }).margin({ bottom: 10 })
+                  .enabled(!this.removing)
+                  .onClick(() => { this.confirmRemove = true; })
+              }
               Button(this.importingCalendar ? '正在导入日程...' : '导入到日程').width('90%').height(48)
                 .backgroundColor(Color.White).fontColor('#1ec98d').border({ width: 1, color: '#1ec98d' })
-                .margin({ bottom: 24 }).enabled(!this.importingCalendar).onClick(() => this.importToCalendar())
+                .margin({ bottom: this.hasCalendarEvents ? 10 : 24 }).enabled(!this.importingCalendar).onClick(() => this.importToCalendar())
+              if (this.hasCalendarEvents) {
+                Button('删除实验日程').width('90%').height(48).backgroundColor(Color.White).fontColor('#E6584A')
+                  .border({ width: 1, color: '#E6584A' }).margin({ bottom: 24 })
+                  .enabled(!this.removingCalendar)
+                  .onClick(() => { this.confirmRemoveCalendar = true; })
+              }
             }.width('100%').padding(16)
           }.width('100%').layoutWeight(1)
         }
@@ -370,6 +501,46 @@ export struct PhysicalExperimentPage {
             Text('确认').fontSize(18).fontWeight(FontWeight.Medium).fontColor('#2785EF').width('100%').height(52)
               .textAlign(TextAlign.Center).onClick(() => this.confirmLogin())
           }.width('84%').padding({ left: 24, right: 24, top: 24 }).backgroundColor(Color.White).borderRadius(16)
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+          .backgroundColor('#99000000')
+      }
+      if (this.confirmRemove) {
+        Column() {
+          Column() {
+            Text('移除实验课表？').fontSize(22).fontWeight(FontWeight.Bold).fontColor('#222222').width('100%')
+            Text('只会移除从物理实验导入的课程，其他课程不受影响。')
+              .fontSize(15).fontColor('#888888').width('100%').margin({ top: 14, bottom: 24 })
+            Row() {
+              Button('取消').layoutWeight(1).height(48).backgroundColor('#F2F3F5').fontColor('#555555')
+                .onClick(() => { this.confirmRemove = false; })
+              Button(this.removing ? '移除中...' : '移除').layoutWeight(1).height(48).margin({ left: 12 })
+                .backgroundColor('#E6584A').fontColor(Color.White).enabled(!this.removing)
+                .onClick(() => {
+                  this.confirmRemove = false;
+                  this.removeFromTimetable();
+                })
+            }.width('100%')
+          }.width('84%').padding({ left: 24, right: 24, top: 24, bottom: 24 }).backgroundColor(Color.White).borderRadius(16)
+        }.width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+          .backgroundColor('#99000000')
+      }
+      if (this.confirmRemoveCalendar) {
+        Column() {
+          Column() {
+            Text('删除实验日程？').fontSize(22).fontWeight(FontWeight.Bold).fontColor('#222222').width('100%')
+            Text('只会删除通过本应用导入到系统日历的实验日程，其他日程不受影响。')
+              .fontSize(15).fontColor('#888888').width('100%').margin({ top: 14, bottom: 24 })
+            Row() {
+              Button('取消').layoutWeight(1).height(48).backgroundColor('#F2F3F5').fontColor('#555555')
+                .onClick(() => { this.confirmRemoveCalendar = false; })
+              Button(this.removingCalendar ? '删除中...' : '删除').layoutWeight(1).height(48).margin({ left: 12 })
+                .backgroundColor('#E6584A').fontColor(Color.White).enabled(!this.removingCalendar)
+                .onClick(() => {
+                  this.confirmRemoveCalendar = false;
+                  this.removeFromCalendar();
+                })
+            }.width('100%')
+          }.width('84%').padding({ left: 24, right: 24, top: 24, bottom: 24 }).backgroundColor(Color.White).borderRadius(16)
         }.width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
           .backgroundColor('#99000000')
       }

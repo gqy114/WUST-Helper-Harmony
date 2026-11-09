@@ -377,8 +377,19 @@ export class AppStorage {
   /**
    * 物理实验使用独立缓存，避免普通课表刷新或切换存档时将它们覆盖。
    * 首次读取时会自动迁移旧版本中混存在 currentCourses 里的实验课。
+   *
+   * 读取可能触发迁移写入，因此必须和移除操作共用同一个写入队列：
+   * 否则「移除实验课」清空缓存后，并发读取会把旧课表里的实验课迁移回来。
    */
   async getPhysicalExperimentCourses(): Promise<CourseData[]> {
+    return this.enqueueCourseWrite(() => this.readPhysicalExperimentCoursesUnlocked());
+  }
+
+  /**
+   * 已持有写入队列时使用的读取实现。
+   * 队列内部不能再调用会再次入队的公开方法，否则会等待自身造成死锁。
+   */
+  private async readPhysicalExperimentCoursesUnlocked(): Promise<CourseData[]> {
     const saved = await this.getStoredCourses('physicalExperimentCourses');
     const current = await this.getStoredCourses('currentCourses');
     const legacy: CourseData[] = [];
@@ -393,6 +404,10 @@ export class AppStorage {
   }
 
   async setPhysicalExperimentCourses(value: CourseData[]): Promise<void> {
+    return this.enqueueCourseWrite(() => this.writePhysicalExperimentCoursesUnlocked(value));
+  }
+
+  private async writePhysicalExperimentCoursesUnlocked(value: CourseData[]): Promise<void> {
     const experiments: CourseData[] = [];
     for (let i = 0; i < value.length; i++) {
       if (this.isPhysicalExperimentCourse(value[i])) experiments.push(this.normalizePhysicalExperiment(value[i]));
@@ -430,9 +445,17 @@ export class AppStorage {
     });
   }
 
+  /**
+   * 读取课表。迁移/回写实验课的步骤同样在写入队列里执行，
+   * 避免和「移除实验课」交错把已移除的课程又写回来。
+   */
   async getCurrentCourses(): Promise<CourseData[]> {
+    return this.enqueueCourseWrite(() => this.readCurrentCoursesUnlocked());
+  }
+
+  private async readCurrentCoursesUnlocked(): Promise<CourseData[]> {
     const current = await this.getStoredCourses('currentCourses');
-    const experiments = await this.getPhysicalExperimentCourses();
+    const experiments = await this.readPhysicalExperimentCoursesUnlocked();
     const merged = this.mergePhysicalExperiments(current, experiments);
     if (merged.length !== current.length) {
       await this.putStr('currentCourses', JSON.stringify(merged));
@@ -458,19 +481,46 @@ export class AppStorage {
     const epochAtStart = this.sessionEpoch;
     return this.enqueueCourseWrite(async () => {
       if (this.sessionEpoch !== epochAtStart) return;
-      const savedExperiments = await this.getPhysicalExperimentCourses();
+      const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked();
       const incomingExperiments: CourseData[] = [];
       for (let i = 0; i < value.length; i++) {
         if (this.isPhysicalExperimentCourse(value[i])) incomingExperiments.push(value[i]);
       }
       const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
       if (this.sessionEpoch !== epochAtStart) return;
-      await this.setPhysicalExperimentCourses(experiments);
+      await this.writePhysicalExperimentCoursesUnlocked(experiments);
       if (this.sessionEpoch !== epochAtStart) return;
       const merged = this.mergePhysicalExperiments(value, experiments);
       // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
       this.courseCacheMarker = marker !== undefined ? marker : `courses_${Date.now()}`;
       await this.putStr('currentCourses', JSON.stringify(merged));
+    });
+  }
+
+  /**
+   * 一键移除课表里的实验课程。
+   *
+   * 必须在一个写任务里同时清空实验缓存并重写普通课表：之前分两步做，
+   * 第二步 setCurrentCourses() 会调用 getPhysicalExperimentCourses()，
+   * 把刚清掉的实验课又从 currentCourses 里迁移回实验缓存并合并回课表。
+   */
+  async removePhysicalExperimentCourses(): Promise<number> {
+    return this.enqueueCourseWrite(async () => {
+      const current = await this.getStoredCourses('currentCourses');
+      const remaining: CourseData[] = [];
+      let removed = 0;
+      for (let i = 0; i < current.length; i++) {
+        if (this.isPhysicalExperimentCourse(current[i])) {
+          removed++;
+          continue;
+        }
+        remaining.push(current[i]);
+      }
+      if (removed === 0) return 0;
+      this.courseCacheMarker = `remove_experiments_${Date.now()}`;
+      await this.putStr('physicalExperimentCourses', '[]');
+      await this.putStr('currentCourses', JSON.stringify(remaining));
+      return removed;
     });
   }
 
