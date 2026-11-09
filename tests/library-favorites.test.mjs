@@ -93,13 +93,16 @@ test('服务端收藏：401 视为接口不可用而不是空列表', async () =
 
 async function loadFavorites(options = {}) {
   const {
-    initialRaw = '[]', sid = '', serverOk = true, remoteItems = [],
+    initialRaw = '[]', sid = '', serverOk = true, remoteItems = [], store: sharedStore, sidRef,
   } = options;
-  const store = new Map();
-  const key = sid ? `libraryFavorites_${sid}` : 'libraryFavorites';
-  store.set(key, JSON.stringify(JSON.stringify(initialRaw)));
+  const store = sharedStore || new Map();
+  const currentSid = () => (sidRef ? sidRef.sid : sid);
+  const key = currentSid() ? `libraryFavorites_${currentSid()}` : 'libraryFavorites';
+  if (!sharedStore) {
+    store.set(key, JSON.stringify(JSON.stringify(initialRaw)));
+  }
   const storage = {
-    getStudentId: async () => sid,
+    getStudentId: async () => currentSid(),
     getSettingString: async (name, def) => {
       const raw = store.has(name) ? store.get(name) : JSON.stringify(def);
       try {
@@ -111,10 +114,24 @@ async function loadFavorites(options = {}) {
     setSettingString: async (name, value) => { store.set(name, JSON.stringify(value)); },
   };
   const calls = [];
+  const serverItems = remoteItems.map((item) => ({ ...item }));
   const server = {
-    addFavorite: async (item) => { calls.push({ op: 'add', item }); return serverOk; },
-    removeFavorite: async (kind, id) => { calls.push({ op: 'remove', kind, id }); return serverOk; },
-    listFavorites: async () => (serverOk ? remoteItems.map((item) => ({ ...item })) : null),
+    addFavorite: async (item) => {
+      calls.push({ op: 'add', item });
+      if (!serverOk) return false;
+      if (!serverItems.some((value) => value.kind === item.kind && value.itemId === item.itemId)) {
+        serverItems.push({ ...item });
+      }
+      return true;
+    },
+    removeFavorite: async (kind, id) => {
+      calls.push({ op: 'remove', kind, id });
+      if (!serverOk) return false;
+      const index = serverItems.findIndex((value) => value.kind === kind && value.itemId === id);
+      if (index >= 0) serverItems.splice(index, 1);
+      return true;
+    },
+    listFavorites: async () => (serverOk ? serverItems.map((item) => ({ ...item })) : null),
   };
   const context = createContext({ console, JSON, Array, String });
   const app = new SyntheticModule(['AppStorage'], function () {
@@ -155,10 +172,40 @@ test('离线收藏：本机可用、进入待同步队列', async () => {
   assert.equal(calls.length, 1);
 });
 
-test('离线期间的操作会在联网后补发', async () => {
-  const offline = await loadFavorites({ serverOk: false });
-  await offline.favorites.toggle({ kind: 'article', id: 7, title: '断网收藏', link: 'https://a', tag: '通知' });
-  assert.equal(offline.favorites.has('article', 7), true);
+test('离线收藏在重启后仍然补发，不会丢失', async () => {
+  const store = new Map();
+  const sidRef = { sid: '2024001' };
+  const first = await loadFavorites({ sidRef, store, serverOk: false });
+  await first.favorites.toggle({ kind: 'article', id: 9, title: '离线收藏', link: 'https://a', tag: '通知' });
+  const pending = JSON.parse(JSON.parse(store.get('libraryFavorites_2024001_pending')));
+  assert.equal(pending.adds.length, 1, '待同步队列应写入 preferences');
+
+  // 重启：新的模块实例从磁盘读回收藏与待同步队列，此时网络已恢复。
+  const second = await loadFavorites({ sidRef, store, serverOk: true });
+  assert.equal(await second.favorites.syncFromServer(), true);
+  assert.deepEqual(second.calls.filter((call) => call.op === 'add').map((call) => call.item.itemId), [9]);
+  assert.deepEqual(Array.from(await second.favorites.list(), (item) => item.id), [9], '同步后收藏仍在');
+  assert.equal(JSON.parse(second.store.get('libraryFavorites_2024001_pending')), '',
+    '补发成功后清空队列');
+});
+
+test('切换账号后不会看到上一个账号的收藏', async () => {
+  const sidRef = { sid: '2024001' };
+  const store = new Map();
+  const loaded = await loadFavorites({ sidRef, store });
+  await loaded.favorites.toggle({ kind: 'article', id: 5, title: 'A 的收藏', link: 'https://a', tag: '通知' });
+  assert.deepEqual(Array.from(await loaded.favorites.list(), (item) => item.id), [5]);
+
+  store.set('libraryFavorites_2024002',
+    JSON.stringify(JSON.stringify([{ kind: 'resource', id: 3, title: 'B 的收藏', link: 'https://x', tag: '资源' }])));
+  sidRef.sid = '2024002';
+
+  const list = await loaded.favorites.list();
+  assert.deepEqual(Array.from(list, (item) => item.id), [3], '只应看到新账号的收藏');
+  assert.equal(loaded.favorites.has('article', 5), false, '上一个账号的收藏不能出现');
+  assert.deepEqual(JSON.parse(JSON.parse(store.get('libraryFavorites_2024001'))),
+    [{ kind: 'article', id: 5, title: 'A 的收藏', link: 'https://a', tag: '通知' }],
+    'A 的收藏要保留在自己的 key 里');
 });
 
 test('联网后拉取云端列表覆盖本机', async () => {

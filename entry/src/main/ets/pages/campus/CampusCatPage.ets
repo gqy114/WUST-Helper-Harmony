@@ -5,6 +5,7 @@ import { CampusCatApi, CampusCatPost } from '../../net/CampusCatApi';
 import { campusWallRelativeTime } from '../../net/CampusWallApi';
 import { CampusRichText } from '../../components/CampusRichText';
 import { CommunityPostImage } from '../../components/CommunityPostImage';
+import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
 @Entry @Component
 struct CampusCatPage {
@@ -22,9 +23,67 @@ struct CampusCatPage {
   private readonly pageSize: number = 20;
   // 每次刷新递增；旧的分页/首屏响应只有在代次未变时才允许写回列表和页码。
   private requestGeneration: number = 0;
+  @State private refreshing: boolean = false;
+  private listScroller: Scroller = new Scroller();
+  private pendingRestoreOffset: number = -1;
+  private readonly pageKey: string = 'campus-cat';
   private async loadAvatar(): Promise<void> { this.avatarUrl = await AppStorage.getInstance().getAvatarUrl(); }
   aboutToAppear(): void { this.loadAvatar(); }
-  onPageShow(): void { this.load(); }
+  onPageShow(): void {
+    const navigation = CommunityNavigationStore.getInstance();
+    const deletedIds = navigation.consumeDeletedCatPostIds();
+    if (deletedIds.length > 0) {
+      this.posts = this.posts.filter((post: CampusCatPost) => deletedIds.indexOf(post.id || 0) < 0);
+    }
+    const updatedIds = navigation.consumeUpdatedCatPostIds();
+    if (updatedIds.length > 0) { this.patchUpdatedPosts(updatedIds); }
+    const returnOffset = navigation.consumeListReturnOffset(this.pageKey);
+    if (returnOffset >= 0) {
+      this.pendingRestoreOffset = returnOffset;
+      if (this.posts.length > 0) {
+        this.restoreListOffset();
+      } else {
+        this.load().then((): void => { this.restoreListOffset(); });
+      }
+      return;
+    }
+    this.load();
+  }
+  private openDetail(postId: number): void {
+    CommunityNavigationStore.getInstance().rememberListReturn(this.pageKey, this.listScroller.currentOffset().yOffset);
+    router.pushUrl({ url: 'pages/campus/CampusCatDetailPage', params: { id: String(postId) } });
+  }
+  private restoreListOffset(): void {
+    if (this.pendingRestoreOffset < 0) return;
+    const offset = this.pendingRestoreOffset;
+    this.pendingRestoreOffset = -1;
+    setTimeout((): void => {
+      this.listScroller.scrollTo({ xOffset: 0, yOffset: offset, animation: false });
+    }, 80);
+  }
+  private async refreshList(): Promise<void> {
+    if (this.refreshing) return;
+    this.refreshing = true;
+    try {
+      await this.load();
+    } finally {
+      this.refreshing = false;
+    }
+  }
+  private async patchUpdatedPosts(ids: number[]): Promise<void> {
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      try {
+        const fresh = await CampusCatApi.detail(id);
+        // 登录失效时 detail() 会返回空帖子：不能用它覆盖列表里的真实数据，否则会出现空白条目。
+        if ((fresh.id || 0) === id && ((fresh.title || '').length > 0 || (fresh.content || '').length > 0)) {
+          this.posts = this.posts.map((post: CampusCatPost) => (post.id || 0) === id ? fresh : post);
+        }
+      } catch {
+        // 拉取失败保留旧数据，不打断返回流程。
+      }
+    }
+  }
   private async load(): Promise<void> {
     const generation = ++this.requestGeneration;
     this.loading = true;
@@ -108,7 +167,8 @@ struct CampusCatPage {
       if (this.searching) {
         Row() { Text('⌕').fontSize(30).fontColor('#555555'); TextInput({ placeholder: '搜索当前板块', text: this.query }).layoutWeight(1).fontSize(20).onChange((value: string) => { this.query = value; }); Text('×').fontSize(32).fontColor('#777777').onClick(() => { this.query = ''; animateTo({ duration: 260, curve: Curve.EaseInOut }, () => { this.searching = false; }); }); }.width('92%').height(58).padding({ left: 16, right: 14 }).backgroundColor(Color.White).borderRadius(30).margin({ bottom: 12 });
       }
-      List() {
+      Refresh({ refreshing: this.refreshing }) {
+        List({ scroller: this.listScroller }) {
         if (this.loading) {
           ListItem() { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); }
         } else if (this.posts.length === 0) {
@@ -128,7 +188,7 @@ struct CampusCatPage {
                 Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA');
               }.width('100%').padding({ left: 34, right: 34, top: 20, bottom: 22 }).backgroundColor(Color.White)
                 .border({ width: { bottom: 1 }, color: '#EEEEEE' })
-                .onClick(() => router.pushUrl({ url: 'pages/campus/CampusCatDetailPage', params: { id: String(post.id || 0) } }));
+                .onClick(() => this.openDetail(post.id || 0));
             }
           }, (post: CampusCatPost, index: number) => `${post.id || post.createdAt || 'post'}-${index}`)
           if (this.loadingMore) {
@@ -137,7 +197,8 @@ struct CampusCatPage {
             ListItem() { Text('已经到底了').fontSize(15).fontColor('#BBBBBB').height(46).textAlign(TextAlign.Center); }
           }
         }
-      }.width('100%').layoutWeight(1).backgroundColor('#F5F6F8').onReachEnd(() => this.loadMore());
+        }.width('100%').layoutWeight(1).backgroundColor('#F5F6F8').onReachEnd(() => this.loadMore());
+      }.width('100%').layoutWeight(1).onRefreshing((): void => { this.refreshList(); });
       Row() { Image(this.avatarUrl || $r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).margin({ right: 12 }); Text('发布校园猫...').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#999999').layoutWeight(1); Text('+').fontSize(32).onClick(() => router.pushUrl({ url: 'pages/campus/CampusPublishPage', params: { tag: 'cat', label: '发布校园猫帖子' } })).fontColor(Color.White).width(58).height(58).textAlign(TextAlign.Center).backgroundColor('#20C894').borderRadius(29); }.width('88%').height(76).padding({ left: 18, right: 14 }).backgroundColor(Color.White).borderRadius(38).shadow({ radius: 12, color: '#33000000', offsetY: 3 }).margin({ bottom: 18 });
     }.width('100%').height('100%').backgroundColor('#F5F6F8');
   }

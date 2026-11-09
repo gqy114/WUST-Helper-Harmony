@@ -10,6 +10,11 @@ export interface LibraryFavorite {
   tag: string;
 }
 
+interface PendingFavorites {
+  adds: LibraryFavorite[];
+  removes: LibraryFavorite[];
+}
+
 const STORAGE_PREFIX = 'libraryFavorites';
 
 function toEntry(item: LibraryFavorite): LibraryFavoriteEntry {
@@ -26,11 +31,26 @@ function toFavorite(entry: LibraryFavoriteEntry): LibraryFavorite {
   };
 }
 
+function validFavorite(item: LibraryFavorite): boolean {
+  return !!item && !!item.kind && (item.id || 0) > 0;
+}
+
+function normalizeFavorite(item: LibraryFavorite): LibraryFavorite {
+  const result: LibraryFavorite = {
+    kind: item.kind,
+    id: item.id,
+    title: item.title || '',
+    link: item.link || '',
+    tag: item.tag || '',
+  };
+  return result;
+}
+
 /**
  * 图书馆收藏：服务端（/api/v1/library/favorites）为准，本机 preferences 作为离线缓存。
  *
- * - 收藏/取消收藏先改本机，再尝试同步服务端；同步失败进待同步队列，下次进页面时重试。
- * - 本机缓存按学号隔离，切换账号不会看到别人的收藏。
+ * - 收藏/取消收藏先改本机，再尝试同步服务端；失败进待同步队列（持久化），重启后继续补发。
+ * - 本机缓存与待同步队列都按学号隔离，切换账号会重新加载，不会看到上一个账号的收藏。
  * - 未登录时只写本机，登录后首次进入「我的收藏」会把本机条目推到服务端并拉取云端列表。
  *
  * 读取与写入都要经过同一个就绪 Promise 和写入队列：之前 ensureLoaded() 先把 loaded
@@ -40,7 +60,9 @@ export class LibraryFavorites {
   private static instance: LibraryFavorites;
   private items: LibraryFavorite[] = [];
   private loaded: boolean = false;
+  private loadedSid: string = '';
   private loadPromise: Promise<void> | null = null;
+  private loadSid: string = '';
   private writeChain: Promise<void> = Promise.resolve();
   private storageKey: string = STORAGE_PREFIX;
   private synced: boolean = false;
@@ -65,18 +87,44 @@ export class LibraryFavorites {
     return this.lastToggleServerOk;
   }
 
+  private pendingKey(): string {
+    return `${this.storageKey}_pending`;
+  }
+
+  /**
+   * 按当前登录学号确保数据已加载。
+   * 学号变化（切换账号）时必须丢弃上一个账号的内存数据并从新账号的 key 重新读取，
+   * 否则收藏页会显示上一个账号的收藏，甚至把它的收藏同步到新账号。
+   */
   private async ensureLoaded(): Promise<void> {
-    if (this.loaded) return;
+    const sid = (await AppStorage.getInstance().getStudentId()).trim();
+    if (this.loaded && sid === this.loadedSid) return;
+    if (sid !== this.loadedSid) {
+      this.resetForAccount();
+    }
     if (!this.loadPromise) {
-      this.loadPromise = this.loadFromStorage();
+      this.loadSid = sid;
+      this.loadPromise = this.loadFromStorage(sid);
     }
     await this.loadPromise;
     this.loaded = true;
+    this.loadedSid = this.loadSid;
   }
 
-  private async loadFromStorage(): Promise<void> {
+  private resetForAccount(): void {
+    this.items = [];
+    this.pendingAdds = [];
+    this.pendingRemoves = [];
+    this.synced = false;
+    this.lastToggleServerOk = true;
+    this.loaded = false;
+    this.loadedSid = '';
+    this.loadPromise = null;
+    this.loadSid = '';
+  }
+
+  private async loadFromStorage(sid: string): Promise<void> {
     const storage = AppStorage.getInstance();
-    const sid = (await storage.getStudentId()).trim();
     this.storageKey = sid ? `${STORAGE_PREFIX}_${sid}` : STORAGE_PREFIX;
     let raw = await storage.getSettingString(this.storageKey, '');
     if (!raw && sid) {
@@ -87,18 +135,40 @@ export class LibraryFavorites {
         await storage.setSettingString(this.storageKey, legacy);
       }
     }
-    if (!raw) {
-      this.items = [];
-      return;
+    let items: LibraryFavorite[] = [];
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as LibraryFavorite[];
+        items = Array.isArray(parsed) ? parsed.filter(validFavorite) : [];
+      } catch {
+        items = [];
+      }
     }
-    try {
-      const parsed = JSON.parse(raw) as LibraryFavorite[];
-      this.items = Array.isArray(parsed)
-        ? parsed.filter((item: LibraryFavorite) => !!item && !!item.kind && (item.id || 0) > 0)
-        : [];
-    } catch {
-      this.items = [];
+
+    let normalized: LibraryFavorite[] = [];
+    if (items.length > 0) {
+      normalized = items.map(normalizeFavorite);
     }
+
+    const rawPending = await storage.getSettingString(this.pendingKey(), '');
+    let adds: LibraryFavorite[] = [];
+    let removes: LibraryFavorite[] = [];
+    if (rawPending) {
+      try {
+        const parsed = JSON.parse(rawPending) as PendingFavorites;
+        adds = Array.isArray(parsed.adds) ? parsed.adds.filter(validFavorite) : [];
+        removes = Array.isArray(parsed.removes) ? parsed.removes.filter(validFavorite) : [];
+      } catch {
+        adds = [];
+        removes = [];
+      }
+    }
+
+    // 读取期间可能已经切换了账号：旧结果直接丢弃。
+    if (sid !== (await AppStorage.getInstance().getStudentId()).trim()) return;
+    this.items = normalized;
+    this.pendingAdds = adds;
+    this.pendingRemoves = removes;
   }
 
   private keyOf(kind: string, id: number): string {
@@ -150,6 +220,8 @@ export class LibraryFavorites {
       this.pendingRemoves.push(item);
     }
     this.lastToggleServerOk = ok;
+    // 离线操作也要落盘：重启后仍然知道还有哪些改动没同步。
+    await this.persistPending();
     return favorited;
   }
 
@@ -174,6 +246,7 @@ export class LibraryFavorites {
       .filter((entry: LibraryFavoriteEntry) => !!entry.kind && (entry.itemId || 0) > 0)
       .map((entry: LibraryFavoriteEntry) => toFavorite(entry));
     await this.persist();
+    await this.persistPending();
     this.synced = true;
     return true;
   }
@@ -184,6 +257,7 @@ export class LibraryFavorites {
       if (await LibraryApi.addFavorite(toEntry(item))) {
         this.pendingAdds = this.pendingAdds.filter((value: LibraryFavorite) =>
           this.keyOf(value.kind, value.id) !== this.keyOf(item.kind, item.id));
+        await this.persistPending();
       }
     }
     const removes = this.pendingRemoves.slice();
@@ -191,6 +265,7 @@ export class LibraryFavorites {
       if (await LibraryApi.removeFavorite(item.kind, item.id)) {
         this.pendingRemoves = this.pendingRemoves.filter((value: LibraryFavorite) =>
           this.keyOf(value.kind, value.id) !== this.keyOf(item.kind, item.id));
+        await this.persistPending();
       }
     }
     return this.pendingAdds.length === 0 && this.pendingRemoves.length === 0;
@@ -198,5 +273,15 @@ export class LibraryFavorites {
 
   private async persist(): Promise<void> {
     await AppStorage.getInstance().setSettingString(this.storageKey, JSON.stringify(this.items));
+  }
+
+  private async persistPending(): Promise<void> {
+    const storage = AppStorage.getInstance();
+    if (this.pendingAdds.length === 0 && this.pendingRemoves.length === 0) {
+      await storage.setSettingString(this.pendingKey(), '');
+      return;
+    }
+    const payload: PendingFavorites = { adds: this.pendingAdds, removes: this.pendingRemoves };
+    await storage.setSettingString(this.pendingKey(), JSON.stringify(payload));
   }
 }
