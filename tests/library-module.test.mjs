@@ -17,10 +17,16 @@ async function loadApi() {
   const model = new SyntheticModule(['LibraryLoanItem'], function () {
     this.setExport('LibraryLoanItem', undefined);
   }, { context });
+  const app = new SyntheticModule(['AppStorage'], function () {
+    this.setExport('AppStorage', {
+      getInstance: () => ({ getAppAuthAccessToken: async () => '', getStudentId: async () => '' }),
+    });
+  }, { context });
   const mod = new SourceTextModule(code, { context });
   await mod.link((name) => {
     if (name === './HttpRequest') return http;
     if (name === '../model/LibraryLoanModel') return model;
+    if (name === '../store/AppStorage') return app;
     throw new Error(`Unexpected import: ${name}`);
   });
   await mod.evaluate();
@@ -70,6 +76,7 @@ async function loadFavorites(initialRaw = '[]') {
   // AppStorage 的 setSettingString 会再包一层 JSON，和真实存储保持一致。
   store.set('libraryFavorites', JSON.stringify(JSON.stringify(initialRaw)));
   const storage = {
+    getStudentId: async () => '',
     getSettingString: async (key, def) => {
       const raw = store.has(key) ? store.get(key) : JSON.stringify(def);
       try {
@@ -84,9 +91,18 @@ async function loadFavorites(initialRaw = '[]') {
   const app = new SyntheticModule(['AppStorage'], function () {
     this.setExport('AppStorage', { getInstance: () => storage });
   }, { context });
+  const libraryApi = new SyntheticModule(['LibraryApi', 'LibraryFavoriteEntry'], function () {
+    this.setExport('LibraryApi', {
+      addFavorite: async () => true,
+      removeFavorite: async () => true,
+      listFavorites: async () => null,
+    });
+    this.setExport('LibraryFavoriteEntry', undefined);
+  }, { context });
   const mod = new SourceTextModule(code, { context });
   await mod.link((name) => {
     if (name === './AppStorage') return app;
+    if (name === '../net/LibraryApi') return libraryApi;
     throw new Error(`Unexpected import: ${name}`);
   });
   await mod.evaluate();

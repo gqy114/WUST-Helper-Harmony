@@ -8,6 +8,57 @@
  */
 import { HttpRequest } from './HttpRequest';
 import { LibraryLoanItem } from '../model/LibraryLoanModel';
+import { AppStorage } from '../store/AppStorage';
+
+/** 服务端收藏（/api/v1/library/favorites），跟随账号跨设备同步。 */
+const LIBRARY_FAVORITES_URL = 'https://lyzyy.love:8081/api/v1/library/favorites';
+
+/** 收藏条目：kind 为 article（活动资讯）或 resource（资源导航）。 */
+export interface LibraryFavoriteEntry {
+  id?: number;
+  kind: string;
+  itemId: number;
+  title: string;
+  link: string;
+  tag: string;
+  createdAt?: number;
+}
+
+interface FavoriteItemPayload {
+  item?: LibraryFavoriteEntry;
+}
+
+interface FavoriteListPayload {
+  items?: LibraryFavoriteEntry[];
+}
+
+interface FavoriteEnvelope {
+  code?: number;
+  message?: string;
+  msg?: string;
+  data?: FavoriteListPayload | FavoriteItemPayload | boolean | null;
+}
+
+/** POST /api/v1/library/favorites 的请求体。 */
+interface FavoriteAddBody {
+  kind: string;
+  itemId: number;
+  title: string;
+  link: string;
+  tag: string;
+}
+
+/** POST /api/v1/library/favorites/remove 的请求体。 */
+interface FavoriteRemoveBody {
+  kind: string;
+  itemId: number;
+}
+
+interface FavoriteHeaders extends Record<string, string> {
+  Authorization: string;
+  Platform: string;
+  Accept: string;
+}
 
 /** 当前借阅列表 —— 对应 WustApi.LIBRARY_CURRENT_LOANS_V2 */
 const CURRENT_LOANS_URL = 'https://smarttool.wust.edu.cn:3001/api/wx/huiwen/patron/loans';
@@ -202,6 +253,69 @@ export class LibraryApi {
       return [];
     }
   }
+
+  /** 服务端收藏列表：未登录或接口不可用时返回 null，调用方继续用本机缓存。 */
+  static async listFavorites(): Promise<LibraryFavoriteEntry[] | null> {
+    const headers = await LibraryApi.favoriteHeaders();
+    if (!headers) return null;
+    try {
+      const result = await HttpRequest.get<FavoriteEnvelope>(LIBRARY_FAVORITES_URL, headers, true);
+      const resp = result.data;
+      if (!isOkFavoriteCode(resp?.code)) return null;
+      const payload = resp?.data as FavoriteListPayload | undefined;
+      const items = payload?.items;
+      return Array.isArray(items) ? items : [];
+    } catch {
+      console.warn('LibraryApi', 'listFavorites error');
+      return null;
+    }
+  }
+
+  /** 新增/更新一条服务端收藏；未登录或失败返回 false。 */
+  static async addFavorite(item: LibraryFavoriteEntry): Promise<boolean> {
+    const headers = await LibraryApi.favoriteHeaders();
+    if (!headers) return false;
+    try {
+      const body: FavoriteAddBody = {
+        kind: item.kind,
+        itemId: item.itemId,
+        title: item.title,
+        link: item.link,
+        tag: item.tag,
+      };
+      const result = await HttpRequest.postRawJson<FavoriteEnvelope>(
+        LIBRARY_FAVORITES_URL, JSON.stringify(body), headers, true);
+      return isOkFavoriteCode(result.data?.code);
+    } catch {
+      console.warn('LibraryApi', 'addFavorite error');
+      return false;
+    }
+  }
+
+  /** 取消一条服务端收藏；未登录或失败返回 false。 */
+  static async removeFavorite(kind: string, itemId: number): Promise<boolean> {
+    const headers = await LibraryApi.favoriteHeaders();
+    if (!headers) return false;
+    try {
+      const body: FavoriteRemoveBody = { kind, itemId };
+      const result = await HttpRequest.postRawJson<FavoriteEnvelope>(`${LIBRARY_FAVORITES_URL}/remove`,
+        JSON.stringify(body), headers, true);
+      return isOkFavoriteCode(result.data?.code);
+    } catch {
+      console.warn('LibraryApi', 'removeFavorite error');
+      return false;
+    }
+  }
+
+  private static async favoriteHeaders(): Promise<FavoriteHeaders | null> {
+    const token = (await AppStorage.getInstance().getAppAuthAccessToken()).trim();
+    if (!token) return null;
+    return { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' };
+  }
+}
+
+function isOkFavoriteCode(code?: number): boolean {
+  return code === 200 || code === 0 || code === 10000 || code === 20000;
 }
 
 const NOTICE_URL = 'https://smarttool.wust.edu.cn:3001/api/wx/notice/new';

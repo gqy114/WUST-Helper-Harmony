@@ -1,4 +1,4 @@
-import { router } from '@kit.ArkUI';
+import { router, promptAction } from '@kit.ArkUI';
 import {
   LibraryApi, LibraryNotice, LibraryHomeArticle, LibraryArticle, LibraryResource,
   articleTagLabel, resourceTypeLabel
@@ -42,10 +42,14 @@ struct LibraryPage {
   ];
 
   aboutToAppear(): void {
-    this.refreshFavorites();
+    this.refreshFavorites(true);
   }
 
-  private async refreshFavorites(): Promise<void> {
+  /** 收藏：服务端为准，本机做离线缓存；sync=true 时先和服务端对齐。 */
+  private async refreshFavorites(sync: boolean = false): Promise<void> {
+    if (sync) {
+      await this.favoritesStore.syncFromServer();
+    }
     this.favorites = await this.favoritesStore.list();
     this.favoriteTick = this.favoriteTick + 1;
   }
@@ -53,7 +57,7 @@ struct LibraryPage {
   private selectTab(index: number): void {
     this.selectedTab = index;
     if (index === 1) {
-      this.refreshFavorites();
+      this.refreshFavorites(true);
       return;
     }
     if (!this.tabsLoaded[index]) {
@@ -145,6 +149,7 @@ struct LibraryPage {
       kind: 'article', id: item.id || 0, title: item.title || '',
       link: item.link || '', tag: articleTagLabel(item.tag)
     });
+    this.notifyIfOffline();
     await this.refreshFavorites();
   }
 
@@ -153,12 +158,20 @@ struct LibraryPage {
       kind: 'resource', id: item.id || 0, title: item.title || '',
       link: item.inLink || item.outLink || '', tag: '资源'
     });
+    this.notifyIfOffline();
     await this.refreshFavorites();
   }
 
   private async removeFavorite(item: LibraryFavorite): Promise<void> {
     await this.favoritesStore.toggle(item);
+    this.notifyIfOffline();
     await this.refreshFavorites();
+  }
+
+  /** 服务端同步失败（未登录/断网）时提示一次，收藏仍在本地可用。 */
+  private notifyIfOffline(): void {
+    if (this.favoritesStore.isLastToggleSynced()) return;
+    promptAction.showToast({ message: '已保存到本机，登录或联网后自动同步到云端' });
   }
 
   @Builder
