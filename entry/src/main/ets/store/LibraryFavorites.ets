@@ -309,20 +309,31 @@ export class LibraryFavorites {
   }
 
   private async flushPending(): Promise<boolean> {
+    await this.ensureLoaded();
+    // 补发过程中可能切换账号：每次发送前、每个请求返回后都要核对，
+    // 否则 A 剩下的收藏会带着 B 的登录态发到 B 的账号上。
+    const epoch = this.accountEpoch;
+    const storageKey = this.storageKey;
     const adds = this.pendingAdds.slice();
     for (const item of adds) {
-      if (await LibraryApi.addFavorite(toEntry(item))) {
+      if (!await this.sameAccount(epoch)) return false;
+      const ok = await LibraryApi.addFavorite(toEntry(item));
+      if (!await this.sameAccount(epoch)) return false;
+      if (ok) {
         this.pendingAdds = this.pendingAdds.filter((value: LibraryFavorite) =>
           this.keyOf(value.kind, value.id) !== this.keyOf(item.kind, item.id));
-        await this.persistPendingWithKey(this.storageKey);
+        await this.persistPendingWithKey(storageKey);
       }
     }
     const removes = this.pendingRemoves.slice();
     for (const item of removes) {
-      if (await LibraryApi.removeFavorite(item.kind, item.id)) {
+      if (!await this.sameAccount(epoch)) return false;
+      const ok = await LibraryApi.removeFavorite(item.kind, item.id);
+      if (!await this.sameAccount(epoch)) return false;
+      if (ok) {
         this.pendingRemoves = this.pendingRemoves.filter((value: LibraryFavorite) =>
           this.keyOf(value.kind, value.id) !== this.keyOf(item.kind, item.id));
-        await this.persistPendingWithKey(this.storageKey);
+        await this.persistPendingWithKey(storageKey);
       }
     }
     return this.pendingAdds.length === 0 && this.pendingRemoves.length === 0;

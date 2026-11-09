@@ -94,7 +94,7 @@ test('服务端收藏：401 视为接口不可用而不是空列表', async () =
 async function loadFavorites(options = {}) {
   const {
     initialRaw = '[]', sid = '', serverOk = true, remoteItems = [], store: sharedStore, sidRef,
-    alreadySynced = false, listDelayMs = 0, legacyRaw = null,
+    alreadySynced = false, listDelayMs = 0, addDelayMs = 0, legacyRaw = null,
   } = options;
   const store = sharedStore || new Map();
   const currentSid = () => (sidRef ? sidRef.sid : sid);
@@ -133,7 +133,10 @@ async function loadFavorites(options = {}) {
   const serverItems = remoteItems.map((item) => ({ ...item }));
   const server = {
     addFavorite: async (item) => {
-      calls.push({ op: 'add', item });
+      calls.push({ op: 'add', item, sid: currentSid() });
+      if (addDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, addDelayMs));
+      }
       if (!serverOk) return false;
       if (!serverItems.some((value) => value.kind === item.kind && value.itemId === item.itemId)) {
         serverItems.push({ ...item });
@@ -293,6 +296,32 @@ test('旧全局收藏不会被第二个账号再次认领', async () => {
   const again = await loadFavorites({ sid: '2024001', store });
   assert.deepEqual(Array.from(await again.favorites.list(), (item) => item.id), [2],
     'A 重新登录仍能看到自己的收藏');
+});
+
+test('补发过程中切换账号，剩余收藏不会发到新账号', async () => {
+  const store = new Map();
+  const sidRef = { sid: '2024001' };
+  const offline = await loadFavorites({ sidRef, store, serverOk: false });
+  const first = { kind: 'article', id: 1, title: 'A1', link: 'https://a', tag: '通知' };
+  const second = { kind: 'article', id: 2, title: 'A2', link: 'https://b', tag: '通知' };
+  await offline.favorites.toggle(first);
+  await offline.favorites.toggle(second);
+
+  // 重启后网络恢复，但补发请求很慢：第一条还没返回时切换账号。
+  const online = await loadFavorites({ sidRef, store, serverOk: true, addDelayMs: 30 });
+  const syncing = online.favorites.syncFromServer();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  sidRef.sid = '2024002';
+
+  assert.equal(await syncing, false, '切号后应中止同步');
+  const addCalls = online.calls.filter((call) => call.op === 'add');
+  assert.equal(addCalls.length, 1, '切号后不能再补发 A 的剩余收藏');
+  assert.ok(addCalls.every((call) => call.sid === '2024001'), '请求必须在 A 的登录态下发出');
+  const pendingA = JSON.parse(JSON.parse(online.store.get('libraryFavorites_2024001_pending')));
+  assert.deepEqual(pendingA.adds.map((item) => item.id).sort((a, b) => a - b), [1, 2],
+    '未确认的补发仍留在 A 自己的队列里');
+  assert.equal(online.store.has('libraryFavorites_2024002_pending'), false,
+    'B 不应产生 A 的待补发数据');
 });
 
 test('同步过程中切换账号，旧账号结果不会写进新账号', async () => {
