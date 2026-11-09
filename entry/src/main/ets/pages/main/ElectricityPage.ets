@@ -10,6 +10,7 @@ interface RoomBalance { id: string; name: string; type: string; remaining: strin
 struct ElectricityPage {
   @State private level: number = 0;
   @State private loading: boolean = false;
+  @State private refreshing: boolean = false;
   @State private locations: YKTLocationItem[] = [];
   @State private selected: YKTLocationItem[] = [];
   @State private balances: RoomBalance[] = [];
@@ -23,7 +24,8 @@ struct ElectricityPage {
     this.loading = true;
     const result: RoomBalance[] = [];
     try {
-      const cloudRooms = await ElectricityApi.savedRooms();
+      let cloudRooms: YKTSavedRoom[] = [];
+      try { cloudRooms = await ElectricityApi.savedRooms(); } catch { console.warn('ElectricityPage', 'cloud rooms unavailable'); }
       const localRooms = await this.localSavedRooms();
       const rooms: YKTSavedRoom[] = cloudRooms.length > 0 ? cloudRooms : localRooms;
       this.savedRooms = rooms;
@@ -37,7 +39,8 @@ struct ElectricityPage {
     } catch { console.warn('ElectricityPage', 'saved rooms unavailable'); }
     this.balances = result;
     this.loading = false;
-    if (result.length === 0) { this.showAdd = true; this.loadLocations(''); }
+    if (result.length === 0 && this.savedRooms.length === 0) { this.showAdd = true; this.loadLocations(''); }
+    else if (result.length === 0) { promptAction.showToast({ message: '电费查询失败，请点击刷新重试', duration: 1800 }); }
   }
 
   private async localSavedRooms(): Promise<YKTSavedRoom[]> {
@@ -49,6 +52,41 @@ struct ElectricityPage {
   private async saveLocalRooms(): Promise<void> {
     const storage = AppStorage.getInstance();
     await storage.setSettingString('electricityRooms', JSON.stringify(this.savedRooms));
+  }
+
+  private async refreshBalances(): Promise<void> {
+    if (this.loading || this.refreshing || this.showAdd) return;
+    if (this.savedRooms.length === 0) {
+      promptAction.showToast({ message: '请先添加寝室或空调电表', duration: 1500 });
+      return;
+    }
+    this.refreshing = true;
+    let failed = 0;
+    const updated = this.balances.slice();
+    try {
+      for (let i = 0; i < this.savedRooms.length; i++) {
+        const room = this.savedRooms[i];
+        try {
+          const balance = await ElectricityApi.electricity(room.id);
+          const index = updated.findIndex((item: RoomBalance) => item.id === room.id);
+          const current = index >= 0 ? updated[index] : undefined;
+          const next: RoomBalance = {
+            id: room.id, name: current?.name || room.name || '我的寝室',
+            type: current?.type || room.type || '', remaining: balance.remaining, unit: balance.unit
+          };
+          if (index >= 0) updated[index] = next;
+          else updated.push(next);
+        } catch {
+          failed++;
+        }
+      }
+      this.balances = updated;
+      const message = failed === 0 ? '电费已刷新' :
+        (failed === this.savedRooms.length ? '刷新失败，请检查网络后重试' : `有${failed}个电表刷新失败，请重试`);
+      promptAction.showToast({ message, duration: 1800 });
+    } finally {
+      this.refreshing = false;
+    }
   }
 
   private async loadLocations(parentId: string): Promise<void> { this.loading = true; try { const page = await ElectricityApi.locations(parentId); this.locations = page.items || []; this.locationEnd = page.end; } catch { promptAction.showToast({ message: '地点加载失败，请稍后重试', duration: 1500 }); } this.loading = false; }
@@ -76,12 +114,18 @@ struct ElectricityPage {
       Row() { Text('‹').fontSize(42).width(48).onClick(() => router.back()); Text('查电费').fontSize(28).fontWeight(FontWeight.Bold).margin({ left: 12 }); }.width('100%').height(76).padding({ left: 14 }).backgroundColor('#F5F6F8');
       Scroll() {
         Column() {
-          Text('一卡通电费查询').fontSize(25).fontWeight(FontWeight.Bold).width('92%').margin({ top: 18, bottom: 14 });
+          Row() {
+            Text('一卡通电费查询').fontSize(25).fontWeight(FontWeight.Bold).layoutWeight(1);
+            Button(this.refreshing ? '刷新中…' : '刷新')
+              .fontSize(16).fontColor(Color.White).backgroundColor('#20C894')
+              .enabled(!this.loading && !this.refreshing && !this.showAdd)
+              .onClick(() => { this.refreshBalances(); });
+          }.width('92%').margin({ top: 18, bottom: 14 });
           if (this.loading && this.balances.length === 0) { Text('正在查询寝室电费…').fontSize(18).fontColor('#999999').width('92%').margin({ top: 12 }); }
           ForEach(this.balances, (item: RoomBalance) => {
             Column() { Text(this.roomLabel(item)).fontSize(17).fontColor('#888888').width('100%'); Text(item.name).fontSize(21).fontWeight(FontWeight.Bold).width('100%').margin({ top: 8 }); Text(`${item.remaining} ${item.unit}`).fontSize(34).fontWeight(FontWeight.Bold).fontColor('#20C894').width('100%').margin({ top: 16 }); }.width('92%').padding(22).backgroundColor(Color.White).borderRadius(18).margin({ bottom: 12 });
           }, (item: RoomBalance) => item.id);
-          if (!this.showAdd) { Text('+ 添加其他寝室/空调电表').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#20C894').width('92%').margin({ top: 12, bottom: 18 }).onClick(() => { this.showAdd = true; this.selected = []; this.level = 0; this.loadLocations(''); }); }
+          if (!this.showAdd) { Text('+ 添加其他寝室/空调电表').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#20C894').width('92%').margin({ top: 12, bottom: 18 }).onClick(() => { if (this.refreshing) return; this.showAdd = true; this.selected = []; this.level = 0; this.loadLocations(''); }); }
           if (this.showAdd) {
             Text(this.balances.length > 0 ? '添加其他寝室' : '请选择寝室').fontSize(22).fontWeight(FontWeight.Bold).width('92%').margin({ top: 14, bottom: 12 });
             Row() { ForEach(this.selected, (item: YKTLocationItem) => Text(item.name).fontSize(15).fontColor('#B26E2A').margin({ right: 8 })); }.width('92%').margin({ bottom: 8 });
