@@ -260,3 +260,117 @@ test('页面提供删除日程按钮、确认弹窗，并在导入时记录事�
   assert.match(code, /await calendar\.deleteEvent\(ids\[i\]\)/, '删除时应按事件 id 删除');
   assert.match(code, /private async refreshCalendarState\(storage: PreferenceStorage\): Promise<void>/, '缺少日程状态刷新方法');
 });
+// ---------------------------------------------------------------------------
+// 并发：移除实验课与读取课表交错
+// ---------------------------------------------------------------------------
+
+function extractMethod(sourceText, signature) {
+  const start = sourceText.indexOf(signature);
+  assert.ok(start >= 0, `未找到方法：${signature}`);
+  const brace = sourceText.indexOf('{', start);
+  let depth = 0;
+  for (let i = brace; i < sourceText.length; i++) {
+    if (sourceText[i] === '{') depth++;
+    else if (sourceText[i] === '}') {
+      depth--;
+      if (depth === 0) return sourceText.slice(start, i + 1);
+    }
+  }
+  throw new Error(`方法括号不匹配：${signature}`);
+}
+
+async function makeConcurrentStore(initialCourses, options = {}) {
+  const storeSource = await source('../entry/src/main/ets/store/AppStorage.ts');
+  const methods = [
+    extractMethod(storeSource, '  async removePhysicalExperimentCourses(): Promise<number> {'),
+    extractMethod(storeSource, '  async getPhysicalExperimentCourses(): Promise<CourseData[]> {'),
+    extractMethod(storeSource, '  private async readPhysicalExperimentCoursesUnlocked(): Promise<CourseData[]> {'),
+    extractMethod(storeSource, '  async getCurrentCourses(): Promise<CourseData[]> {'),
+    extractMethod(storeSource, '  private async readCurrentCoursesUnlocked(): Promise<CourseData[]> {'),
+  ].join('\n');
+
+  const pauseOnClear = options.pauseOnClear === true;
+  let current = initialCourses.slice();
+  let experiments = initialCourses.filter((course) => course.isPhysicalExperiment === true);
+  let paused = false;
+  let released = false;
+  let resume = () => {};
+  const gate = new Promise((resolve) => { resume = resolve; });
+
+  const context = createContext({ console, JSON, Date, Number, Array });
+  const mod = new SourceTextModule(stripTypeScriptTypes(`export class TestStore {\n${methods}\n}`, { mode: 'transform' }), { context });
+  await mod.link(() => { throw new Error('No imports expected'); });
+  await mod.evaluate();
+
+  const store = new mod.namespace.TestStore();
+  store.courseWriteChain = Promise.resolve();
+  store.courseCacheMarker = '';
+  store.enqueueCourseWrite = function (task) {
+    const run = this.courseWriteChain.then(task, task);
+    this.courseWriteChain = run.then(() => {}, () => {});
+    return run;
+  };
+  store.getStoredCourses = async (key) => (key === 'currentCourses' ? current.slice() : experiments.slice());
+  store.putStr = async (key, value) => {
+    if (key === 'physicalExperimentCourses') {
+      experiments = JSON.parse(value);
+      // 复现评审步骤：清空实验缓存后暂停，给并发读取留出插入窗口。
+      if (pauseOnClear && !paused && !released && value === '[]') {
+        paused = true;
+        await gate;
+      }
+      return;
+    }
+    current = JSON.parse(value);
+  };
+  store.isPhysicalExperimentCourse = (course) => course.isPhysicalExperiment === true;
+  store.mergePhysicalExperiments = (courses, experimentList) => {
+    const merged = courses.slice();
+    for (const experiment of experimentList) {
+      const duplicated = merged.some((course) => course.courseName === experiment.courseName &&
+        course.physicalDate === experiment.physicalDate &&
+        course.dayOfWeek === experiment.dayOfWeek && course.startPeriod === experiment.startPeriod);
+      if (!duplicated) merged.push(experiment);
+    }
+    return merged;
+  };
+
+  return {
+    store,
+    isPaused: () => paused,
+    release: () => { released = true; resume(); },
+    current: () => current.slice(),
+    experiments: () => experiments.slice(),
+  };
+}
+
+test('并发读取不能把已移除的实验课迁移回课表', async () => {
+  const env = await makeConcurrentStore([
+    regular('高等数学'), experiment('实验4-18'), regular('大学物理'),
+  ], { pauseOnClear: true });
+
+  const removal = env.store.removePhysicalExperimentCourses();
+  // 等到「实验缓存已清空、课表尚未重写」的暂停点。
+  while (!env.isPaused()) await new Promise((resolve) => setTimeout(resolve, 1));
+
+  const concurrentRead = env.store.getPhysicalExperimentCourses();
+  env.release();
+
+  const removed = await removal;
+  const experimentsAfter = await concurrentRead;
+  assert.equal(removed, 1);
+  assert.deepEqual(experimentsAfter, [], '并发读取不应迁移回任何实验课');
+  assert.deepEqual(env.current().map((course) => course.courseName), ['高等数学', '大学物理']);
+
+  const list = await env.store.getCurrentCourses();
+  assert.deepEqual(list.map((course) => course.courseName), ['高等数学', '大学物理']);
+});
+
+test('先发起课表读取再移除，最终结果也不含实验课', async () => {
+  const env = await makeConcurrentStore([regular('高等数学'), experiment('实验4-18')]);
+  const read = env.store.getCurrentCourses();
+  const removal = env.store.removePhysicalExperimentCourses();
+  await Promise.all([read, removal]);
+  const list = await env.store.getCurrentCourses();
+  assert.deepEqual(list.map((course) => course.courseName), ['高等数学']);
+});
