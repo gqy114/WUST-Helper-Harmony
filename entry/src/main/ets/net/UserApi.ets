@@ -8,6 +8,7 @@
  */
 import { HttpRequest } from './HttpRequest';
 import { StudentApiResponse, StudentApiContent } from '../model/UserInfoModel';
+import { AppStorage } from '../store/AppStorage';
 
 // iOS 当前生效实现：本科教务取数入口，凭登录 Cookie 获取学生信息页。
 // 安卓端使用带 8081 端口的接口，并通过 Bearer Token 认证。
@@ -139,4 +140,38 @@ export class UserApi {
     if (normalized) response.data = normalized;
     return response;
   }
+  /** 当前登录账号的应用资料（/api/v1/auth/me）：头像上传后用它拿服务端规范 URL。 */
+  static async getAppProfile(): Promise<AppProfile | null> {
+    const token = (await AppStorage.getInstance().getAppAuthAccessToken()).trim();
+    if (!token) return null;
+    const headers: AppProfileHeaders = {
+      Authorization: `Bearer ${token}`,
+      Platform: 'android',
+      Accept: 'application/json',
+    };
+    const result = await HttpRequest.get<AppProfileResponse>('https://lyzyy.love:8081/api/v1/auth/me', headers, true);
+    const data = result.data?.data;
+    if (!data) return null;
+    return data;
+  }
+}
+
+interface AppProfileHeaders extends Record<string, string> {
+  Authorization: string;
+  Platform: string;
+  Accept: string;
+}
+
+export interface AppProfile {
+  studentId?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  realName?: string;
+}
+
+interface AppProfileResponse {
+  code?: number;
+  message?: string;
+  msg?: string;
+  data?: AppProfile;
 }
