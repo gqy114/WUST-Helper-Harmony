@@ -8,7 +8,7 @@ const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
 test('修改昵称会调用服务端接口，而不是只写本地', async () => {
   const page = await source(`${root}/pages/profile/EditNamePage.ets`);
-  assert.match(page, /UserApi\.updateAppDisplayName\(value\)/, '没有调用服务端修改昵称');
+  assert.match(page, /UserApi\.updateAppDisplayName\(value, token\)/, '没有调用服务端修改昵称');
   // 本地保存排在同步调用之后，避免服务端失败时本地先覆盖。
   const syncIndex = page.indexOf('const synced = await this.syncDisplayName');
   const localIndex = page.indexOf('await storage.setUserName(value)');
@@ -24,7 +24,7 @@ test('应用令牌为空时先用已保存凭据恢复', async () => {
 
 test('UserApi 提供昵称修改接口并使用登录令牌', async () => {
   const api = await source(`${root}/net/UserApi.ets`);
-  assert.match(api, /static async updateAppDisplayName\(displayName: string\): Promise<boolean>/, '缺少 updateAppDisplayName');
+  assert.match(api, /static async updateAppDisplayName\(displayName: string, tokenSnapshot\?: string\): Promise<boolean>/, '缺少 updateAppDisplayName');
   assert.match(api, /\/api\/v1\/profile\/display-name/, '接口路径不对');
   assert.match(api, /Authorization: `Bearer \$\{token\}`/, '缺少登录令牌');
   assert.match(api, /const body: DisplayNameBody = \{ displayName \}/, '请求体缺少 displayName');
@@ -43,7 +43,16 @@ test('令牌恢复失败也要保存本地昵称，并明确提示未同步', as
 
 test('令牌可能过期时会恢复后重试一次', async () => {
   const page = await source(`${root}/pages/profile/EditNamePage.ets`);
-  const matches = page.match(/await UserApi\.updateAppDisplayName\(value\)/g) || [];
+  const matches = page.match(/await UserApi\.updateAppDisplayName\(value, token\)/g) || [];
   assert.ok(matches.length >= 2, '缺少失败后重试');
   assert.match(page, /令牌可能已失效/, '重试原因没有注释说明');
+});
+
+test('改昵称期间切号：旧昵称不发给新账号，也不写进新账号', async () => {
+  const page = await source(`${root}/pages/profile/EditNamePage.ets`);
+  assert.match(page, /interface NicknameSession/, '缺少会话快照');
+  assert.match(page, /const session: NicknameSession = \{/, '保存开始时没有固定账号');
+  assert.match(page, /private async isAccountChanged\(/, '缺少切号检查方法');
+  assert.match(page, /账号已切换，本次改名已取消/, '切号后缺少明确提示');
+  assert.match(page, /UserApi\.updateAppDisplayName\(value, token\)/, '没有使用会话快照令牌发送');
 });

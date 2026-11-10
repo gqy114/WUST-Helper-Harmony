@@ -156,8 +156,10 @@ export class UserApi {
   }
 
   /** 修改昵称（/api/v1/profile/display-name）：成功后服务端与社区/其他设备才能同步。 */
-  static async updateAppDisplayName(displayName: string): Promise<boolean> {
-    const token = (await AppStorage.getInstance().getAppAuthAccessToken()).trim();
+  static async updateAppDisplayName(displayName: string, tokenSnapshot?: string): Promise<boolean> {
+    const token = tokenSnapshot !== undefined
+      ? tokenSnapshot.trim()
+      : (await AppStorage.getInstance().getAppAuthAccessToken()).trim();
     if (!token) return false;
     const headers: AppProfileHeaders = {
       Authorization: `Bearer ${token}`,

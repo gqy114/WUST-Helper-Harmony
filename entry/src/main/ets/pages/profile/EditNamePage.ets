@@ -9,6 +9,13 @@ interface EditNameParams {
   name?: string;
 }
 
+/** 发起改名时的会话快照：切号后旧操作必须作废。 */
+interface NicknameSession {
+  sid: string;
+  epoch: number;
+  token: string;
+}
+
 AppStorage.setOrCreate<number>('profileVersion', 0);
 
 @Entry
@@ -41,8 +48,20 @@ struct EditNamePage {
     if (this.saving) return;
     this.saving = true;
     const storage = PreferenceStorage.getInstance();
+    const session: NicknameSession = {
+      sid: (await storage.getStudentId()).trim(),
+      epoch: storage.getSessionEpoch(),
+      token: (await storage.getAppAuthAccessToken()).trim(),
+    };
     // 同步只是“尽力而为”：令牌恢复或网络失败都不能阻止本地改名。
-    const synced = await this.syncDisplayName(storage, value);
+    const synced = await this.syncDisplayName(storage, value, session);
+    if (await this.isAccountChanged(storage, session)) {
+      // 切号后不把旧账号输入的昵称写进新账号。
+      console.warn('EditNamePage', 'account changed during nickname save, result discarded');
+      promptAction.showToast({ message: '账号已切换，本次改名已取消', duration: 2000 });
+      this.saving = false;
+      return;
+    }
     try {
       await storage.setUserName(value);
       await UserStore.getInstance().restoreFromLocal();
@@ -60,20 +79,25 @@ struct EditNamePage {
     }
   }
 
+  /** 账号或会话代次是否已变化（切号后旧操作必须作废）。 */
+  private async isAccountChanged(storage: PreferenceStorage, session: NicknameSession): Promise<boolean> {
+    if (storage.getSessionEpoch() !== session.epoch) return true;
+    return (await storage.getStudentId()).trim() !== session.sid;
+  }
+
   /**
    * 尝试把昵称同步到服务端，返回是否确认成功。
-   * 令牌为空或疑似过期时恢复一次再重试；任何异常都不抛出，避免影响本地保存。
+   * 令牌恢复或网络失败都不能阻止本地改名。
+   * 会话快照固定账号；中途切号直接放弃，不拿新账号令牌发旧昵称。
    */
-  private async syncDisplayName(storage: PreferenceStorage, value: string): Promise<boolean> {
-    let token = '';
-    try {
-      token = (await storage.getAppAuthAccessToken()).trim();
-    } catch (error) {
-      console.warn('EditNamePage', `read token failed: ${JSON.stringify(error)}`);
-    }
+  private async syncDisplayName(storage: PreferenceStorage, value: string,
+    session: NicknameSession): Promise<boolean> {
+    let token = session.token;
     if (!token) {
       try {
+        if (await this.isAccountChanged(storage, session)) return false;
         await ApiService.loginAppAuthFromSavedCredentials(storage);
+        if (await this.isAccountChanged(storage, session)) return false;
         token = (await storage.getAppAuthAccessToken()).trim();
       } catch (error) {
         console.warn('EditNamePage', `restore app auth failed: ${JSON.stringify(error)}`);
@@ -81,15 +105,22 @@ struct EditNamePage {
     }
     if (!token) return false;
     try {
-      if (await UserApi.updateAppDisplayName(value)) return true;
+      if (await UserApi.updateAppDisplayName(value, token)) {
+        return !(await this.isAccountChanged(storage, session));
+      }
     } catch (error) {
       console.warn('EditNamePage', `sync nickname failed: ${JSON.stringify(error)}`);
     }
+    if (await this.isAccountChanged(storage, session)) return false;
     // 令牌可能已失效：恢复一次后重试，仍失败就明确提示未同步。
     try {
       await ApiService.loginAppAuthFromSavedCredentials(storage);
+      if (await this.isAccountChanged(storage, session)) return false;
       token = (await storage.getAppAuthAccessToken()).trim();
-      if (token) return await UserApi.updateAppDisplayName(value);
+      if (token) {
+        const synced = await UserApi.updateAppDisplayName(value, token);
+        return synced && !(await this.isAccountChanged(storage, session));
+      }
     } catch (error) {
       console.warn('EditNamePage', `retry sync nickname failed: ${JSON.stringify(error)}`);
     }
