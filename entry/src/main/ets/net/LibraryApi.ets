@@ -255,8 +255,8 @@ export class LibraryApi {
   }
 
   /** 服务端收藏列表：未登录或接口不可用时返回 null，调用方继续用本机缓存。 */
-  static async listFavorites(): Promise<LibraryFavoriteEntry[] | null> {
-    const headers = await LibraryApi.favoriteHeaders();
+  static async listFavorites(token: string): Promise<LibraryFavoriteEntry[] | null> {
+    const headers = LibraryApi.favoriteHeaders(token);
     if (!headers) return null;
     try {
       const result = await HttpRequest.get<FavoriteEnvelope>(LIBRARY_FAVORITES_URL, headers, true);
@@ -271,9 +271,12 @@ export class LibraryApi {
     }
   }
 
-  /** 新增/更新一条服务端收藏；未登录或失败返回 false。 */
-  static async addFavorite(item: LibraryFavoriteEntry): Promise<boolean> {
-    const headers = await LibraryApi.favoriteHeaders();
+  /**
+   * 新增/更新一条服务端收藏；未登录或失败返回 false。
+   * token 由调用方在账号校验后读取再传入，避免检查 A 账号却读到 B 的令牌。
+   */
+  static async addFavorite(item: LibraryFavoriteEntry, token: string): Promise<boolean> {
+    const headers = LibraryApi.favoriteHeaders(token);
     if (!headers) return false;
     try {
       const body: FavoriteAddBody = {
@@ -292,9 +295,9 @@ export class LibraryApi {
     }
   }
 
-  /** 取消一条服务端收藏；未登录或失败返回 false。 */
-  static async removeFavorite(kind: string, itemId: number): Promise<boolean> {
-    const headers = await LibraryApi.favoriteHeaders();
+  /** 取消一条服务端收藏；未登录或失败返回 false。token 由调用方传入。 */
+  static async removeFavorite(kind: string, itemId: number, token: string): Promise<boolean> {
+    const headers = LibraryApi.favoriteHeaders(token);
     if (!headers) return false;
     try {
       const body: FavoriteRemoveBody = { kind, itemId };
@@ -307,10 +310,10 @@ export class LibraryApi {
     }
   }
 
-  private static async favoriteHeaders(): Promise<FavoriteHeaders | null> {
-    const token = (await AppStorage.getInstance().getAppAuthAccessToken()).trim();
-    if (!token) return null;
-    return { Authorization: `Bearer ${token}`, Platform: 'android', Accept: 'application/json' };
+  private static favoriteHeaders(token: string): FavoriteHeaders | null {
+    const trimmed = (token || '').trim();
+    if (!trimmed) return null;
+    return { Authorization: `Bearer ${trimmed}`, Platform: 'android', Accept: 'application/json' };
   }
 }
 

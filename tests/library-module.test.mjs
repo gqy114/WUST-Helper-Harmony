@@ -78,6 +78,7 @@ async function loadFavorites(initialRaw = '[]', options = {}) {
   store.set('libraryFavorites', JSON.stringify(JSON.stringify(initialRaw)));
   const storage = {
     getStudentId: async () => '',
+    getAppAuthAccessToken: async () => 'wh_at_test',
     getSettingString: async (key, def) => {
       if (delayedRead) {
         // 模拟磁盘读取慢：页面刚打开、收藏还没读完时用户就点了收藏。

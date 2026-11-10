@@ -56,7 +56,7 @@ async function loadApi(token = 'wh_at_demo', replies = {}) {
 test('服务端收藏：带登录令牌请求 /api/v1/library/favorites', async () => {
   const { api, calls, replies } = await loadApi();
   replies.get = { data: { code: 200, message: 'Success', data: { items: [{ kind: 'article', itemId: 12 }] } } };
-  const list = await api.listFavorites();
+  const list = await api.listFavorites('wh_at_demo');
   assert.equal(calls[0].method, 'GET');
   assert.match(calls[0].url, /\/api\/v1\/library\/favorites$/);
   assert.equal(calls[0].headers.Authorization, 'Bearer wh_at_demo');
@@ -73,14 +73,14 @@ test('服务端收藏：未登录不发请求并回退本机缓存', async () =>
 test('服务端收藏：新增与删除走 POST，itemId 保持数字', async () => {
   const { api, calls, replies } = await loadApi();
   replies.post = { data: { code: 200, message: 'Success', data: true } };
-  assert.equal(await api.addFavorite({ kind: 'resource', itemId: 9, title: '知网', link: 'https://x', tag: '资源' }), true);
+  assert.equal(await api.addFavorite({ kind: 'resource', itemId: 9, title: '知网', link: 'https://x', tag: '资源' }, 'wh_at_demo'), true);
   assert.equal(calls[0].method, 'POST');
   assert.match(calls[0].url, /\/api\/v1\/library\/favorites$/);
   const body = JSON.parse(calls[0].body);
   assert.deepEqual(body, { kind: 'resource', itemId: 9, title: '知网', link: 'https://x', tag: '资源' });
   assert.equal(typeof body.itemId, 'number');
 
-  assert.equal(await api.removeFavorite('resource', 9), true);
+  assert.equal(await api.removeFavorite('resource', 9, 'wh_at_demo'), true);
   assert.match(calls[1].url, /\/api\/v1\/library\/favorites\/remove$/);
   assert.deepEqual(JSON.parse(calls[1].body), { kind: 'resource', itemId: 9 });
 });
@@ -94,7 +94,7 @@ test('服务端收藏：401 视为接口不可用而不是空列表', async () =
 async function loadFavorites(options = {}) {
   const {
     initialRaw = '[]', sid = '', serverOk = true, remoteItems = [], store: sharedStore, sidRef,
-    alreadySynced = false, listDelayMs = 0, addDelayMs = 0, legacyRaw = null,
+    alreadySynced = false, listDelayMs = 0, addDelayMs = 0, legacyRaw = null, tokenDelayMs = 0,
   } = options;
   const store = sharedStore || new Map();
   const currentSid = () => (sidRef ? sidRef.sid : sid);
@@ -110,6 +110,12 @@ async function loadFavorites(options = {}) {
   }
   const storage = {
     getStudentId: async () => currentSid(),
+    getAppAuthAccessToken: async () => {
+      if (tokenDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, tokenDelayMs));
+      }
+      return 'wh_at_' + currentSid();
+    },
     getSettingString: async (name, def) => {
       const raw = store.has(name) ? store.get(name) : JSON.stringify(def);
       try {
@@ -132,8 +138,8 @@ async function loadFavorites(options = {}) {
   const calls = [];
   const serverItems = remoteItems.map((item) => ({ ...item }));
   const server = {
-    addFavorite: async (item) => {
-      calls.push({ op: 'add', item, sid: currentSid() });
+    addFavorite: async (item, token) => {
+      calls.push({ op: 'add', item, sid: currentSid(), token });
       if (addDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, addDelayMs));
       }
@@ -143,14 +149,14 @@ async function loadFavorites(options = {}) {
       }
       return true;
     },
-    removeFavorite: async (kind, id) => {
-      calls.push({ op: 'remove', kind, id });
+    removeFavorite: async (kind, id, token) => {
+      calls.push({ op: 'remove', kind, id, sid: currentSid(), token });
       if (!serverOk) return false;
       const index = serverItems.findIndex((value) => value.kind === kind && value.itemId === id);
       if (index >= 0) serverItems.splice(index, 1);
       return true;
     },
-    listFavorites: async () => {
+    listFavorites: async (token) => {
       if (listDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, listDelayMs));
       }
@@ -296,6 +302,25 @@ test('旧全局收藏不会被第二个账号再次认领', async () => {
   const again = await loadFavorites({ sid: '2024001', store });
   assert.deepEqual(Array.from(await again.favorites.list(), (item) => item.id), [2],
     'A 重新登录仍能看到自己的收藏');
+});
+
+test('读取令牌期间切换账号，不会把 A 的收藏用 B 的令牌发出', async () => {
+  const store = new Map();
+  const sidRef = { sid: '2024001' };
+  const offline = await loadFavorites({ sidRef, store, serverOk: false });
+  await offline.favorites.toggle({ kind: 'article', id: 1, title: 'A1', link: 'https://a', tag: '通知' });
+
+  // 令牌读取很慢：读令牌过程中切换到 B，旧实现会把 B 的令牌发给 A 的数据。
+  const online = await loadFavorites({ sidRef, store, serverOk: true, tokenDelayMs: 30 });
+  const syncing = online.favorites.syncFromServer();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  sidRef.sid = '2024002';
+
+  assert.equal(await syncing, false, '切号后应中止同步');
+  assert.equal(online.calls.filter((call) => call.op === 'add').length, 0, '不能发出任何添加请求');
+  const pendingA = JSON.parse(JSON.parse(online.store.get('libraryFavorites_2024001_pending')));
+  assert.equal(pendingA.adds.length, 1, 'A 的待补发记录必须保留');
+  assert.equal(online.store.has('libraryFavorites_2024002_pending'), false, 'B 不应产生 A 的数据');
 });
 
 test('补发过程中切换账号，剩余收藏不会发到新账号', async () => {

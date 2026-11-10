@@ -252,28 +252,43 @@ export class LibraryFavorites {
     if (index >= 0) {
       this.items.splice(index, 1);
       this.pendingAdds = this.pendingAdds.filter((value: LibraryFavorite) => this.keyOf(value.kind, value.id) !== key);
+      if (!neverSynced) this.pendingRemoves.unshift(item);
     } else {
       this.items.unshift(item);
       this.pendingRemoves = this.pendingRemoves.filter((value: LibraryFavorite) => this.keyOf(value.kind, value.id) !== key);
+      this.pendingAdds.unshift(item);
       favorited = true;
     }
     await this.persistWithKey(storageKey);
+    // 先落盘再发请求：即使发送途中切号/断网，这条操作也不会丢，仍留在本账号队列里。
+    await this.persistPendingWithKey(storageKey);
 
-    const ok = favorited
-      ? await LibraryApi.addFavorite(toEntry(item))
-      : await LibraryApi.removeFavorite(item.kind, item.id);
+    const token = await this.currentToken();
+    // 读令牌期间可能已经切号：拿到的是别人令牌时绝不能发出去。
+    if (!await this.sameAccount(epoch)) return favorited;
+    const ok = token
+      ? (favorited
+        ? await LibraryApi.addFavorite(toEntry(item), token)
+        : await LibraryApi.removeFavorite(item.kind, item.id, token))
+      : false;
     if (!await this.sameAccount(epoch)) return favorited;
     if (ok) {
       this.synced = true;
-    } else if (favorited) {
-      this.pendingAdds.push(item);
-    } else if (!neverSynced) {
-      this.pendingRemoves.push(item);
+      if (favorited) {
+        this.pendingAdds = this.pendingAdds.filter((value: LibraryFavorite) =>
+          this.keyOf(value.kind, value.id) !== key);
+      } else {
+        this.pendingRemoves = this.pendingRemoves.filter((value: LibraryFavorite) =>
+          this.keyOf(value.kind, value.id) !== key);
+      }
+      await this.persistPendingWithKey(storageKey);
     }
     this.lastToggleServerOk = ok;
-    // 离线操作也要落盘：重启后仍然知道还有哪些改动没同步。
-    await this.persistPendingWithKey(storageKey);
     return favorited;
+  }
+
+  private async currentToken(): Promise<string> {
+    return (await AppStorage.getInstance().getAppAuthAccessToken()).trim();
   }
 
   /**
@@ -295,7 +310,10 @@ export class LibraryFavorites {
     const flushed = await this.flushPending();
     if (!await this.sameAccount(epoch)) return false;
     if (!flushed) return false;
-    const remote = await LibraryApi.listFavorites();
+    const token = await this.currentToken();
+    // 读令牌和查询之间也可能切号，拿到令牌后再确认一次再发请求。
+    if (!await this.sameAccount(epoch)) return false;
+    const remote = token ? await LibraryApi.listFavorites(token) : null;
     if (!await this.sameAccount(epoch)) return false;
     if (remote === null) return false;
     this.items = remote
@@ -317,7 +335,10 @@ export class LibraryFavorites {
     const adds = this.pendingAdds.slice();
     for (const item of adds) {
       if (!await this.sameAccount(epoch)) return false;
-      const ok = await LibraryApi.addFavorite(toEntry(item));
+      const token = await this.currentToken();
+      // 令牌读取后才切号时，拿到的可能是新账号令牌，必须在这里拦住。
+      if (!await this.sameAccount(epoch)) return false;
+      const ok = token ? await LibraryApi.addFavorite(toEntry(item), token) : false;
       if (!await this.sameAccount(epoch)) return false;
       if (ok) {
         this.pendingAdds = this.pendingAdds.filter((value: LibraryFavorite) =>
@@ -328,7 +349,9 @@ export class LibraryFavorites {
     const removes = this.pendingRemoves.slice();
     for (const item of removes) {
       if (!await this.sameAccount(epoch)) return false;
-      const ok = await LibraryApi.removeFavorite(item.kind, item.id);
+      const token = await this.currentToken();
+      if (!await this.sameAccount(epoch)) return false;
+      const ok = token ? await LibraryApi.removeFavorite(item.kind, item.id, token) : false;
       if (!await this.sameAccount(epoch)) return false;
       if (ok) {
         this.pendingRemoves = this.pendingRemoves.filter((value: LibraryFavorite) =>
