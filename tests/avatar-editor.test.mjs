@@ -31,7 +31,7 @@ test('上传使用应用缓存路径和登录令牌，成功后拉取服务端�
   assert.match(page, /uri: `internal:\/\/cache\/\$\{fileName\}`/, '上传应使用应用沙箱路径');
   assert.match(page, /'Authorization': `Bearer \$\{token\}`/, '上传缺少登录令牌');
   assert.match(page, /UserApi\.getAppProfile\(\)/, '上传成功后应刷新账号资料');
-  assert.match(page, /await storage\.setAvatarUrl\(profile\.avatarUrl\)/, '服务端头像地址没有保存');
+  assert.match(page, /await storage\.setAvatarUrl\(updatedAvatar\)/, '服务端头像地址没有保存');
 
   const api = await source(`${root}/net/UserApi.ets`);
   assert.match(api, /\/api\/v1\/auth\/me/, '缺少账号资料接口');
@@ -42,4 +42,11 @@ test('上传失败时保留本地裁剪结果', async () => {
   const page = await source(`${root}/pages/profile/InfoSettingsPage.ets`);
   assert.match(page, /setAvatarUrl\(`file:\/\/\$\{localPath\}`\)/, '上传失败应保留本地头像');
   assert.match(page, /头像已更新，服务器同步失败/, '上传失败缺少提示');
+});
+test('上传后必须确认服务端头像已更新，否则按失败处理', async () => {
+  const page = await source(`${root}/pages/profile/InfoSettingsPage.ets`);
+  assert.match(page, /states\[0\]\.responseCode !== 0/, '没有校验上传任务结果');
+  assert.match(page, /const previousAvatar = \(await storage\.getAvatarUrl\(\)\)\.trim\(\)/, '没有记录旧头像地址');
+  assert.match(page, /updatedAvatar === previousAvatar/, '没有确认服务端头像已变化');
+  assert.match(page, /avatar not updated on server/, '未更新时没有按失败处理');
 });
