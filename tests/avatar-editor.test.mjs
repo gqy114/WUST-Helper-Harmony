@@ -49,7 +49,14 @@ test('上传失败时恢复原头像，不把本地预览误当成同步成功',
 test('上传后必须确认服务端头像已更新，否则按失败处理', async () => {
   const page = await source(`${root}/pages/profile/InfoSettingsPage.ets`);
   assert.match(page, /states\[0\]\.responseCode !== 0/, '没有校验上传任务结果');
-  assert.match(page, /const profileBeforeUpload = await UserApi\.getAppProfile\(\)/, '上传前没有获取服务端头像基线');
+  assert.match(page, /(?:const|let) profileBeforeUpload = await UserApi\.getAppProfile\(\)/, '上传前没有获取服务端头像基线');
   assert.match(page, /updatedAvatar === serverAvatarBeforeUpload/, '没有按服务端旧头像确认是否变化');
   assert.match(page, /avatar not updated on server/, '未更新时没有按失败处理');
+});
+
+test('上传前读不到服务端头像时按失败处理，不能冒成功', async () => {
+  const page = await source(`${root}/pages/profile/InfoSettingsPage.ets`);
+  assert.match(page, /if \(!profileBeforeUpload\) throw new Error\('cannot read avatar baseline'\)/, '基线缺失时没有按失败处理');
+  const baselineReads = page.match(/await UserApi\.getAppProfile\(\)/g) || [];
+  assert.ok(baselineReads.length >= 2, '基线读取失败时应当重试一次');
 });
