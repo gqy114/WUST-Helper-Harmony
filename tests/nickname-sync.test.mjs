@@ -9,9 +9,9 @@ const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 test('修改昵称会调用服务端接口，而不是只写本地', async () => {
   const page = await source(`${root}/pages/profile/EditNamePage.ets`);
   assert.match(page, /UserApi\.updateAppDisplayName\(value\)/, '没有调用服务端修改昵称');
-  // 本地保存排在服务端调用之后，避免服务端失败时本地先覆盖。
-  const syncIndex = page.indexOf('UserApi.updateAppDisplayName(value)');
-  const localIndex = page.indexOf('setUserName(value)');
+  // 本地保存排在同步调用之后，避免服务端失败时本地先覆盖。
+  const syncIndex = page.indexOf('const synced = await this.syncDisplayName');
+  const localIndex = page.indexOf('await storage.setUserName(value)');
   assert.ok(syncIndex > 0 && localIndex > syncIndex, '应先同步服务端再保存本地');
   assert.match(page, /已保存到本机，服务器同步失败/, '服务端失败时要明确提示未同步');
 });
@@ -28,4 +28,22 @@ test('UserApi 提供昵称修改接口并使用登录令牌', async () => {
   assert.match(api, /\/api\/v1\/profile\/display-name/, '接口路径不对');
   assert.match(api, /Authorization: `Bearer \$\{token\}`/, '缺少登录令牌');
   assert.match(api, /const body: DisplayNameBody = \{ displayName \}/, '请求体缺少 displayName');
+});
+test('令牌恢复失败也要保存本地昵称，并明确提示未同步', async () => {
+  const page = await source(`${root}/pages/profile/EditNamePage.ets`);
+  assert.match(page, /private async syncDisplayName\(/, '缺少独立的同步方法');
+  const syncCall = page.indexOf('const synced = await this.syncDisplayName');
+  const localSave = page.indexOf('await storage.setUserName(value)');
+  assert.ok(syncCall > 0 && localSave > syncCall, '本地保存不能被同步失败挡住');
+  assert.match(page, /本地保存失败，请重试/, '本地保存失败要有单独提示');
+  const syncBody = page.slice(page.indexOf('private async syncDisplayName'), page.indexOf('build()'));
+  assert.match(syncBody, /restore app auth failed/, '恢复令牌失败应被同步方法内部捕获');
+  assert.match(syncBody, /return false/, '同步失败应返回 false 而不是抛出');
+});
+
+test('令牌可能过期时会恢复后重试一次', async () => {
+  const page = await source(`${root}/pages/profile/EditNamePage.ets`);
+  const matches = page.match(/await UserApi\.updateAppDisplayName\(value\)/g) || [];
+  assert.ok(matches.length >= 2, '缺少失败后重试');
+  assert.match(page, /令牌可能已失效/, '重试原因没有注释说明');
 });

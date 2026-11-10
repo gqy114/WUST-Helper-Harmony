@@ -41,22 +41,9 @@ struct EditNamePage {
     if (this.saving) return;
     this.saving = true;
     const storage = PreferenceStorage.getInstance();
-    let synced = false;
+    // 同步只是“尽力而为”：令牌恢复或网络失败都不能阻止本地改名。
+    const synced = await this.syncDisplayName(storage, value);
     try {
-      // 先用应用令牌把昵称写到服务端，社区/其他设备读的是服务端资料。
-      let token = (await storage.getAppAuthAccessToken()).trim();
-      if (!token) {
-        await ApiService.loginAppAuthFromSavedCredentials(storage);
-        token = (await storage.getAppAuthAccessToken()).trim();
-      }
-      if (token) {
-        try {
-          synced = await UserApi.updateAppDisplayName(value);
-        } catch (error) {
-          console.warn('EditNamePage', `sync nickname failed: ${JSON.stringify(error)}`);
-          synced = false;
-        }
-      }
       await storage.setUserName(value);
       await UserStore.getInstance().restoreFromLocal();
       this.profileVersion = Date.now();
@@ -67,10 +54,46 @@ struct EditNamePage {
       router.back();
     } catch (error) {
       console.error('EditNamePage', `save nickname failed: ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '保存失败，请重试', duration: 1500 });
+      promptAction.showToast({ message: '本地保存失败，请重试', duration: 1500 });
     } finally {
       this.saving = false;
     }
+  }
+
+  /**
+   * 尝试把昵称同步到服务端，返回是否确认成功。
+   * 令牌为空或疑似过期时恢复一次再重试；任何异常都不抛出，避免影响本地保存。
+   */
+  private async syncDisplayName(storage: PreferenceStorage, value: string): Promise<boolean> {
+    let token = '';
+    try {
+      token = (await storage.getAppAuthAccessToken()).trim();
+    } catch (error) {
+      console.warn('EditNamePage', `read token failed: ${JSON.stringify(error)}`);
+    }
+    if (!token) {
+      try {
+        await ApiService.loginAppAuthFromSavedCredentials(storage);
+        token = (await storage.getAppAuthAccessToken()).trim();
+      } catch (error) {
+        console.warn('EditNamePage', `restore app auth failed: ${JSON.stringify(error)}`);
+      }
+    }
+    if (!token) return false;
+    try {
+      if (await UserApi.updateAppDisplayName(value)) return true;
+    } catch (error) {
+      console.warn('EditNamePage', `sync nickname failed: ${JSON.stringify(error)}`);
+    }
+    // 令牌可能已失效：恢复一次后重试，仍失败就明确提示未同步。
+    try {
+      await ApiService.loginAppAuthFromSavedCredentials(storage);
+      token = (await storage.getAppAuthAccessToken()).trim();
+      if (token) return await UserApi.updateAppDisplayName(value);
+    } catch (error) {
+      console.warn('EditNamePage', `retry sync nickname failed: ${JSON.stringify(error)}`);
+    }
+    return false;
   }
 
   build() {

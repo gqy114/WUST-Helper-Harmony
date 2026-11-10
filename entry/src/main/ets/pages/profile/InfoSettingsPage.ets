@@ -273,9 +273,15 @@ struct InfoSettingsPage {
     }
   }
 
-  /** 上传裁剪后的本地文件；成功后从 /auth/me 拉取服务端规范头像地址。 */
+  /**
+   * 上传裁剪后的本地文件。
+   *
+   * request.uploadFile 只给任务状态、拿不到响应体，所以“业务是否成功”用
+   * /auth/me 的头像地址确认：地址为空、仍是旧地址都视为失败，保留本地裁剪图。
+   */
   private async uploadAvatar(context: common.UIAbilityContext, localPath: string): Promise<void> {
     const storage = PreferenceStorage.getInstance();
+    const previousAvatar = (await storage.getAvatarUrl()).trim();
     let token = (await storage.getAppAuthAccessToken()).trim();
     if (!token) {
       // 换设备/重装后内存里的应用令牌可能为空，先用已保存的学校凭据恢复一次。
@@ -291,15 +297,20 @@ struct InfoSettingsPage {
       files: [{ filename: fileName, name: 'avatar', uri: `internal://cache/${fileName}`, type: 'image/jpeg' }],
       data: [],
     });
-    await new Promise<void>((resolve, reject) => {
-      task.on('complete', () => resolve());
-      task.on('fail', (states: Array<request.TaskState>) => reject(new Error(JSON.stringify(states))));
+    const states = await new Promise<Array<request.TaskState>>((resolve, reject) => {
+      task.on('complete', (items: Array<request.TaskState>) => resolve(items));
+      task.on('fail', (items: Array<request.TaskState>) => reject(new Error(JSON.stringify(items))));
     });
-    const profile = await UserApi.getAppProfile();
-    if (profile?.avatarUrl) {
-      await storage.setAvatarUrl(profile.avatarUrl);
-      this.avatarUrl = profile.avatarUrl;
+    if (states.length === 0 || states[0].responseCode !== 0) {
+      throw new Error(`avatar upload task failed: ${JSON.stringify(states)}`);
     }
+    const profile = await UserApi.getAppProfile();
+    const updatedAvatar = (profile?.avatarUrl || '').trim();
+    if (!updatedAvatar || updatedAvatar === previousAvatar) {
+      throw new Error('avatar not updated on server');
+    }
+    await storage.setAvatarUrl(updatedAvatar);
+    this.avatarUrl = updatedAvatar;
     promptAction.showToast({ message: '头像已同步', duration: 1200 });
   }
 
