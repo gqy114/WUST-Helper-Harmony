@@ -102,10 +102,12 @@ export class AppStorage {
     const scoped = await this.getStr(scopedKey, '');
     if (scoped) return scoped;
     // 旧版本的全局资料只归属升级后第一个登录的账号，避免被其他账号继承。
-    if (!(await this.getBool('profileScopedMigrated'))) {
+    // 迁移标记按字段区分：头像和昵称要各自迁移，否则先读的字段会把另一个字段“锁死”。
+    const migratedKey = `profileScopedMigrated_${key}`;
+    if (!(await this.getBool(migratedKey))) {
       const legacy = await this.getStr(key, '');
       if (legacy) await this.putStr(scopedKey, legacy);
-      await this.putBool('profileScopedMigrated', true);
+      await this.putBool(migratedKey, true);
       return legacy;
     }
     return '';

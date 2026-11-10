@@ -237,8 +237,16 @@ struct InfoSettingsPage {
     const context = getContext(this) as common.UIAbilityContext;
     const storage = PreferenceStorage.getInstance();
     // 整次操作绑定发起时的账号与会话代次；切号后旧操作的结果一律丢弃。
-    const sessionSid = (await storage.getStudentId()).trim();
+    // 先同步取代次再异步读学号：若两次读取之间切号，代次校验会失败并放弃操作。
     const sessionEpoch = storage.getSessionEpoch();
+    const sessionSid = (await storage.getStudentId()).trim();
+    if (storage.getSessionEpoch() !== sessionEpoch) {
+      console.warn('InfoSettingsPage', 'account changed while reading session, avatar upload cancelled');
+      promptAction.showToast({ message: '账号已切换，本次头像修改已取消', duration: 2000 });
+      this.cropperBusy = false;
+      this.cropImageUri = '';
+      return;
+    }
     const previousAvatar = (await storage.getAvatarUrl()).trim();
     let localPath = '';
     try {
