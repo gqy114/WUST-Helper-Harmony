@@ -14,20 +14,21 @@ const QQ_GROUP_NUMBER = '648599822';
 @Entry
 @Component
 struct QQGroupPage {
-  private copyGroupNumber(): void {
+  private async copyGroupNumber(showResult: boolean = true): Promise<boolean> {
     try {
       const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, QQ_GROUP_NUMBER);
-      pasteboard.getSystemPasteboard().setData(data)
-        .then(() => {
-          promptAction.showToast({ message: `已复制群号 ${QQ_GROUP_NUMBER}`, duration: 1800 });
-        })
-        .catch((error: BusinessError) => {
-          console.warn('QQGroupPage', `copy failed: ${JSON.stringify(error)}`);
-          promptAction.showToast({ message: '复制失败，请手动记录群号', duration: 1800 });
-        });
+      await pasteboard.getSystemPasteboard().setData(data);
+      if (showResult) {
+        promptAction.showToast({ message: `已复制群号 ${QQ_GROUP_NUMBER}`, duration: 1800 });
+      }
+      return true;
     } catch (error) {
-      console.warn('QQGroupPage', `pasteboard unavailable: ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '复制失败，请手动记录群号', duration: 1800 });
+      const businessError = error as BusinessError;
+      console.warn('QQGroupPage', `copy failed: ${JSON.stringify(businessError)}`);
+      if (showResult) {
+        promptAction.showToast({ message: '复制失败，请手动记录群号', duration: 1800 });
+      }
+      return false;
     }
   }
 
@@ -60,8 +61,13 @@ struct QQGroupPage {
     } catch (error) {
       console.warn('QQGroupPage', `startAbility failed: ${JSON.stringify(error)}`);
     }
-    this.copyGroupNumber();
-    promptAction.showToast({ message: '未检测到 QQ，已复制群号，可在 QQ 中搜索加入', duration: 2500 });
+    const copied = await this.copyGroupNumber(false);
+    promptAction.showToast({
+      message: copied
+        ? '未检测到 QQ，已复制群号，可在 QQ 中搜索加入'
+        : '未检测到 QQ，且复制失败，请手动记录群号',
+      duration: 2500
+    });
   }
 
   build() {
