@@ -49,6 +49,23 @@ struct WebPage {
     console.info(TAG, `load url: ${rawUrl}`);
   }
 
+  /** 把 ArkWeb 错误码翻译成人话：证书问题提示得比“错误码 -200”清楚。 */
+  private static errorTextFor(code: number): string {
+    if (code <= -200 && code >= -299) {
+      return '网站证书异常，暂时无法打开';
+    }
+    if (code === -105) {
+      return '域名解析失败，请检查网络';
+    }
+    if (code === -106) {
+      return '网络未连接，请检查网络设置';
+    }
+    if (code === -118 || code === -7) {
+      return '连接超时，请稍后重试';
+    }
+    return `页面加载失败（${code}）`;
+  }
+
   private retry(): void {
     if (!this.pageUrl) return;
     this.loadError = false;
@@ -167,7 +184,7 @@ struct WebPage {
               }
               console.warn(TAG, `web error: ${event?.error?.getErrorCode() ?? 'unknown'} ${event?.error?.getErrorInfo() ?? ''}`);
               this.loading = false;
-              this.errorText = `错误码 ${event?.error?.getErrorCode() ?? '未知'}`;
+              this.errorText = WebPage.errorTextFor(event?.error?.getErrorCode() ?? 0);
               this.loadError = true;
             })
             .onHttpErrorReceive((event) => {

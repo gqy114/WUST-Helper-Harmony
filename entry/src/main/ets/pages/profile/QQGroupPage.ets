@@ -31,21 +31,37 @@ struct QQGroupPage {
     }
   }
 
-  private openQqApp(): void {
+  /**
+   * 优先用 openLink 打开 QQ 的深链（会按 scheme 找到已安装的 QQ），
+   * 再退回隐式 Want；都不行就复制群号并提示手动加入，
+   * 不再出现“点了没反应”的情况。
+   */
+  private async openQqApp(): Promise<void> {
+    const context = getContext(this) as common.UIAbilityContext;
+    const links: string[] = [
+      `mqqapi://card/show_pslcard?src_type=internal&version=1&uin=${QQ_GROUP_NUMBER}&card_type=group&source=qrcode`,
+      'mqq://'
+    ];
+    for (let i = 0; i < links.length; i++) {
+      try {
+        await context.openLink(links[i]);
+        return;
+      } catch (error) {
+        console.warn('QQGroupPage', `openLink failed: ${JSON.stringify(error)}`);
+      }
+    }
     try {
-      const context = getContext(this) as common.UIAbilityContext;
       const want: Want = {
         action: 'ohos.want.action.viewData',
         uri: 'mqq://'
       };
-      context.startAbility(want).catch((error: BusinessError) => {
-        console.warn('QQGroupPage', `open qq failed: ${JSON.stringify(error)}`);
-        promptAction.showToast({ message: '未找到 QQ，请复制群号后手动打开', duration: 2200 });
-      });
+      await context.startAbility(want);
+      return;
     } catch (error) {
       console.warn('QQGroupPage', `startAbility failed: ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '未找到 QQ，请复制群号后手动打开', duration: 2200 });
     }
+    this.copyGroupNumber();
+    promptAction.showToast({ message: '未检测到 QQ，已复制群号，可在 QQ 中搜索加入', duration: 2500 });
   }
 
   build() {
