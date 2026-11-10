@@ -24,6 +24,7 @@ import { UserInfo } from '../../model/UserInfoModel';
 import { HttpRequest } from '../../net/HttpRequest';
 import { CampusWallApi, CampusRedFlowerRank, CampusRedFlowerRanking } from '../../net/CampusWallApi';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
+import { AppVersion } from '../../utils/AppVersion';
 
 const TAG = 'MinePage';
 AppStorage.setOrCreate<number>('profileVersion', 0);
@@ -81,7 +82,7 @@ struct AboutDialog {
     Column() {
       Image($r('app.media.logo')).width(56).height(56).borderRadius(12).margin({ top: 20 })
       Text('武科大助手').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#333333').margin({ top: 10 })
-      Text('v5.2.8').fontSize(13).fontColor('#999999').margin({ top: 4 })
+      Text(AppVersion.label()).fontSize(13).fontColor('#999999').margin({ top: 4 })
       Text('武汉科技大学领航工作室出品').fontSize(12).fontColor('#BBBBBB').margin({ top: 12 })
 
       Text('关闭').fontSize(16).fontColor('#1ec98d').margin({ top: 16, bottom: 12 })
