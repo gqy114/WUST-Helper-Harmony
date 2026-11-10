@@ -31,7 +31,7 @@ test('上传使用应用缓存路径和登录令牌，成功后拉取服务端�
   assert.match(page, /uri: `internal:\/\/cache\/\$\{fileName\}`/, '上传应使用应用沙箱路径');
   assert.match(page, /'Authorization': `Bearer \$\{token\}`/, '上传缺少登录令牌');
   assert.match(page, /UserApi\.getAppProfile\((?:token)?\)/, '上传成功后应刷新账号资料');
-  assert.match(page, /await storage\.setAvatarUrlIfSession\(sessionEpoch, updatedAvatar\)/, '服务端头像地址没有保存');
+  assert.match(page, /await storage\.setAvatarUrlForAccount\(sessionEpoch, sessionSid, updatedAvatar\)/, '服务端头像地址没有保存');
 
   const api = await source(`${root}/net/UserApi.ets`);
   assert.match(api, /\/api\/v1\/auth\/me/, '缺少账号资料接口');
@@ -42,7 +42,7 @@ test('上传失败时恢复原头像，不把本地预览误当成同步成功',
   const page = await source(`${root}/pages/profile/InfoSettingsPage.ets`);
   assert.match(page, /const previousAvatar = \(await storage\.getAvatarUrl\(\)\)\.trim\(\)/, '裁剪前没有记录原头像');
   assert.match(page, /this\.avatarUrl = previousAvatar/, '上传失败没有恢复界面头像');
-  assert.match(page, /await storage\.setAvatarUrlIfSession\(sessionEpoch, previousAvatar\)/, '上传失败没有恢复持久化头像');
+  assert.match(page, /await storage\.setAvatarUrlForAccount\(sessionEpoch, sessionSid, previousAvatar\)/, '上传失败没有恢复持久化头像');
   assert.doesNotMatch(page, /setAvatarUrl\(`file:\/\/\$\{localPath\}`\)/, '上传失败不能持久化本地预览');
   assert.match(page, /头像同步失败，已恢复原头像/, '上传失败缺少明确提示');
 });
@@ -77,10 +77,12 @@ test('账号资料写入串行化：切号期间的旧写入不能覆盖新账�
   const storage = await source(`${root}/store/AppStorage.ts`);
   assert.match(storage, /private commitProfileWrite\(/, '缺少串行提交队列');
   assert.match(storage, /if \(this\.sessionEpoch !== epoch\) return false;/, '队列执行时没有校验会话代次');
-  assert.match(storage, /async setAvatarUrlIfSession\(epoch: number, value: string\): Promise<boolean>/,
+  assert.match(storage, /async setAvatarUrlForAccount\(epoch: number, sid: string, value: string\): Promise<boolean>/,
     '缺少带会话保护的头像写入');
+  assert.match(storage, /private async getProfileValue\(key: string\): Promise<string>/, '资料没有按账号分 key');
+  assert.match(storage, /`avatarUrl_\$\{account\}`/, '头像没有写入发起账号的分账号 key');
   const page = await source(`${root}/pages/profile/InfoSettingsPage.ets`);
-  const writeIndex = page.indexOf('setAvatarUrlIfSession(sessionEpoch, updatedAvatar)');
+  const writeIndex = page.indexOf('setAvatarUrlForAccount(sessionEpoch, sessionSid, updatedAvatar)');
   const toastIndex = page.indexOf("'头像已同步'");
   assert.ok(writeIndex > 0 && toastIndex > writeIndex, '成功提示必须排在最终写入之后');
   assert.match(page, /if \(await this\.isAccountChanged\(storage, sessionSid, sessionEpoch\)\) \{\s*throw new Error\('account changed'\);\s*\}/,

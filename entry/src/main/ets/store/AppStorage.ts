@@ -83,10 +83,37 @@ export class AppStorage {
     await this.kvStore?.flush();
   }
 
-  // ── 账号资料的串行提交 ──
-  // 头像/昵称这类“当前账号资料”的写入串成一条链：切号时 sessionEpoch 同步递增，
-  // 排队中的旧写入执行前会重新校验代次，因此不会覆盖新账号；切号后的写入排在队列后面，
-  // 最终值一定来自最后一次合法写入。
+  // ── 账号资料的分账号存储 + 串行提交 ──
+  //
+  // 头像/昵称按学号分 key 保存：切号期间旧账号的写入只会落到旧账号自己的数据上，
+  // 不会覆盖新账号；当前账号读取时只读自己的 key，旧全局数据只迁移给升级后首个账号。
+  // 写入同时串成一条链（commitProfileWrite），执行前校验 sessionEpoch，
+  // 切号后尚未执行的旧写入直接丢弃。
+
+  private async profileScopedKey(key: string): Promise<string> {
+    const sid = (await this.getStudentId()).trim();
+    return sid ? `${key}_${sid}` : key;
+  }
+
+  private async getProfileValue(key: string): Promise<string> {
+    const sid = (await this.getStudentId()).trim();
+    if (!sid) return this.getStr(key, '');
+    const scopedKey = `${key}_${sid}`;
+    const scoped = await this.getStr(scopedKey, '');
+    if (scoped) return scoped;
+    // 旧版本的全局资料只归属升级后第一个登录的账号，避免被其他账号继承。
+    if (!(await this.getBool('profileScopedMigrated'))) {
+      const legacy = await this.getStr(key, '');
+      if (legacy) await this.putStr(scopedKey, legacy);
+      await this.putBool('profileScopedMigrated', true);
+      return legacy;
+    }
+    return '';
+  }
+
+  private async setProfileValue(key: string, value: string): Promise<void> {
+    await this.putStr(await this.profileScopedKey(key), value);
+  }
 
   private commitProfileWrite(epoch: number, writer: () => Promise<void>): Promise<boolean> {
     const run = this.profileWriteChain.then(async (): Promise<boolean> => {
@@ -98,14 +125,18 @@ export class AppStorage {
     return run;
   }
 
-  /** 仅当会话代次未变时才写入头像；返回是否真的写入。 */
-  async setAvatarUrlIfSession(epoch: number, value: string): Promise<boolean> {
-    return this.commitProfileWrite(epoch, () => this.putStr('avatarUrl', value));
+  /** 仅当会话代次未变时才写入指定账号的头像；返回是否真的写入。 */
+  async setAvatarUrlForAccount(epoch: number, sid: string, value: string): Promise<boolean> {
+    const account = (sid || '').trim();
+    if (!account) return false;
+    return this.commitProfileWrite(epoch, () => this.putStr(`avatarUrl_${account}`, value));
   }
 
-  /** 仅当会话代次未变时才写入昵称；返回是否真的写入。 */
-  async setUserNameIfSession(epoch: number, value: string): Promise<boolean> {
-    return this.commitProfileWrite(epoch, () => this.putStr('userName', value));
+  /** 仅当会话代次未变时才写入指定账号的昵称；返回是否真的写入。 */
+  async setUserNameForAccount(epoch: number, sid: string, value: string): Promise<boolean> {
+    const account = (sid || '').trim();
+    if (!account) return false;
+    return this.commitProfileWrite(epoch, () => this.putStr(`userName_${account}`, value));
   }
 
   private async getBool(key: string, def: boolean = false): Promise<boolean> {
@@ -219,14 +250,14 @@ export class AppStorage {
 
   async getRealName(): Promise<string> { return this.getStr('realName'); }
   async setRealName(v: string): Promise<void> { return this.putStr('realName', v); }
-  async getUserName(): Promise<string> { return this.getStr('userName'); }
-  async setUserName(v: string): Promise<void> { await this.commitProfileWrite(this.sessionEpoch, () => this.putStr('userName', v)); }
+  async getUserName(): Promise<string> { return this.getProfileValue('userName'); }
+  async setUserName(v: string): Promise<void> { await this.setProfileValue('userName', v); }
   async getCollege(): Promise<string> { return this.getStr('college'); }
   async setCollege(v: string): Promise<void> { return this.putStr('college', v); }
   async getMajor(): Promise<string> { return this.getStr('major'); }
   async setMajor(v: string): Promise<void> { return this.putStr('major', v); }
-  async getAvatarUrl(): Promise<string> { return this.getStr('avatarUrl'); }
-  async setAvatarUrl(v: string): Promise<void> { await this.commitProfileWrite(this.sessionEpoch, () => this.putStr('avatarUrl', v)); }
+  async getAvatarUrl(): Promise<string> { return this.getProfileValue('avatarUrl'); }
+  async setAvatarUrl(v: string): Promise<void> { await this.commitProfileWrite(this.sessionEpoch, () => this.setProfileValue('avatarUrl', v)); }
   async getClasses(): Promise<string> { return this.getStr('classes'); }
   async setClasses(v: string): Promise<void> { return this.putStr('classes', v); }
 

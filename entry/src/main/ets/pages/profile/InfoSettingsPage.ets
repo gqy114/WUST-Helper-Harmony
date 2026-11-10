@@ -275,7 +275,7 @@ struct InfoSettingsPage {
       } else {
         // 上传或服务端确认失败时恢复原头像，避免把未同步的本地预览误当成已更新头像。
         this.avatarUrl = previousAvatar;
-        await storage.setAvatarUrlIfSession(sessionEpoch, previousAvatar);
+        await storage.setAvatarUrlForAccount(sessionEpoch, sessionSid, previousAvatar);
         console.warn('InfoSettingsPage', `avatar upload failed: ${JSON.stringify(error)}`);
         promptAction.showToast({ message: '头像同步失败，已恢复原头像', duration: 1800 });
       }
@@ -349,7 +349,7 @@ struct InfoSettingsPage {
     }
     if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
     // 最终写入也走会话队列：切号期间的旧写入会被丢弃，不会覆盖新账号。
-    if (!(await storage.setAvatarUrlIfSession(sessionEpoch, updatedAvatar))) {
+    if (!(await storage.setAvatarUrlForAccount(sessionEpoch, sessionSid, updatedAvatar))) {
       throw new Error('account changed');
     }
     if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) {
