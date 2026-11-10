@@ -2,6 +2,11 @@ import { http } from '@kit.NetworkKit';
 import { image } from '@kit.ImageKit';
 
 /**
+ * 临时失败（断网/超时）只短时间屏蔽，避免恢复网络后整个进程都不再重试。
+ */
+const RETRY_AFTER_MS: number = 30_000;
+
+/**
  * Banner 图片加载器。
  *
  * 后端配置的图床偶尔会出现「HTTP 状态码不是 200，但响应体是完整图片」的情况
@@ -11,14 +16,34 @@ import { image } from '@kit.ImageKit';
  */
 export class BannerImageLoader {
   private static readonly cache: Map<string, image.PixelMap> = new Map();
-  private static readonly failed: Set<string> = new Set();
+  // 记录失败时间而不是永久失败：断网恢复、重新进入首页都应该能重试。
+  private static readonly failedAt: Map<string, number> = new Map();
+
+  /** 重新拉取轮播图时调用，清掉可重试的失败状态（成功的图片缓存保留）。 */
+  static clearFailures(): void {
+    BannerImageLoader.failedAt.clear();
+  }
+
+  private static recentlyFailed(key: string): boolean {
+    const at = BannerImageLoader.failedAt.get(key);
+    if (at === undefined) return false;
+    if (Date.now() - at >= RETRY_AFTER_MS) {
+      BannerImageLoader.failedAt.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  private static markFailed(key: string): void {
+    BannerImageLoader.failedAt.set(key, Date.now());
+  }
 
   static async load(url: string): Promise<image.PixelMap | undefined> {
     const key = (url || '').trim();
     if (!key) return undefined;
     const cached = BannerImageLoader.cache.get(key);
     if (cached) return cached;
-    if (BannerImageLoader.failed.has(key)) return undefined;
+    if (BannerImageLoader.recentlyFailed(key)) return undefined;
     let request: http.HttpRequest | undefined = undefined;
     try {
       request = http.createHttp();
@@ -31,21 +56,22 @@ export class BannerImageLoader {
       });
       const body = response.result as ArrayBuffer;
       if (!body || body.byteLength === 0) {
-        BannerImageLoader.failed.add(key);
+        BannerImageLoader.markFailed(key);
         return undefined;
       }
       const source = image.createImageSource(body);
       const pixelMap = await source.createPixelMap();
       source.release();
       if (!pixelMap) {
-        BannerImageLoader.failed.add(key);
+        BannerImageLoader.markFailed(key);
         return undefined;
       }
+      BannerImageLoader.failedAt.delete(key);
       BannerImageLoader.cache.set(key, pixelMap);
       return pixelMap;
     } catch (error) {
       console.warn('BannerImageLoader', `load banner failed: ${key} ${JSON.stringify(error)}`);
-      BannerImageLoader.failed.add(key);
+      BannerImageLoader.markFailed(key);
       return undefined;
     } finally {
       if (request) request.destroy();

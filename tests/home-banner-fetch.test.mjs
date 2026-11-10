@@ -40,3 +40,13 @@ test('网络加载失败被隐藏后，自行解码成功要重新显示', async
   assert.match(page, /this\.failedBannerKeys = this\.failedBannerKeys\.filter\(\(value: string\) => value !== key\)/,
     '解码成功后没有清除失败标记');
 });
+
+test('断网恢复后可以重试，失败状态有有效期', async () => {
+  const loader = await source(`${root}/utils/BannerImageLoader.ets`);
+  assert.match(loader, /const RETRY_AFTER_MS: number = 30_000;/, '失败没有重试窗口');
+  assert.match(loader, /private static recentlyFailed\(/, '没有按时间判断是否可重试');
+  assert.match(loader, /BannerImageLoader\.failedAt\.delete\(key\)/, '过期或成功后没有清理失败状态');
+  assert.match(loader, /static clearFailures\(\)/, '缺少重新进入页面时的清理入口');
+  const page = await source(`${root}/pages/main/MainPage.ets`);
+  assert.match(page, /BannerImageLoader\.clearFailures\(\)/, '重新拉取轮播图时没有清掉可重试的失败');
+});

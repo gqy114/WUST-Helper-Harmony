@@ -408,6 +408,8 @@ struct MainPage {
     try {
       this.failedBannerKeys = [];
       this.bannerPixels = new Map();
+      // 每次进入首页都允许重新尝试之前失败的图片（断网恢复后不用重启 App）。
+      BannerImageLoader.clearFailures();
       this.homeBanners = await HomeContentApi.banners();
       // 不阻塞公告加载：图片抓取/解码在后台进行，成功后自动替换占位。
       this.loadBannerPixels();
