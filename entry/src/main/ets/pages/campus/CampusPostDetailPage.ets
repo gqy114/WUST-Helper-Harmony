@@ -403,14 +403,15 @@ struct CampusPostDetailPage {
               ForEach(this.post.images || [], (url: string) => {
                 this.postImage(url)
               }, (url: string) => url)
-              Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.End }) {
-                Blank().layoutWeight(1)
+              // 表情标签用换行 Flex 右对齐：不要放 Blank().layoutWeight(1)，
+              // 它在 wrap 容器里会占满整行，把标签挤出屏幕（窄屏尤其明显）。
+              Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.End, alignItems: ItemAlign.Center }) {
                 ForEach(DETAIL_REACTIONS, (option: ReactionOption) => {
                   if (this.reactionsOpen || this.reactionCount(option.type) > 0) {
                     Text(`${option.emoji}${this.reactionCount(option.type) > 0 ? ` ${this.reactionCount(option.type)}` : ''}`)
                       .fontSize(22).fontColor('#655C86').padding({ left: 12, right: 12, top: 7, bottom: 7 })
                       .backgroundColor(this.reactedByMe(option.type) ? '#CDEFE4' : '#ECF8F4').borderRadius(20)
-                      .margin({ left: 7, bottom: 6 }).onClick(() => this.react(option.type))
+                      .margin({ left: 7, bottom: 6 }).maxLines(1).onClick(() => this.react(option.type))
                   }
                 }, (option: ReactionOption) => option.type)
                 if (!this.reactionsOpen) {
