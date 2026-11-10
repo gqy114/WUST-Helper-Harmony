@@ -63,7 +63,18 @@ struct EditNamePage {
       return;
     }
     try {
-      await storage.setUserName(value);
+      // 最终写入也走会话队列：切号期间的旧写入会被丢弃，不会覆盖新账号昵称。
+      if (!(await storage.setUserNameIfSession(session.epoch, value))) {
+        promptAction.showToast({ message: '账号已切换，本次改名已取消', duration: 2000 });
+        this.saving = false;
+        return;
+      }
+      if (await this.isAccountChanged(storage, session)) {
+        // 写入期间切号：写入已按队列落盘到旧账号，不再向新账号提示成功。
+        promptAction.showToast({ message: '账号已切换，本次改名已取消', duration: 2000 });
+        this.saving = false;
+        return;
+      }
       await UserStore.getInstance().restoreFromLocal();
       this.profileVersion = Date.now();
       promptAction.showToast({
