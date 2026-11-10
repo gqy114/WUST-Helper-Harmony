@@ -83,6 +83,31 @@ export class AppStorage {
     await this.kvStore?.flush();
   }
 
+  // ── 账号资料的串行提交 ──
+  // 头像/昵称这类“当前账号资料”的写入串成一条链：切号时 sessionEpoch 同步递增，
+  // 排队中的旧写入执行前会重新校验代次，因此不会覆盖新账号；切号后的写入排在队列后面，
+  // 最终值一定来自最后一次合法写入。
+
+  private commitProfileWrite(epoch: number, writer: () => Promise<void>): Promise<boolean> {
+    const run = this.profileWriteChain.then(async (): Promise<boolean> => {
+      if (this.sessionEpoch !== epoch) return false;
+      await writer();
+      return true;
+    });
+    this.profileWriteChain = run.then((): void => {}, (): void => {});
+    return run;
+  }
+
+  /** 仅当会话代次未变时才写入头像；返回是否真的写入。 */
+  async setAvatarUrlIfSession(epoch: number, value: string): Promise<boolean> {
+    return this.commitProfileWrite(epoch, () => this.putStr('avatarUrl', value));
+  }
+
+  /** 仅当会话代次未变时才写入昵称；返回是否真的写入。 */
+  async setUserNameIfSession(epoch: number, value: string): Promise<boolean> {
+    return this.commitProfileWrite(epoch, () => this.putStr('userName', value));
+  }
+
   private async getBool(key: string, def: boolean = false): Promise<boolean> {
     const raw = await this.kvStore?.get(key, JSON.stringify(def));
     if (raw === undefined) {
@@ -128,6 +153,8 @@ export class AppStorage {
    * 避免把旧账号/旧学期的数据写进当前缓存。
    */
   private sessionEpoch: number = 0;
+  // 账号资料写入的串行链：见 commitProfileWrite。
+  private profileWriteChain: Promise<void> = Promise.resolve();
 
   /** 最近一次课表缓存的写入标记：异步写入者用它判断自己是否仍是最后一次写入。 */
   private courseCacheMarker: string = '';
@@ -193,13 +220,13 @@ export class AppStorage {
   async getRealName(): Promise<string> { return this.getStr('realName'); }
   async setRealName(v: string): Promise<void> { return this.putStr('realName', v); }
   async getUserName(): Promise<string> { return this.getStr('userName'); }
-  async setUserName(v: string): Promise<void> { return this.putStr('userName', v); }
+  async setUserName(v: string): Promise<void> { await this.commitProfileWrite(this.sessionEpoch, () => this.putStr('userName', v)); }
   async getCollege(): Promise<string> { return this.getStr('college'); }
   async setCollege(v: string): Promise<void> { return this.putStr('college', v); }
   async getMajor(): Promise<string> { return this.getStr('major'); }
   async setMajor(v: string): Promise<void> { return this.putStr('major', v); }
   async getAvatarUrl(): Promise<string> { return this.getStr('avatarUrl'); }
-  async setAvatarUrl(v: string): Promise<void> { return this.putStr('avatarUrl', v); }
+  async setAvatarUrl(v: string): Promise<void> { await this.commitProfileWrite(this.sessionEpoch, () => this.putStr('avatarUrl', v)); }
   async getClasses(): Promise<string> { return this.getStr('classes'); }
   async setClasses(v: string): Promise<void> { return this.putStr('classes', v); }
 
