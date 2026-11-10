@@ -48,10 +48,21 @@ struct EditNamePage {
     if (this.saving) return;
     this.saving = true;
     const storage = PreferenceStorage.getInstance();
+    // 先同步取代次，再异步读学号和令牌；读取期间切号就放弃，避免把旧账号输入发给新账号。
+    const sessionEpoch = storage.getSessionEpoch();
+    const sessionSid = (await storage.getStudentId()).trim();
+    const sessionToken = (await storage.getAppAuthAccessToken()).trim();
+    if (storage.getSessionEpoch() !== sessionEpoch ||
+      (await storage.getStudentId()).trim() !== sessionSid) {
+      console.warn('EditNamePage', 'account changed while reading session, nickname save cancelled');
+      promptAction.showToast({ message: '账号已切换，本次改名已取消', duration: 2000 });
+      this.saving = false;
+      return;
+    }
     const session: NicknameSession = {
-      sid: (await storage.getStudentId()).trim(),
-      epoch: storage.getSessionEpoch(),
-      token: (await storage.getAppAuthAccessToken()).trim(),
+      sid: sessionSid,
+      epoch: sessionEpoch,
+      token: sessionToken,
     };
     // 同步只是“尽力而为”：令牌恢复或网络失败都不能阻止本地改名。
     const synced = await this.syncDisplayName(storage, value, session);

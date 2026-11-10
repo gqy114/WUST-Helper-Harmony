@@ -71,3 +71,16 @@ test('昵称写入串行化：切号期间的旧写入不能覆盖新账号', as
   const toastIndex = page.indexOf("'昵称已修改，社区同步生效'");
   assert.ok(writeIndex > 0 && toastIndex > writeIndex, '成功提示必须排在最终写入之后');
 });
+
+test('读取账号信息期间切号：昵称不会发给新账号', async () => {
+  const page = await source(`${root}/pages/profile/EditNamePage.ets`);
+  const epochIndex = page.indexOf('const sessionEpoch = storage.getSessionEpoch();');
+  const sidIndex = page.indexOf('const sessionSid = (await storage.getStudentId()).trim();');
+  const tokenIndex = page.indexOf('const sessionToken = (await storage.getAppAuthAccessToken()).trim();');
+  assert.ok(epochIndex > 0 && sidIndex > epochIndex && tokenIndex > sidIndex, '读取顺序应为代次→学号→令牌');
+  assert.match(page, /account changed while reading session, nickname save cancelled/, '读取期间切号没有放弃');
+  assert.match(page, /if \(storage\.getSessionEpoch\(\) !== sessionEpoch \|\|/, '读取后没有复核会话');
+  const guardIndex = page.indexOf('account changed while reading session, nickname save cancelled');
+  const syncIndex = page.indexOf('const synced = await this.syncDisplayName');
+  assert.ok(guardIndex > 0 && syncIndex > guardIndex, '会话校验必须在同步/写入之前');
+});
