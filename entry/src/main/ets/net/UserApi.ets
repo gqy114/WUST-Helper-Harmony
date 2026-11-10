@@ -141,8 +141,10 @@ export class UserApi {
     return response;
   }
   /** 当前登录账号的应用资料（/api/v1/auth/me）：头像上传后用它拿服务端规范 URL。 */
-  static async getAppProfile(): Promise<AppProfile | null> {
-    const token = (await AppStorage.getInstance().getAppAuthAccessToken()).trim();
+  static async getAppProfile(tokenSnapshot?: string): Promise<AppProfile | null> {
+    const token = tokenSnapshot !== undefined
+      ? tokenSnapshot.trim()
+      : (await AppStorage.getInstance().getAppAuthAccessToken()).trim();
     if (!token) return null;
     const headers: AppProfileHeaders = {
       Authorization: `Bearer ${token}`,

@@ -236,6 +236,9 @@ struct InfoSettingsPage {
     this.cropperBusy = true;
     const context = getContext(this) as common.UIAbilityContext;
     const storage = PreferenceStorage.getInstance();
+    // 整次操作绑定发起时的账号与会话代次；切号后旧操作的结果一律丢弃。
+    const sessionSid = (await storage.getStudentId()).trim();
+    const sessionEpoch = storage.getSessionEpoch();
     const previousAvatar = (await storage.getAvatarUrl()).trim();
     let localPath = '';
     try {
@@ -262,11 +265,20 @@ struct InfoSettingsPage {
     }
 
     try {
-      await this.uploadAvatar(context, localPath);
+      await this.uploadAvatar(context, localPath, sessionSid, sessionEpoch);
     } catch (error) {
-      // 上传或服务端确认失败时恢复原头像，避免把未同步的本地预览误当成已更新头像。
-      this.avatarUrl = previousAvatar;
-      await storage.setAvatarUrl(previousAvatar);
+      const accountChanged = await this.isAccountChanged(storage, sessionSid, sessionEpoch);
+      if (accountChanged) {
+        // 切号后不能把 A 的结果写到 B 的本机状态，也不能提示 B“同步成功/失败”。
+        console.warn('InfoSettingsPage', 'account changed during avatar upload, result discarded');
+        promptAction.showToast({ message: '账号已切换，本次头像修改已取消', duration: 2000 });
+      } else {
+        // 上传或服务端确认失败时恢复原头像，避免把未同步的本地预览误当成已更新头像。
+        this.avatarUrl = previousAvatar;
+        await storage.setAvatarUrlForAccount(sessionEpoch, sessionSid, previousAvatar);
+        console.warn('InfoSettingsPage', `avatar upload failed: ${JSON.stringify(error)}`);
+        promptAction.showToast({ message: '头像同步失败，已恢复原头像', duration: 1800 });
+      }
       try {
         if (localPath && fileIo.accessSync(localPath)) {
           fileIo.unlinkSync(localPath);
@@ -274,13 +286,17 @@ struct InfoSettingsPage {
       } catch (cleanupError) {
         console.warn('InfoSettingsPage', `cleanup avatar failed: ${JSON.stringify(cleanupError)}`);
       }
-      console.warn('InfoSettingsPage', `avatar upload failed: ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '头像同步失败，已恢复原头像', duration: 1800 });
     } finally {
       this.cropperBusy = false;
       this.cropImageUri = '';
       this.resetCrop();
     }
+  }
+
+  /** 账号或会话代次是否已变化（切号后旧操作必须作废）。 */
+  private async isAccountChanged(storage: PreferenceStorage, sid: string, epoch: number): Promise<boolean> {
+    if (storage.getSessionEpoch() !== epoch) return true;
+    return (await storage.getStudentId()).trim() !== sid;
   }
 
   /**
@@ -289,7 +305,8 @@ struct InfoSettingsPage {
    * request.uploadFile 只给任务状态、拿不到响应体，所以“业务是否成功”用
    * /auth/me 的头像地址确认：地址为空、仍是上传前服务端地址都视为失败。
    */
-  private async uploadAvatar(context: common.UIAbilityContext, localPath: string): Promise<void> {
+  private async uploadAvatar(context: common.UIAbilityContext, localPath: string,
+    sessionSid: string, sessionEpoch: number): Promise<void> {
     const storage = PreferenceStorage.getInstance();
     let token = (await storage.getAppAuthAccessToken()).trim();
     if (!token) {
@@ -298,14 +315,17 @@ struct InfoSettingsPage {
       token = (await storage.getAppAuthAccessToken()).trim();
     }
     if (!token) throw new Error('missing app auth token');
+    if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
     // 必须以服务端当前头像为基线。本地缓存可能是上一次失败留下的预览，不能用于判断本次上传成功。
     // 基线读取失败时无法判断“头像是否真的换了”，宁可按失败处理，也不能拿旧头像冒充成功。
-    let profileBeforeUpload = await UserApi.getAppProfile();
+    // 同时固定使用本次会话的令牌，避免切号后拿新账号资料做判断。
+    let profileBeforeUpload = await UserApi.getAppProfile(token);
     if (!profileBeforeUpload) {
-      profileBeforeUpload = await UserApi.getAppProfile();
+      profileBeforeUpload = await UserApi.getAppProfile(token);
     }
     if (!profileBeforeUpload) throw new Error('cannot read avatar baseline');
     const serverAvatarBeforeUpload = (profileBeforeUpload.avatarUrl || '').trim();
+    if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
     const fileName = localPath.substring(localPath.lastIndexOf('/') + 1);
     const task = await request.uploadFile(context, {
       url: 'https://lyzyy.love:8081/api/v1/profile/avatar',
@@ -321,12 +341,20 @@ struct InfoSettingsPage {
     if (states.length === 0 || states[0].responseCode !== 0) {
       throw new Error(`avatar upload task failed: ${JSON.stringify(states)}`);
     }
-    const profile = await UserApi.getAppProfile();
+    if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
+    const profile = await UserApi.getAppProfile(token);
     const updatedAvatar = (profile?.avatarUrl || '').trim();
     if (!updatedAvatar || updatedAvatar === serverAvatarBeforeUpload) {
       throw new Error('avatar not updated on server');
     }
-    await storage.setAvatarUrl(updatedAvatar);
+    if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
+    // 最终写入也走会话队列：切号期间的旧写入会被丢弃，不会覆盖新账号。
+    if (!(await storage.setAvatarUrlForAccount(sessionEpoch, sessionSid, updatedAvatar))) {
+      throw new Error('account changed');
+    }
+    if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) {
+      throw new Error('account changed');
+    }
     this.avatarUrl = updatedAvatar;
     promptAction.showToast({ message: '头像已同步', duration: 1200 });
   }

@@ -64,7 +64,7 @@ struct EditNamePage {
     }
     try {
       // 最终写入也走会话队列：切号期间的旧写入会被丢弃，不会覆盖新账号昵称。
-      if (!(await storage.setUserNameIfSession(session.epoch, value))) {
+      if (!(await storage.setUserNameForAccount(session.epoch, session.sid, value))) {
         promptAction.showToast({ message: '账号已切换，本次改名已取消', duration: 2000 });
         this.saving = false;
         return;

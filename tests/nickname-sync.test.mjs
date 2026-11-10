@@ -11,7 +11,7 @@ test('修改昵称会调用服务端接口，而不是只写本地', async () =>
   assert.match(page, /UserApi\.updateAppDisplayName\(value, token\)/, '没有调用服务端修改昵称');
   // 本地保存排在同步调用之后，避免服务端失败时本地先覆盖。
   const syncIndex = page.indexOf('const synced = await this.syncDisplayName');
-  const localIndex = page.indexOf('await storage.setUserNameIfSession(session.epoch, value)');
+  const localIndex = page.indexOf('await storage.setUserNameForAccount(session.epoch, session.sid, value)');
   assert.ok(syncIndex > 0 && localIndex > syncIndex, '应先同步服务端再保存本地');
   assert.match(page, /已保存到本机，服务器同步失败/, '服务端失败时要明确提示未同步');
 });
@@ -33,7 +33,7 @@ test('令牌恢复失败也要保存本地昵称，并明确提示未同步', as
   const page = await source(`${root}/pages/profile/EditNamePage.ets`);
   assert.match(page, /private async syncDisplayName\(/, '缺少独立的同步方法');
   const syncCall = page.indexOf('const synced = await this.syncDisplayName');
-  const localSave = page.indexOf('await storage.setUserNameIfSession(session.epoch, value)');
+  const localSave = page.indexOf('await storage.setUserNameForAccount(session.epoch, session.sid, value)');
   assert.ok(syncCall > 0 && localSave > syncCall, '本地保存不能被同步失败挡住');
   assert.match(page, /本地保存失败，请重试/, '本地保存失败要有单独提示');
   const syncBody = page.slice(page.indexOf('private async syncDisplayName'), page.indexOf('build()'));
@@ -61,12 +61,13 @@ test('昵称写入串行化：切号期间的旧写入不能覆盖新账号', as
   const storage = await source(`${root}/store/AppStorage.ts`);
   assert.match(storage, /private commitProfileWrite\(/, '缺少串行提交队列');
   assert.match(storage, /if \(this\.sessionEpoch !== epoch\) return false;/, '队列执行时没有校验会话代次');
-  assert.match(storage, /async setUserNameIfSession\(epoch: number, value: string\): Promise<boolean>/,
+  assert.match(storage, /async setUserNameForAccount\(epoch: number, sid: string, value: string\): Promise<boolean>/,
     '缺少带会话保护的昵称写入');
+  assert.match(storage, /`userName_\$\{account\}`/, '昵称没有写入发起账号的分账号 key');
   const page = await source(`${root}/pages/profile/EditNamePage.ets`);
-  assert.match(page, /if \(!\(await storage\.setUserNameIfSession\(session\.epoch, value\)\)\)/,
+  assert.match(page, /if \(!\(await storage\.setUserNameForAccount\(session\.epoch, session\.sid, value\)\)\)/,
     '本地昵称没有使用会话保护的写入');
-  const writeIndex = page.indexOf('setUserNameIfSession(session.epoch, value)');
+  const writeIndex = page.indexOf('setUserNameForAccount(session.epoch, session.sid, value)');
   const toastIndex = page.indexOf("'昵称已修改，社区同步生效'");
   assert.ok(writeIndex > 0 && toastIndex > writeIndex, '成功提示必须排在最终写入之后');
 });
