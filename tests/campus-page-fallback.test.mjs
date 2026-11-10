@@ -17,6 +17,19 @@ test('校园资讯加载失败、HTTP 错误和超时都有可见兜底', async 
   assert.match(code, /Button\('重新加载'\)/, '兜底页缺少重试入口');
 });
 
+test('加载结束后校验实际页面内容，不能把空白页当作成功', async () => {
+  const code = await source();
+
+  assert.match(code, /\.onPageEnd\(\(\) => \{\s*this\.scheduleContentCheck\(\);\s*\}\)/,
+    'onPageEnd 没有触发页面内容校验');
+  assert.match(code, /this\.controller\.runJavaScript\(script\)/,
+    '缺少 WebView DOM 内容检查');
+  assert.match(code, /contentScore < MIN_CONTENT_SCORE/,
+    '空页面没有切换到失败兜底');
+  assert.doesNotMatch(code, /\.onPageEnd\(\(\) => \{\s*this\.clearLoadTimer\(\);\s*this\.loading = false;/,
+    'onPageEnd 仍在未校验内容时直接标记成功');
+});
+
 test('兜底页保留常用校园服务入口', async () => {
   const code = await source();
   const routes = [

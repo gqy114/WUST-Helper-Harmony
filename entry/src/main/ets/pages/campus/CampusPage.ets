@@ -4,6 +4,8 @@ import webview from '@ohos.web.webview';
 const TAG = 'CampusPage';
 const CAMPUS_NEWS_URL = 'https://news.wustlinghang.cn';
 const LOAD_TIMEOUT_MS = 12_000;
+const CONTENT_CHECK_DELAY_MS = 1_000;
+const MIN_CONTENT_SCORE = 20;
 
 interface CampusShortcut {
   title: string;
@@ -46,6 +48,7 @@ export struct CampusPage {
   @State private errorText: string = '';
   private controller: webview.WebviewController = new webview.WebviewController();
   private loadTimer: number = -1;
+  private contentCheckTimer: number = -1;
 
   aboutToAppear(): void {
     // Some WebView failures do not deliver an error callback on every device.
@@ -55,6 +58,7 @@ export struct CampusPage {
 
   aboutToDisappear(): void {
     this.clearLoadTimer();
+    this.clearContentCheckTimer();
   }
 
   private clearLoadTimer(): void {
@@ -77,7 +81,56 @@ export struct CampusPage {
     }, LOAD_TIMEOUT_MS);
   }
 
+  private clearContentCheckTimer(): void {
+    if (this.contentCheckTimer !== -1) {
+      clearTimeout(this.contentCheckTimer);
+      this.contentCheckTimer = -1;
+    }
+  }
+
+  /**
+   * onPageEnd 只表示导航结束，证书错误页、HTTP 空响应和 about:blank 也可能触发。
+   * 延迟检查实际 DOM 内容，避免把空页面误判为加载成功。
+   */
+  private scheduleContentCheck(): void {
+    this.clearContentCheckTimer();
+    this.contentCheckTimer = setTimeout(() => {
+      this.contentCheckTimer = -1;
+      this.verifyCampusContent();
+    }, CONTENT_CHECK_DELAY_MS);
+  }
+
+  private verifyCampusContent(): void {
+    try {
+      const script = `document.body ?
+        (document.body.innerText.trim().length +
+        document.body.getElementsByTagName('img').length * 20 +
+        document.body.getElementsByTagName('a').length * 10) : 0`;
+      this.controller.runJavaScript(script)
+        .then((result: string) => {
+          const contentScore = parseInt(result, 10);
+          if (isNaN(contentScore) || contentScore < MIN_CONTENT_SCORE) {
+            console.warn(TAG, `campus news page is empty, score=${result}`);
+            this.showLoadError('校园资讯服务返回了空白页面');
+            return;
+          }
+          this.clearLoadTimer();
+          this.loading = false;
+          this.loadError = false;
+          this.errorText = '';
+        })
+        .catch((error: Error) => {
+          console.warn(TAG, `verify campus content failed: ${error.message}`);
+          this.showLoadError('校园资讯页面校验失败');
+        });
+    } catch (error) {
+      console.warn(TAG, `run campus content check failed: ${JSON.stringify(error)}`);
+      this.showLoadError('校园资讯页面校验失败');
+    }
+  }
+
   private retry(): void {
+    this.clearContentCheckTimer();
     this.loading = true;
     this.loadError = false;
     this.errorText = '';
@@ -92,6 +145,7 @@ export struct CampusPage {
 
   private showLoadError(message: string): void {
     this.clearLoadTimer();
+    this.clearContentCheckTimer();
     this.loading = false;
     this.errorText = message;
     this.loadError = true;
@@ -215,14 +269,14 @@ export struct CampusPage {
           .domStorageAccess(true)
           .cacheMode(CacheMode.Default)
           .onPageBegin(() => {
+            this.clearContentCheckTimer();
             this.loading = true;
             this.loadError = false;
             this.errorText = '';
             this.startLoadTimer();
           })
           .onPageEnd(() => {
-            this.clearLoadTimer();
-            this.loading = false;
+            this.scheduleContentCheck();
           })
           .onErrorReceive((event) => {
             const mainFrame = event?.request?.isMainFrame();
