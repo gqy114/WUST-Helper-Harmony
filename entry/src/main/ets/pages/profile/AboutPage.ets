@@ -1,4 +1,5 @@
 import { promptAction, router } from '@kit.ArkUI';
+import { AppVersion } from '../../utils/AppVersion';
 
 @Entry
 @Component
@@ -39,7 +40,7 @@ struct AboutPage {
               .fontWeight(FontWeight.Bold)
               .fontColor('#333333');
 
-            Text('v5.3.0.172')
+            Text(AppVersion.label())
               .fontSize(18)
               .fontColor('#666666')
               .margin({ top: 8 });
