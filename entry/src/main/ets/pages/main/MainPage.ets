@@ -15,6 +15,8 @@ import { ApiService } from '../../net/ApiService';
 import { promptAction } from '@kit.ArkUI';
 import router from '@ohos.router';
 import { HomeBanner, HomeContentApi, HomeNotice } from '../../net/HomeContentApi';
+import { BannerImageLoader } from '../../utils/BannerImageLoader';
+import { image } from '@kit.ImageKit';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
 import { CampusWallApi, CampusWallPost } from '../../net/CampusWallApi';
 
@@ -105,6 +107,8 @@ struct MainPage {
   @State private homeBanners: HomeBanner[] = [];
   // 图片加载失败的 banner 不再渲染：后端配了失效/防盗链图片时，避免整块空白。
   @State private failedBannerKeys: string[] = [];
+  // 自己抓取解码后的 banner 图：状态码异常但响应体是图片时也能显示。
+  @State private bannerPixels: Map<string, image.PixelMap> = new Map();
   @State private homeNoticeText: string = '公告：欢迎使用武科大助手，随时随地开启校园之旅';
   @State private campusWallUnread: number = 0;
   @State private campusLostUnread: number = 0;
@@ -367,10 +371,38 @@ struct MainPage {
     this.failedBannerKeys = this.failedBannerKeys.concat([key]);
   }
 
+  private bannerPixel(banner: HomeBanner): image.PixelMap | undefined {
+    return this.bannerPixels.get(this.bannerKey(banner));
+  }
+
+  /** 优先用自行解码的图片，没有时退回网络 URL（由 onError 兜底）。 */
+  private bannerSource(banner: HomeBanner): image.PixelMap | string {
+    const pixel = this.bannerPixel(banner);
+    if (pixel) return pixel;
+    return banner.imageUrl;
+  }
+
+  /** 逐张抓取 banner 图片字节并解码，成功后替换 Image 的网络加载。 */
+  private async loadBannerPixels(): Promise<void> {
+    const banners = this.homeBanners;
+    for (let i = 0; i < banners.length; i++) {
+      const banner = banners[i];
+      if (this.bannerPixels.has(this.bannerKey(banner))) continue;
+      const pixel = await BannerImageLoader.load(banner.imageUrl);
+      if (!pixel) continue;
+      const next = new Map<string, image.PixelMap>(this.bannerPixels);
+      next.set(this.bannerKey(banner), pixel);
+      this.bannerPixels = next;
+    }
+  }
+
   private async loadHomeContent(): Promise<void> {
     try {
       this.failedBannerKeys = [];
+      this.bannerPixels = new Map();
       this.homeBanners = await HomeContentApi.banners();
+      // 不阻塞公告加载：图片抓取/解码在后台进行，成功后自动替换占位。
+      this.loadBannerPixels();
     } catch (error) {
       console.warn(TAG, `load home banners failed: ${JSON.stringify(error)}`);
     }
@@ -639,8 +671,19 @@ struct MainPage {
         Swiper() {
           if (this.visibleBanners().length > 0) {
             ForEach(this.visibleBanners(), (banner: HomeBanner) => {
-              Image(banner.imageUrl).width('100%').height('100%').objectFit(ImageFit.Cover)
-                .onError(() => this.markBannerFailed(banner))
+              // 渐变垫底：图片加载过程中或失败后都不会出现整块白。
+              Stack() {
+                Row() {
+                  Column() {
+                    Text('武科大助手').fontSize(24).fontWeight(FontWeight.Bold).fontColor(Color.White)
+                    Text('校园生活 一手掌握').fontSize(14).fontColor('#FFFFFF').opacity(0.8).margin({ top: 6 })
+                  }.alignItems(HorizontalAlign.Start)
+                  Blank()
+                }.padding(20).width('100%').height('100%').alignItems(VerticalAlign.Center)
+                  .linearGradient({ angle: 135, colors: [['#667eea', 0], ['#764ba2', 1]] })
+                Image(this.bannerSource(banner)).width('100%').height('100%').objectFit(ImageFit.Cover)
+                  .onError(() => this.markBannerFailed(banner))
+              }.width('100%').height('100%')
             }, (banner: HomeBanner, index: number) => this.bannerKey(banner))
           } else {
             Row() {
