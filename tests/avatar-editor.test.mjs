@@ -53,10 +53,3 @@ test('上传后必须确认服务端头像已更新，否则按失败处理', as
   assert.match(page, /updatedAvatar === serverAvatarBeforeUpload/, '没有按服务端旧头像确认是否变化');
   assert.match(page, /avatar not updated on server/, '未更新时没有按失败处理');
 });
-test('上传后必须确认服务端头像已更新，否则按失败处理', async () => {
-  const page = await source(`${root}/pages/profile/InfoSettingsPage.ets`);
-  assert.match(page, /states\[0\]\.responseCode !== 0/, '没有校验上传任务结果');
-  assert.match(page, /const previousAvatar = \(await storage\.getAvatarUrl\(\)\)\.trim\(\)/, '没有记录旧头像地址');
-  assert.match(page, /updatedAvatar === previousAvatar/, '没有确认服务端头像已变化');
-  assert.match(page, /avatar not updated on server/, '未更新时没有按失败处理');
-});
