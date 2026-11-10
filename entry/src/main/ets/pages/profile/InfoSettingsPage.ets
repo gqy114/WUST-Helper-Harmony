@@ -235,6 +235,8 @@ struct InfoSettingsPage {
     if (!this.cropImageUri || this.cropperBusy) return;
     this.cropperBusy = true;
     const context = getContext(this) as common.UIAbilityContext;
+    const storage = PreferenceStorage.getInstance();
+    const previousAvatar = (await storage.getAvatarUrl()).trim();
     let localPath = '';
     try {
       // 先把裁剪框当前画面（含缩放/平移/旋转）截图，再关闭编辑器。
@@ -262,10 +264,18 @@ struct InfoSettingsPage {
     try {
       await this.uploadAvatar(context, localPath);
     } catch (error) {
-      // 网络失败时保留本地裁剪结果，避免用户以为没换成功。
-      await PreferenceStorage.getInstance().setAvatarUrl(`file://${localPath}`);
+      // 上传或服务端确认失败时恢复原头像，避免把未同步的本地预览误当成已更新头像。
+      this.avatarUrl = previousAvatar;
+      await storage.setAvatarUrl(previousAvatar);
+      try {
+        if (localPath && fileIo.accessSync(localPath)) {
+          fileIo.unlinkSync(localPath);
+        }
+      } catch (cleanupError) {
+        console.warn('InfoSettingsPage', `cleanup avatar failed: ${JSON.stringify(cleanupError)}`);
+      }
       console.warn('InfoSettingsPage', `avatar upload failed: ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '头像已更新，服务器同步失败', duration: 1800 });
+      promptAction.showToast({ message: '头像同步失败，已恢复原头像', duration: 1800 });
     } finally {
       this.cropperBusy = false;
       this.cropImageUri = '';
@@ -277,11 +287,10 @@ struct InfoSettingsPage {
    * 上传裁剪后的本地文件。
    *
    * request.uploadFile 只给任务状态、拿不到响应体，所以“业务是否成功”用
-   * /auth/me 的头像地址确认：地址为空、仍是旧地址都视为失败，保留本地裁剪图。
+   * /auth/me 的头像地址确认：地址为空、仍是上传前服务端地址都视为失败。
    */
   private async uploadAvatar(context: common.UIAbilityContext, localPath: string): Promise<void> {
     const storage = PreferenceStorage.getInstance();
-    const previousAvatar = (await storage.getAvatarUrl()).trim();
     let token = (await storage.getAppAuthAccessToken()).trim();
     if (!token) {
       // 换设备/重装后内存里的应用令牌可能为空，先用已保存的学校凭据恢复一次。
@@ -289,6 +298,9 @@ struct InfoSettingsPage {
       token = (await storage.getAppAuthAccessToken()).trim();
     }
     if (!token) throw new Error('missing app auth token');
+    // 必须以服务端当前头像为基线。本地缓存可能是上一次失败留下的预览，不能用于判断本次上传成功。
+    const profileBeforeUpload = await UserApi.getAppProfile();
+    const serverAvatarBeforeUpload = (profileBeforeUpload?.avatarUrl || '').trim();
     const fileName = localPath.substring(localPath.lastIndexOf('/') + 1);
     const task = await request.uploadFile(context, {
       url: 'https://lyzyy.love:8081/api/v1/profile/avatar',
@@ -306,7 +318,7 @@ struct InfoSettingsPage {
     }
     const profile = await UserApi.getAppProfile();
     const updatedAvatar = (profile?.avatarUrl || '').trim();
-    if (!updatedAvatar || updatedAvatar === previousAvatar) {
+    if (!updatedAvatar || updatedAvatar === serverAvatarBeforeUpload) {
       throw new Error('avatar not updated on server');
     }
     await storage.setAvatarUrl(updatedAvatar);
