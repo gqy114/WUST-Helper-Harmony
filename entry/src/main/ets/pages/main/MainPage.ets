@@ -360,8 +360,11 @@ struct MainPage {
   /** 只返回图片可用的 banner；全部失败时由 Swiper 显示默认渐变占位。 */
   private visibleBanners(): HomeBanner[] {
     if (this.failedBannerKeys.length === 0) return this.homeBanners;
-    return this.homeBanners.filter((banner: HomeBanner) =>
-      this.failedBannerKeys.indexOf(this.bannerKey(banner)) < 0);
+    return this.homeBanners.filter((banner: HomeBanner) => {
+      const key = this.bannerKey(banner);
+      // 网络加载失败过，但自行下载解码成功：仍然显示，不能一直隐藏。
+      return this.failedBannerKeys.indexOf(key) < 0 || this.bannerPixels.has(key);
+    });
   }
 
   private markBannerFailed(banner: HomeBanner): void {
@@ -387,12 +390,17 @@ struct MainPage {
     const banners = this.homeBanners;
     for (let i = 0; i < banners.length; i++) {
       const banner = banners[i];
-      if (this.bannerPixels.has(this.bannerKey(banner))) continue;
+      const key = this.bannerKey(banner);
+      if (this.bannerPixels.has(key)) continue;
       const pixel = await BannerImageLoader.load(banner.imageUrl);
       if (!pixel) continue;
       const next = new Map<string, image.PixelMap>(this.bannerPixels);
-      next.set(this.bannerKey(banner), pixel);
+      next.set(key, pixel);
       this.bannerPixels = next;
+      // 之前网络加载失败被隐藏的 banner，解码成功后要重新显示。
+      if (this.failedBannerKeys.indexOf(key) >= 0) {
+        this.failedBannerKeys = this.failedBannerKeys.filter((value: string) => value !== key);
+      }
     }
   }
 

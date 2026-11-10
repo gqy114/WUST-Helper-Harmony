@@ -32,3 +32,11 @@ test('图片解码结果按 banner key 缓存并触发刷新', async () => {
   assert.match(page, /this\.bannerPixels = next;/, '更新后没有触发界面刷新');
   assert.match(page, /new Map<string, image\.PixelMap>\(this\.bannerPixels\)/, '没有基于旧值复制避免原地修改');
 });
+
+test('网络加载失败被隐藏后，自行解码成功要重新显示', async () => {
+  const page = await source(`${root}/pages/main/MainPage.ets`);
+  assert.match(page, /this\.failedBannerKeys\.indexOf\(key\) < 0 \|\| this\.bannerPixels\.has\(key\)/,
+    'visibleBanners 没有放行已解码成功的 banner');
+  assert.match(page, /this\.failedBannerKeys = this\.failedBannerKeys\.filter\(\(value: string\) => value !== key\)/,
+    '解码成功后没有清除失败标记');
+});
