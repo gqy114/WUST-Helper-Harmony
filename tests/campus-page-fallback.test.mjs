@@ -49,3 +49,15 @@ test('校园页不绕过 HTTPS 证书校验', async () => {
   assert.doesNotMatch(code, /onSslErrorEventReceive|handleConfirm\s*\(/,
     '不应通过忽略证书错误加载校园资讯');
 });
+
+test('已经报错的导航，错误页有文字也不算加载成功', async () => {
+  const code = await source();
+
+  assert.match(code, /private navigationError: boolean = false;/, '缺少本次导航空错误标记');
+  assert.match(code, /if \(this\.navigationError\) \{[\s\S]*?navigation failed[\s\S]*?return;/,
+    '内容校验没有先判断本次导航是否报错');
+  assert.match(code, /this\.navigationError = true;/,
+    '收到主文档错误时没有记录');
+  assert.match(code, /\.onPageBegin\(\(\) => \{[\s\S]*?this\.navigationError = false;/,
+    '新导航开始时没有重置错误标记');
+});

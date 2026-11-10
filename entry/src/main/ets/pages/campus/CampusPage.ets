@@ -49,6 +49,8 @@ export struct CampusPage {
   private controller: webview.WebviewController = new webview.WebviewController();
   private loadTimer: number = -1;
   private contentCheckTimer: number = -1;
+  // 本次导航是否报过错：错误页也可能有文字，不能据此判定加载成功。
+  private navigationError: boolean = false;
 
   aboutToAppear(): void {
     // Some WebView failures do not deliver an error callback on every device.
@@ -114,6 +116,12 @@ export struct CampusPage {
             this.showLoadError('校园资讯服务返回了空白页面');
             return;
           }
+          if (this.navigationError) {
+            // 本次导航已经报错（证书错误/HTTP 错误）：错误页本身也可能有文字，
+            // 不能因为“页面有内容”就把错误提示清掉。
+            console.warn(TAG, 'campus news page has content but navigation failed');
+            return;
+          }
           this.clearLoadTimer();
           this.loading = false;
           this.loadError = false;
@@ -131,6 +139,7 @@ export struct CampusPage {
 
   private retry(): void {
     this.clearContentCheckTimer();
+    this.navigationError = false;
     this.loading = true;
     this.loadError = false;
     this.errorText = '';
@@ -269,6 +278,7 @@ export struct CampusPage {
           .domStorageAccess(true)
           .cacheMode(CacheMode.Default)
           .onPageBegin(() => {
+            this.navigationError = false;
             this.clearContentCheckTimer();
             this.loading = true;
             this.loadError = false;
@@ -285,6 +295,7 @@ export struct CampusPage {
             }
             const code = event?.error?.getErrorCode() ?? '未知';
             console.warn(TAG, `campus news web error: ${code} ${event?.error?.getErrorInfo() ?? ''}`);
+            this.navigationError = true;
             this.showLoadError(`校园资讯加载失败（错误码 ${code}）`);
           })
           .onHttpErrorReceive((event) => {
@@ -295,6 +306,7 @@ export struct CampusPage {
             const code = event?.response?.getResponseCode() ?? 0;
             if (code >= 400) {
               console.warn(TAG, `campus news http error: ${code}`);
+              this.navigationError = true;
               this.showLoadError(`校园资讯服务器返回 ${code}`);
             }
           })
