@@ -30,12 +30,12 @@ test('上传使用应用缓存路径和登录令牌，成功后拉取服务端�
   const page = await source(`${root}/pages/profile/InfoSettingsPage.ets`);
   assert.match(page, /uri: `internal:\/\/cache\/\$\{fileName\}`/, '上传应使用应用沙箱路径');
   assert.match(page, /'Authorization': `Bearer \$\{token\}`/, '上传缺少登录令牌');
-  assert.match(page, /UserApi\.getAppProfile\(\)/, '上传成功后应刷新账号资料');
+  assert.match(page, /UserApi\.getAppProfile\((?:token)?\)/, '上传成功后应刷新账号资料');
   assert.match(page, /await storage\.setAvatarUrl\(updatedAvatar\)/, '服务端头像地址没有保存');
 
   const api = await source(`${root}/net/UserApi.ets`);
   assert.match(api, /\/api\/v1\/auth\/me/, '缺少账号资料接口');
-  assert.match(api, /static async getAppProfile\(\): Promise<AppProfile \| null>/, '缺少 getAppProfile');
+  assert.match(api, /static async getAppProfile\(tokenSnapshot\?: string\): Promise<AppProfile \| null>/, '缺少 getAppProfile');
 });
 
 test('上传失败时恢复原头像，不把本地预览误当成同步成功', async () => {
@@ -49,7 +49,7 @@ test('上传失败时恢复原头像，不把本地预览误当成同步成功',
 test('上传后必须确认服务端头像已更新，否则按失败处理', async () => {
   const page = await source(`${root}/pages/profile/InfoSettingsPage.ets`);
   assert.match(page, /states\[0\]\.responseCode !== 0/, '没有校验上传任务结果');
-  assert.match(page, /(?:const|let) profileBeforeUpload = await UserApi\.getAppProfile\(\)/, '上传前没有获取服务端头像基线');
+  assert.match(page, /(?:const|let) profileBeforeUpload = await UserApi\.getAppProfile\(token\)/, '上传前没有获取服务端头像基线');
   assert.match(page, /updatedAvatar === serverAvatarBeforeUpload/, '没有按服务端旧头像确认是否变化');
   assert.match(page, /avatar not updated on server/, '未更新时没有按失败处理');
 });
@@ -57,6 +57,18 @@ test('上传后必须确认服务端头像已更新，否则按失败处理', as
 test('上传前读不到服务端头像时按失败处理，不能冒成功', async () => {
   const page = await source(`${root}/pages/profile/InfoSettingsPage.ets`);
   assert.match(page, /if \(!profileBeforeUpload\) throw new Error\('cannot read avatar baseline'\)/, '基线缺失时没有按失败处理');
-  const baselineReads = page.match(/await UserApi\.getAppProfile\(\)/g) || [];
+  const baselineReads = page.match(/await UserApi\.getAppProfile\(token\)/g) || [];
   assert.ok(baselineReads.length >= 2, '基线读取失败时应当重试一次');
+});
+
+test('头像上传绑定账号会话，切号后不写入新账号', async () => {
+  const page = await source(`${root}/pages/profile/InfoSettingsPage.ets`);
+  assert.match(page, /const sessionSid = \(await storage\.getStudentId\(\)\)\.trim\(\)/, '没有固定发起操作的学号');
+  assert.match(page, /private async isAccountChanged\(storage: PreferenceStorage, sid: string, epoch: number\)/,
+    '缺少统一的账号变化判断');
+  assert.match(page, /账号已切换，本次头像修改已取消/, '切号后没有明确提示');
+  assert.match(page, /throw new Error\('account changed'\)/, '切号后没有中止旧操作');
+  const beforeRead = page.indexOf('const sessionSid = (await storage.getStudentId())');
+  const baselineRead = page.indexOf('UserApi.getAppProfile(token)');
+  assert.ok(beforeRead > 0 && baselineRead > beforeRead, '资料查询应在会话快照之后');
 });
