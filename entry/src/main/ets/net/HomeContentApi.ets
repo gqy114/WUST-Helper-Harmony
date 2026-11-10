@@ -40,7 +40,12 @@ export class HomeContentApi {
   private static readonly CACHE_TTL_MS: number = 60_000;
 
   private static fullImageUrl(url: string): string {
-    if (!url || url.startsWith('http') || url.startsWith('file:') || url.startsWith('data:')) return url;
+    if (!url) return url;
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('file:') || url.startsWith('data:')) {
+      return url;
+    }
+    // 协议相对地址（//host/path）要补 https，不能直接拼到本站域名后面。
+    if (url.startsWith('//')) return `https:${url}`;
     return `https://lyzyy.love${url.startsWith('/') ? '' : '/'}${url}`;
   }
 

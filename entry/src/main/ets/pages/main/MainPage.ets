@@ -103,6 +103,8 @@ struct MainPage {
   @State private showCampusTab: boolean = true;
   @State private visibleToolTitles: string[] = [];
   @State private homeBanners: HomeBanner[] = [];
+  // 图片加载失败的 banner 不再渲染：后端配了失效/防盗链图片时，避免整块空白。
+  @State private failedBannerKeys: string[] = [];
   @State private homeNoticeText: string = '公告：欢迎使用武科大助手，随时随地开启校园之旅';
   @State private campusWallUnread: number = 0;
   @State private campusLostUnread: number = 0;
@@ -347,8 +349,27 @@ struct MainPage {
     } catch { this.visibleToolTitles = defaults; }
   }
 
+  private bannerKey(banner: HomeBanner): string {
+    return `${banner.id || 0}-${banner.imageUrl}`;
+  }
+
+  /** 只返回图片可用的 banner；全部失败时由 Swiper 显示默认渐变占位。 */
+  private visibleBanners(): HomeBanner[] {
+    if (this.failedBannerKeys.length === 0) return this.homeBanners;
+    return this.homeBanners.filter((banner: HomeBanner) =>
+      this.failedBannerKeys.indexOf(this.bannerKey(banner)) < 0);
+  }
+
+  private markBannerFailed(banner: HomeBanner): void {
+    const key = this.bannerKey(banner);
+    if (this.failedBannerKeys.indexOf(key) >= 0) return;
+    console.warn(TAG, `banner image load failed: ${banner.imageUrl}`);
+    this.failedBannerKeys = this.failedBannerKeys.concat([key]);
+  }
+
   private async loadHomeContent(): Promise<void> {
     try {
+      this.failedBannerKeys = [];
       this.homeBanners = await HomeContentApi.banners();
     } catch (error) {
       console.warn(TAG, `load home banners failed: ${JSON.stringify(error)}`);
@@ -616,10 +637,11 @@ struct MainPage {
 
         // ── Banner ──
         Swiper() {
-          if (this.homeBanners.length > 0) {
-            ForEach(this.homeBanners, (banner: HomeBanner) => {
+          if (this.visibleBanners().length > 0) {
+            ForEach(this.visibleBanners(), (banner: HomeBanner) => {
               Image(banner.imageUrl).width('100%').height('100%').objectFit(ImageFit.Cover)
-            }, (banner: HomeBanner, index: number) => `${banner.id || index}-${banner.imageUrl}`)
+                .onError(() => this.markBannerFailed(banner))
+            }, (banner: HomeBanner, index: number) => this.bannerKey(banner))
           } else {
             Row() {
               Column() {
@@ -633,9 +655,9 @@ struct MainPage {
         }
         .width('100%')
         .height(150)
-        .autoPlay(this.homeBanners.length > 1)
+        .autoPlay(this.visibleBanners().length > 1)
         .interval(4500)
-        .loop(this.homeBanners.length > 1)
+        .loop(this.visibleBanners().length > 1)
         .borderRadius(16)
         .clip(true)
         .margin({ left: 16, right: 16 })
