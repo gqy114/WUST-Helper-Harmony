@@ -611,6 +611,12 @@ struct MainPage {
       .height('100%')
       .onChange((index: number) => {
         this.currentTab = index;
+        // 底部 Tab 切回首页时，补一次失败轮播图重试（页面不会重新走 onPageShow）。
+        if (index === TabIndex.HOME && this.homeBanners.length > 0 &&
+          this.homeBanners.some((banner: HomeBanner) => !this.bannerPixels.has(this.bannerKey(banner)))) {
+          BannerImageLoader.clearFailures();
+          this.loadBannerPixels();
+        }
       })
       if (this.currentTab === TabIndex.HOME && this.showCampusCat) {
         Image(this.catGirl
