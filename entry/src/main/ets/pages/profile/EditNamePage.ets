@@ -2,6 +2,8 @@ import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { AppStorage as PreferenceStorage } from '../../store/AppStorage';
 import { UserStore } from '../../store/UserStore';
+import { UserApi } from '../../net/UserApi';
+import { ApiService } from '../../net/ApiService';
 
 interface EditNameParams {
   name?: string;
@@ -38,11 +40,30 @@ struct EditNamePage {
     }
     if (this.saving) return;
     this.saving = true;
+    const storage = PreferenceStorage.getInstance();
+    let synced = false;
     try {
-      await PreferenceStorage.getInstance().setUserName(value);
+      // 先用应用令牌把昵称写到服务端，社区/其他设备读的是服务端资料。
+      let token = (await storage.getAppAuthAccessToken()).trim();
+      if (!token) {
+        await ApiService.loginAppAuthFromSavedCredentials(storage);
+        token = (await storage.getAppAuthAccessToken()).trim();
+      }
+      if (token) {
+        try {
+          synced = await UserApi.updateAppDisplayName(value);
+        } catch (error) {
+          console.warn('EditNamePage', `sync nickname failed: ${JSON.stringify(error)}`);
+          synced = false;
+        }
+      }
+      await storage.setUserName(value);
       await UserStore.getInstance().restoreFromLocal();
       this.profileVersion = Date.now();
-      promptAction.showToast({ message: '昵称已修改', duration: 1200 });
+      promptAction.showToast({
+        message: synced ? '昵称已修改，社区同步生效' : '已保存到本机，服务器同步失败',
+        duration: synced ? 1200 : 2000
+      });
       router.back();
     } catch (error) {
       console.error('EditNamePage', `save nickname failed: ${JSON.stringify(error)}`);
