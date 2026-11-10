@@ -183,7 +183,7 @@ async function loadFavorites(options = {}) {
 }
 
 test('在线收藏：写入服务端并记录同步成功', async () => {
-  const { favorites, calls } = await loadFavorites({ remoteItems: [] });
+  const { favorites, calls } = await loadFavorites({ sid: '2024001', remoteItems: [] });
   const item = { kind: 'article', id: 12, title: '认识一下吧', link: 'https://a', tag: '活动' };
   assert.equal(await favorites.toggle(item), true);
   assert.equal(calls[0].op, 'add');
@@ -194,7 +194,7 @@ test('在线收藏：写入服务端并记录同步成功', async () => {
 });
 
 test('离线收藏：本机可用、进入待同步队列', async () => {
-  const { favorites, calls } = await loadFavorites({ serverOk: false });
+  const { favorites, calls } = await loadFavorites({ sid: '2024001', serverOk: false });
   const item = { kind: 'article', id: 7, title: '断网收藏', link: 'https://a', tag: '通知' };
   assert.equal(await favorites.toggle(item), true);
   assert.equal(favorites.isLastToggleSynced(), false);
@@ -240,6 +240,7 @@ test('切换账号后不会看到上一个账号的收藏', async () => {
 
 test('联网后拉取云端列表覆盖本机', async () => {
   const online = await loadFavorites({
+    sid: '2024001',
     remoteItems: [{ kind: 'resource', itemId: 3, title: '知网', link: 'https://x', tag: '资源' }],
     initialRaw: [{ kind: 'article', id: 7, title: '旧缓存', link: 'https://a', tag: '通知' }],
     alreadySynced: true,
