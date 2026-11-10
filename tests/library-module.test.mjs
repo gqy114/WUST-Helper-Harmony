@@ -71,14 +71,14 @@ test('标签与资源分组标题按后端取值映射', async () => {
 });
 
 async function loadFavorites(initialRaw = '[]', options = {}) {
-  const { delayedRead = false } = options;
+  const { delayedRead = false, studentId = '', token = 'wh_at_test' } = options;
   const code = stripTypeScriptTypes(await source(`${root}/store/LibraryFavorites.ets`), { mode: 'transform' });
   const store = new Map();
   // AppStorage 的 setSettingString 会再包一层 JSON，和真实存储保持一致。
   store.set('libraryFavorites', JSON.stringify(JSON.stringify(initialRaw)));
   const storage = {
-    getStudentId: async () => '',
-    getAppAuthAccessToken: async () => 'wh_at_test',
+    getStudentId: async () => studentId,
+    getAppAuthAccessToken: async () => token,
     getSettingString: async (key, def) => {
       if (delayedRead) {
         // 模拟磁盘读取慢：页面刚打开、收藏还没读完时用户就点了收藏。
@@ -106,11 +106,12 @@ async function loadFavorites(initialRaw = '[]', options = {}) {
   const app = new SyntheticModule(['AppStorage'], function () {
     this.setExport('AppStorage', { getInstance: () => storage });
   }, { context });
+  const apiCalls = { add: 0, remove: 0, list: 0 };
   const libraryApi = new SyntheticModule(['LibraryApi', 'LibraryFavoriteEntry'], function () {
     this.setExport('LibraryApi', {
-      addFavorite: async () => true,
-      removeFavorite: async () => true,
-      listFavorites: async () => null,
+      addFavorite: async () => { apiCalls.add += 1; return true; },
+      removeFavorite: async () => { apiCalls.remove += 1; return true; },
+      listFavorites: async () => { apiCalls.list += 1; return null; },
     });
     this.setExport('LibraryFavoriteEntry', undefined);
   }, { context });
@@ -121,8 +122,18 @@ async function loadFavorites(initialRaw = '[]', options = {}) {
     throw new Error(`Unexpected import: ${name}`);
   });
   await mod.evaluate();
-  return { favorites: mod.namespace.LibraryFavorites.getInstance(), store };
+  return { favorites: mod.namespace.LibraryFavorites.getInstance(), store, apiCalls };
 }
+
+test('匿名状态即使残留旧 token，也只使用本地收藏且不请求服务端', async () => {
+  const { favorites, apiCalls } = await loadFavorites([], { studentId: '', token: 'stale_token' });
+  const item = { kind: 'article', id: 12, title: '本地收藏', link: 'https://a', tag: '活动' };
+
+  assert.equal(await favorites.toggle(item), true);
+  assert.equal(favorites.has('article', 12), true);
+  assert.equal(await favorites.syncFromServer(), false);
+  assert.deepEqual(apiCalls, { add: 0, remove: 0, list: 0 });
+});
 
 test('收藏可添加、可取消，并立即写入 preferences', async () => {
   const { favorites, store } = await loadFavorites();

@@ -288,6 +288,9 @@ export class LibraryFavorites {
   }
 
   private async currentToken(): Promise<string> {
+    // 退出登录后 AppAuth token 可能尚未清理。没有当前学号时它不再代表一个
+    // 可确认的账号，不能拿去访问收藏接口，否则会把匿名访问误发给后端。
+    if (!this.loadedSid) return '';
     return (await AppStorage.getInstance().getAppAuthAccessToken()).trim();
   }
 
