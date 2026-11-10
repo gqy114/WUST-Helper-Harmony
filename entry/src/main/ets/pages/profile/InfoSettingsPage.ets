@@ -299,8 +299,13 @@ struct InfoSettingsPage {
     }
     if (!token) throw new Error('missing app auth token');
     // 必须以服务端当前头像为基线。本地缓存可能是上一次失败留下的预览，不能用于判断本次上传成功。
-    const profileBeforeUpload = await UserApi.getAppProfile();
-    const serverAvatarBeforeUpload = (profileBeforeUpload?.avatarUrl || '').trim();
+    // 基线读取失败时无法判断“头像是否真的换了”，宁可按失败处理，也不能拿旧头像冒充成功。
+    let profileBeforeUpload = await UserApi.getAppProfile();
+    if (!profileBeforeUpload) {
+      profileBeforeUpload = await UserApi.getAppProfile();
+    }
+    if (!profileBeforeUpload) throw new Error('cannot read avatar baseline');
+    const serverAvatarBeforeUpload = (profileBeforeUpload.avatarUrl || '').trim();
     const fileName = localPath.substring(localPath.lastIndexOf('/') + 1);
     const task = await request.uploadFile(context, {
       url: 'https://lyzyy.love:8081/api/v1/profile/avatar',
