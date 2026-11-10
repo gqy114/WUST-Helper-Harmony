@@ -58,6 +58,20 @@ test('已经报错的导航，错误页有文字也不算加载成功', async ()
     '内容校验没有先判断本次导航是否报错');
   assert.match(code, /this\.navigationError = true;/,
     '收到主文档错误时没有记录');
-  assert.match(code, /\.onPageBegin\(\(\) => \{[\s\S]*?this\.navigationError = false;/,
+  assert.match(code, /\.onPageBegin\(\(\) => \{[\s\S]*?this\.beginNavigation\(\);/,
     '新导航开始时没有重置错误标记');
+});
+
+test('重试后旧页面的异步检查结果不再生效', async () => {
+  const code = await source();
+
+  assert.match(code, /private navigationToken: number = 0;/, '缺少导航标识');
+  assert.match(code, /private beginNavigation\(\): void \{[\s\S]*?this\.navigationToken = this\.navigationToken \+ 1;/,
+    '开始新导航时没有递增标识');
+  assert.match(code, /if \(token !== this\.navigationToken\) return;/,
+    '异步回调没有校验导航标识');
+  assert.match(code, /private retry\(\): void \{[\s\S]*?this\.beginNavigation\(\);/,
+    '重试没有开启新的导航标识');
+  assert.match(code, /aboutToDisappear\(\): void \{[\s\S]*?this\.navigationToken = this\.navigationToken \+ 1;/,
+    '页面销毁后旧回调仍可能改状态');
 });

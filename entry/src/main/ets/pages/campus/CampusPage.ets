@@ -51,6 +51,15 @@ export struct CampusPage {
   private contentCheckTimer: number = -1;
   // 本次导航是否报过错：错误页也可能有文字，不能据此判定加载成功。
   private navigationError: boolean = false;
+  // 每次导航/重试递增；异步回调只在标识仍属于当前导航时才允许改状态。
+  private navigationToken: number = 0;
+
+  private beginNavigation(): void {
+    this.navigationToken = this.navigationToken + 1;
+    this.navigationError = false;
+    this.clearContentCheckTimer();
+    this.clearLoadTimer();
+  }
 
   aboutToAppear(): void {
     // Some WebView failures do not deliver an error callback on every device.
@@ -59,6 +68,8 @@ export struct CampusPage {
   }
 
   aboutToDisappear(): void {
+    // 页面销毁后，旧导航的异步回调不允许再改状态。
+    this.navigationToken = this.navigationToken + 1;
     this.clearLoadTimer();
     this.clearContentCheckTimer();
   }
@@ -72,8 +83,11 @@ export struct CampusPage {
 
   private startLoadTimer(): void {
     this.clearLoadTimer();
+    const token = this.navigationToken;
     this.loadTimer = setTimeout(() => {
       this.loadTimer = -1;
+      // 旧导航的超时不能关掉新导航的加载状态。
+      if (token !== this.navigationToken) return;
       if (this.loading) {
         console.warn(TAG, 'campus news load timed out');
         this.loading = false;
@@ -96,13 +110,15 @@ export struct CampusPage {
    */
   private scheduleContentCheck(): void {
     this.clearContentCheckTimer();
+    const token = this.navigationToken;
     this.contentCheckTimer = setTimeout(() => {
       this.contentCheckTimer = -1;
-      this.verifyCampusContent();
+      if (token !== this.navigationToken) return;
+      this.verifyCampusContent(token);
     }, CONTENT_CHECK_DELAY_MS);
   }
 
-  private verifyCampusContent(): void {
+  private verifyCampusContent(token: number): void {
     try {
       const script = `document.body ?
         (document.body.innerText.trim().length +
@@ -110,6 +126,8 @@ export struct CampusPage {
         document.body.getElementsByTagName('a').length * 10) : 0`;
       this.controller.runJavaScript(script)
         .then((result: string) => {
+          // 旧导航的检查结果不能覆盖重试后的新页面状态。
+          if (token !== this.navigationToken) return;
           const contentScore = parseInt(result, 10);
           if (isNaN(contentScore) || contentScore < MIN_CONTENT_SCORE) {
             console.warn(TAG, `campus news page is empty, score=${result}`);
@@ -128,6 +146,7 @@ export struct CampusPage {
           this.errorText = '';
         })
         .catch((error: Error) => {
+          if (token !== this.navigationToken) return;
           console.warn(TAG, `verify campus content failed: ${error.message}`);
           this.showLoadError('校园资讯页面校验失败');
         });
@@ -138,8 +157,8 @@ export struct CampusPage {
   }
 
   private retry(): void {
-    this.clearContentCheckTimer();
-    this.navigationError = false;
+    // 新导航：旧页面检查/超时回调一律作废。
+    this.beginNavigation();
     this.loading = true;
     this.loadError = false;
     this.errorText = '';
@@ -278,8 +297,7 @@ export struct CampusPage {
           .domStorageAccess(true)
           .cacheMode(CacheMode.Default)
           .onPageBegin(() => {
-            this.navigationError = false;
-            this.clearContentCheckTimer();
+            this.beginNavigation();
             this.loading = true;
             this.loadError = false;
             this.errorText = '';
