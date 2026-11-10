@@ -109,6 +109,7 @@ struct MainPage {
   @State private failedBannerKeys: string[] = [];
   // 自己抓取解码后的 banner 图：状态码异常但响应体是图片时也能显示。
   @State private bannerPixels: Map<string, image.PixelMap> = new Map();
+  private bannerLoading: boolean = false;
   @State private homeNoticeText: string = '公告：欢迎使用武科大助手，随时随地开启校园之旅';
   @State private campusWallUnread: number = 0;
   @State private campusLostUnread: number = 0;
@@ -166,6 +167,12 @@ struct MainPage {
     this.refreshCatEasterEgg();
     this.verifyLoginState();
     this.loadCommunityBadges();
+    // 断网恢复后返回首页 / 切回首页时：只对还没拿到图的 banner 重试一次。
+    if (this.homeBanners.length > 0 &&
+      this.homeBanners.some((banner: HomeBanner) => !this.bannerPixels.has(this.bannerKey(banner)))) {
+      BannerImageLoader.clearFailures();
+      this.loadBannerPixels();
+    }
   }
 
   aboutToDisappear(): void {
@@ -387,20 +394,26 @@ struct MainPage {
 
   /** 逐张抓取 banner 图片字节并解码，成功后替换 Image 的网络加载。 */
   private async loadBannerPixels(): Promise<void> {
-    const banners = this.homeBanners;
-    for (let i = 0; i < banners.length; i++) {
-      const banner = banners[i];
-      const key = this.bannerKey(banner);
-      if (this.bannerPixels.has(key)) continue;
-      const pixel = await BannerImageLoader.load(banner.imageUrl);
-      if (!pixel) continue;
-      const next = new Map<string, image.PixelMap>(this.bannerPixels);
-      next.set(key, pixel);
-      this.bannerPixels = next;
-      // 之前网络加载失败被隐藏的 banner，解码成功后要重新显示。
-      if (this.failedBannerKeys.indexOf(key) >= 0) {
-        this.failedBannerKeys = this.failedBannerKeys.filter((value: string) => value !== key);
+    if (this.bannerLoading) return;
+    this.bannerLoading = true;
+    try {
+      const banners = this.homeBanners;
+      for (let i = 0; i < banners.length; i++) {
+        const banner = banners[i];
+        const key = this.bannerKey(banner);
+        if (this.bannerPixels.has(key)) continue;
+        const pixel = await BannerImageLoader.load(banner.imageUrl);
+        if (!pixel) continue;
+        const next = new Map<string, image.PixelMap>(this.bannerPixels);
+        next.set(key, pixel);
+        this.bannerPixels = next;
+        // 之前网络加载失败被隐藏的 banner，解码成功后要重新显示。
+        if (this.failedBannerKeys.indexOf(key) >= 0) {
+          this.failedBannerKeys = this.failedBannerKeys.filter((value: string) => value !== key);
+        }
       }
+    } finally {
+      this.bannerLoading = false;
     }
   }
 

@@ -50,3 +50,13 @@ test('断网恢复后可以重试，失败状态有有效期', async () => {
   const page = await source(`${root}/pages/main/MainPage.ets`);
   assert.match(page, /BannerImageLoader\.clearFailures\(\)/, '重新拉取轮播图时没有清掉可重试的失败');
 });
+
+test('返回仍在运行的首页会触发失败图片重试', async () => {
+  const page = await source(`${root}/pages/main/MainPage.ets`);
+  const onShow = page.slice(page.indexOf('onPageShow(): void {'), page.indexOf('aboutToDisappear') > 0 ? page.indexOf('aboutToDisappear') : page.indexOf('private bannerKey'));
+  assert.match(onShow, /this\.homeBanners\.some\(/, 'onPageShow 没有检查缺失的轮播图');
+  assert.match(onShow, /BannerImageLoader\.clearFailures\(\)/, 'onPageShow 没有清掉失败缓存');
+  assert.match(onShow, /this\.loadBannerPixels\(\)/, 'onPageShow 没有重新发起加载');
+  // 已完全加载时不再重复下载
+  assert.match(page, /private bannerLoading: boolean = false;/, '缺少并发保护');
+});
