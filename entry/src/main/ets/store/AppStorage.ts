@@ -186,8 +186,9 @@ export class AppStorage {
     const account = (sid || '').trim();
     if (!account) return Promise.resolve(false);
     const run = this.profileWriteChain.then(async (): Promise<boolean> => {
-      if (this.sessionEpoch !== epoch) return false;
+      if (this.accountChangesPending > 0 || this.sessionEpoch !== epoch) return false;
       if ((await this.getStudentId()).trim() !== account) return false;
+      if (this.accountChangesPending > 0 || this.sessionEpoch !== epoch) return false;
       await writer();
       return true;
     });
@@ -243,6 +244,10 @@ export class AppStorage {
   // 账号资料写入的串行链：见 commitProfileWrite。
   private profileWriteChain: Promise<void> = Promise.resolve();
   private accountWriteChain: Promise<void> = Promise.resolve();
+  // 从发起切号到学号落盘期间，不允许认证恢复把旧账号令牌重新写入。
+  private accountChangesPending: number = 0;
+  private authIdentityVersion: number = 0;
+  private authIdentityAppliedVersion: number = 0;
 
   /** 最近一次课表缓存的写入标记：异步写入者用它判断自己是否仍是最后一次写入。 */
   private courseCacheMarker: string = '';
@@ -282,24 +287,34 @@ export class AppStorage {
   async setToken(v: string): Promise<void> { return this.putStr('token', v); }
   async getStudentId(): Promise<string> { return this.getStr('studentId'); }
   async setStudentId(v: string): Promise<void> {
+    this.accountChangesPending++;
     this.bumpSessionEpoch();
     const changeAccount = async (): Promise<void> => {
       // 等正在提交的资料/令牌写入完成：它们属于旧账号，必须在新学号落盘前写完，
       // 否则旧请求的结果可能被写到新账号下。
       await this.profileWriteChain;
-      // 切号先清掉旧账号的全局认证令牌，避免新账号在登录前误用旧令牌。
-      await this.putStr('appAuthAccessToken', '');
-      await this.putStr('appAuthRefreshToken', '');
+      const previousSid = (await this.getStudentId()).trim();
+      const identityVersion = this.authIdentityVersion;
+      // 资料刷新会重复保存相同学号；只有身份确实改变时才清除令牌。
+      if (previousSid !== (v || '').trim() || identityVersion !== this.authIdentityAppliedVersion) {
+        await this.putStr('appAuthAccessToken', '');
+        await this.putStr('appAuthRefreshToken', '');
+      }
       // 先由旧账号认领旧全局资料；不能等切号后才由新账号第一次读取触发迁移。
       await this.claimLegacyProfileForAccount(await this.getStudentId());
       await this.putStr('studentId', v);
       // 登录后立即认领旧档案。
       await this.claimLegacyArchives();
       await this.claimLegacyProfileForAccount(v);
+      this.authIdentityAppliedVersion = identityVersion;
     };
     const run = this.accountWriteChain.then(changeAccount, changeAccount);
     this.accountWriteChain = run.then((): void => {}, (): void => {});
-    await run;
+    try {
+      await run;
+    } finally {
+      this.accountChangesPending--;
+    }
   }
   async getPassword(): Promise<string> { return this.getStr('password'); }
   async setPassword(v: string): Promise<void> { return this.putStr('password', v); }
@@ -310,6 +325,7 @@ export class AppStorage {
   async getIsGraduate(): Promise<boolean> { return this.getBool('isGraduate'); }
   async setIsGraduate(v: boolean): Promise<void> {
     this.bumpSessionEpoch();
+    if ((await this.getIsGraduate()) !== v) this.authIdentityVersion++;
     return this.putBool('isGraduate', v);
   }
   async getTokenUpdateTime(): Promise<number> { return this.getNum('token_update_time'); }
