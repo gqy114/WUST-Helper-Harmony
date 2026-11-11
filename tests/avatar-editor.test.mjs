@@ -88,3 +88,12 @@ test('账号资料写入串行化：切号期间的旧写入不能覆盖新账�
   assert.match(page, /if \(await this\.isAccountChanged\(storage, sessionSid, sessionEpoch\)\) \{\s*throw new Error\('account changed'\);\s*\}/,
     '写入后没有再次校验会话，可能向新账号误报成功');
 });
+
+test('读取账号信息期间切号：先取代次再读学号，读到一半切号则放弃', async () => {
+  const page = await source(`${root}/pages/profile/InfoSettingsPage.ets`);
+  const epochIndex = page.indexOf('const sessionEpoch = storage.getSessionEpoch();');
+  const sidIndex = page.indexOf('const sessionSid = (await storage.getStudentId()).trim();');
+  assert.ok(epochIndex > 0 && sidIndex > epochIndex, '应先同步取代次再异步读学号');
+  assert.match(page, /account changed while reading session, avatar upload cancelled/, '读取期间切号没有放弃操作');
+  assert.match(page, /if \(storage\.getSessionEpoch\(\) !== sessionEpoch\)/, '读取后没有复核代次');
+});

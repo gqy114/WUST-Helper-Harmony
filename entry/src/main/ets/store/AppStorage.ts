@@ -27,6 +27,7 @@ export class AppStorage {
     this.kvStore = await preferences.getPreferences(context, STORE_NAME);
     // 升级后第一次启动就确定旧档案归属，而不是等用户点开档案页。
     await this.claimLegacyArchives();
+    await this.claimLegacyProfileForAccount(await this.getStudentId());
   }
 
   /**
@@ -90,31 +91,51 @@ export class AppStorage {
   // 写入同时串成一条链（commitProfileWrite），执行前校验 sessionEpoch，
   // 切号后尚未执行的旧写入直接丢弃。
 
-  private async profileScopedKey(key: string): Promise<string> {
-    const sid = (await this.getStudentId()).trim();
-    return sid ? `${key}_${sid}` : key;
+  /** 在启动/切号时为旧全局资料确定唯一归属；只复制，不覆盖已有的分账号资料。 */
+  private async claimLegacyProfileForAccount(owner: string): Promise<void> {
+    const sid = (owner || '').trim();
+    if (!sid) return;
+    // 和资料写入共享队列，避免迁移在读取空值后覆盖同时保存的新头像或昵称。
+    const run = this.profileWriteChain.then(async (): Promise<void> => {
+      const keys: string[] = ['avatarUrl', 'userName'];
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        const migratedKey = `profileScopedMigrated_${key}`;
+        if (await this.getBool(migratedKey)) continue;
+        const scopedKey = `${key}_${sid}`;
+        const existing = await this.getStr(scopedKey, '');
+        if (!existing) {
+          const legacy = await this.getStr(key, '');
+          if (legacy) await this.putStr(scopedKey, legacy);
+        }
+        // 即使当前账号已有新资料，也要完成认领标记，防止其他账号再继承旧数据。
+        await this.putBool(migratedKey, true);
+      }
+    });
+    this.profileWriteChain = run.then((): void => {}, (): void => {});
+    await run;
   }
 
   private async getProfileValue(key: string): Promise<string> {
+    const epoch = this.sessionEpoch;
     const sid = (await this.getStudentId()).trim();
-    if (!sid) return this.getStr(key, '');
-    const scopedKey = `${key}_${sid}`;
-    const scoped = await this.getStr(scopedKey, '');
-    if (scoped) return scoped;
-    // 旧版本的全局资料只归属升级后第一个登录的账号，避免被其他账号继承。
-    // 迁移标记按字段区分：头像和昵称要各自迁移，否则先读的字段会把另一个字段“锁死”。
-    const migratedKey = `profileScopedMigrated_${key}`;
-    if (!(await this.getBool(migratedKey))) {
+    if (this.sessionEpoch !== epoch) return '';
+    if (!sid) {
       const legacy = await this.getStr(key, '');
-      if (legacy) await this.putStr(scopedKey, legacy);
-      await this.putBool(migratedKey, true);
-      return legacy;
+      return this.sessionEpoch === epoch ? legacy : '';
     }
-    return '';
+    await this.claimLegacyProfileForAccount(sid);
+    if (this.sessionEpoch !== epoch) return '';
+    const value = await this.getStr(`${key}_${sid}`, '');
+    return this.sessionEpoch === epoch ? value : '';
   }
 
   private async setProfileValue(key: string, value: string): Promise<void> {
-    await this.putStr(await this.profileScopedKey(key), value);
+    const epoch = this.sessionEpoch;
+    const sid = (await this.getStudentId()).trim();
+    const scopedKey = sid ? `${key}_${sid}` : key;
+    // 固定读取到的账号，排队后再核对会话，不能在切号后重新计算成新账号。
+    await this.commitProfileWrite(epoch, () => this.putStr(scopedKey, value));
   }
 
   private commitProfileWrite(epoch: number, writer: () => Promise<void>): Promise<boolean> {
@@ -188,6 +209,7 @@ export class AppStorage {
   private sessionEpoch: number = 0;
   // 账号资料写入的串行链：见 commitProfileWrite。
   private profileWriteChain: Promise<void> = Promise.resolve();
+  private accountWriteChain: Promise<void> = Promise.resolve();
 
   /** 最近一次课表缓存的写入标记：异步写入者用它判断自己是否仍是最后一次写入。 */
   private courseCacheMarker: string = '';
@@ -228,9 +250,17 @@ export class AppStorage {
   async getStudentId(): Promise<string> { return this.getStr('studentId'); }
   async setStudentId(v: string): Promise<void> {
     this.bumpSessionEpoch();
-    await this.putStr('studentId', v);
-    // 升级后还没重启过就登录：在这里补一次旧档案认领，保证在切号前完成。
-    await this.claimLegacyArchives();
+    const changeAccount = async (): Promise<void> => {
+      // 先由旧账号认领旧全局资料；不能等切号后才由新账号第一次读取触发迁移。
+      await this.claimLegacyProfileForAccount(await this.getStudentId());
+      await this.putStr('studentId', v);
+      // 登录后立即认领旧档案。
+      await this.claimLegacyArchives();
+      await this.claimLegacyProfileForAccount(v);
+    };
+    const run = this.accountWriteChain.then(changeAccount, changeAccount);
+    this.accountWriteChain = run.then((): void => {}, (): void => {});
+    await run;
   }
   async getPassword(): Promise<string> { return this.getStr('password'); }
   async setPassword(v: string): Promise<void> { return this.putStr('password', v); }
@@ -259,7 +289,7 @@ export class AppStorage {
   async getMajor(): Promise<string> { return this.getStr('major'); }
   async setMajor(v: string): Promise<void> { return this.putStr('major', v); }
   async getAvatarUrl(): Promise<string> { return this.getProfileValue('avatarUrl'); }
-  async setAvatarUrl(v: string): Promise<void> { await this.commitProfileWrite(this.sessionEpoch, () => this.setProfileValue('avatarUrl', v)); }
+  async setAvatarUrl(v: string): Promise<void> { await this.setProfileValue('avatarUrl', v); }
   async getClasses(): Promise<string> { return this.getStr('classes'); }
   async setClasses(v: string): Promise<void> { return this.putStr('classes', v); }
 
