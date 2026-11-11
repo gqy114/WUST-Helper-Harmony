@@ -187,7 +187,7 @@ struct LibraryPage {
   /** 服务端同步失败（未登录/断网）时提示一次，收藏仍在本地可用。 */
   private notifyIfOffline(): void {
     if (this.favoritesStore.isLastToggleSynced()) return;
-    promptAction.showToast({ message: '已保存到本机，登录或联网后自动同步到云端' });
+    promptAction.showToast({ message: '云端同步失败，变更已保存在本机' });
   }
 
   @Builder

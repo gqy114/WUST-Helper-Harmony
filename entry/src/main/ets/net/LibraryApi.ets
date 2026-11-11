@@ -264,7 +264,8 @@ export class LibraryApi {
       if (!isOkFavoriteCode(resp?.code)) return null;
       const payload = resp?.data as FavoriteListPayload | undefined;
       const items = payload?.items;
-      return Array.isArray(items) ? items : [];
+      // 只有服务端明确返回数组时才能覆盖本地缓存；响应结构异常不等于“收藏为空”。
+      return Array.isArray(items) ? items : null;
     } catch {
       console.warn('LibraryApi', 'listFavorites error');
       return null;

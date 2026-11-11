@@ -91,6 +91,20 @@ test('服务端收藏：401 视为接口不可用而不是空列表', async () =
   assert.equal(await api.listFavorites(), null);
 });
 
+test('服务端成功码但列表缺失或结构异常，不当作空列表清除本地收藏', async () => {
+  const { api, replies } = await loadApi();
+  for (const data of [null, {}, { items: null }, { items: 'unexpected' }]) {
+    replies.get = { data: { code: 200, data } };
+    assert.equal(await api.listFavorites('wh_at_demo'), null);
+  }
+});
+
+test('服务端明确返回空数组时，可以同步为空收藏', async () => {
+  const { api, replies } = await loadApi();
+  replies.get = { data: { code: 200, data: { items: [] } } };
+  assert.deepEqual(Array.from(await api.listFavorites('wh_at_demo')), []);
+});
+
 async function loadFavorites(options = {}) {
   const {
     initialRaw = '[]', sid = '', serverOk = true, remoteItems = [], store: sharedStore, sidRef,
