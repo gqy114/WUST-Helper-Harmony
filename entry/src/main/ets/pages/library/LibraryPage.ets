@@ -161,27 +161,32 @@ struct LibraryPage {
   }
 
   private async toggleArticleFavorite(item: LibraryArticle): Promise<void> {
-    await this.favoritesStore.toggle({
+    await this.updateFavorite({
       kind: 'article', id: item.id || 0, title: item.title || '',
       link: item.link || '', tag: articleTagLabel(item.tag)
     });
-    this.notifyIfOffline();
-    await this.refreshFavorites();
   }
 
   private async toggleResourceFavorite(item: LibraryResource): Promise<void> {
-    await this.favoritesStore.toggle({
+    await this.updateFavorite({
       kind: 'resource', id: item.id || 0, title: item.title || '',
       link: item.inLink || item.outLink || '', tag: '资源'
     });
-    this.notifyIfOffline();
-    await this.refreshFavorites();
   }
 
   private async removeFavorite(item: LibraryFavorite): Promise<void> {
-    await this.favoritesStore.toggle(item);
-    this.notifyIfOffline();
-    await this.refreshFavorites();
+    await this.updateFavorite(item);
+  }
+
+  private async updateFavorite(item: LibraryFavorite): Promise<void> {
+    try {
+      await this.favoritesStore.toggle(item);
+      this.notifyIfOffline();
+      await this.refreshFavorites();
+    } catch (error) {
+      console.warn('LibraryPage', `favorite update failed: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '收藏未完成，请确认账号后重试' });
+    }
   }
 
   /** 服务端同步失败（未登录/断网）时提示一次，收藏仍在本地可用。 */
