@@ -290,6 +290,8 @@ struct LoginPage {
         if (resp.data) {
           if (this.isGraduate) {
             const gdata = resp.data as GraduateLoginDataContent;
+            // 先切到本次登录的账号，再读写按学号隔离的昵称。
+            await this.saveLoginData(`grad_${sid}`, resp.msg ?? '登录成功', sid, pwd);
             if (gdata.name) {
               await s.setRealName(gdata.name);
               const savedNickname = await s.getUserName();
@@ -300,7 +302,6 @@ struct LoginPage {
             if (gdata.college) await s.setCollege(gdata.college);
             if (gdata.major) await s.setMajor(gdata.major);
             // 研究生没有教务 Cookie，课表 / 培养方案都要用保存下来的学号密码现登录。
-            await this.saveLoginData(`grad_${sid}`, resp.msg ?? '登录成功', sid, pwd);
             console.info(TAG, 'graduate login, credentials saved');
           } else {
             const tdata = resp.data as TokenDataContent;
