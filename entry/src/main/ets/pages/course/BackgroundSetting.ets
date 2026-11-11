@@ -1,7 +1,9 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { common } from '@kit.AbilityKit';
 import { ScheduleSettings, DEFAULT_SETTINGS } from '../../model/CourseModel';
 import { AppStorage as PreferencesStorage } from '../../store/AppStorage';
+import { ScheduleBackgroundService } from '../../utils/ScheduleBackgroundService';
 
 @Entry
 @Component
@@ -48,13 +50,39 @@ struct BackgroundSetting {
       const picker = new photoAccessHelper.PhotoViewPicker();
       const result = await picker.select(options);
       if (result.photoUris && result.photoUris.length > 0) {
-        this.bgImage = result.photoUris[0];
-        await this.saveSettings();
-        console.info('BackgroundSetting', `selected background image: ${this.bgImage}`);
+        const context = getContext(this) as common.UIAbilityContext;
+        const oldImage = this.bgImage;
+        const persistedImage = ScheduleBackgroundService.persist(context, result.photoUris[0]);
+        try {
+          this.bgImage = persistedImage;
+          await this.saveSettings();
+          ScheduleBackgroundService.removeOwned(context, oldImage);
+          console.info('BackgroundSetting', `selected persistent background image: ${this.bgImage}`);
+          promptAction.showToast({ message: '背景已更新', duration: 1500 });
+        } catch (err) {
+          this.bgImage = oldImage;
+          ScheduleBackgroundService.removeOwned(context, persistedImage);
+          throw ScheduleBackgroundService.asError(err);
+        }
       }
     } catch (err) {
       console.error('BackgroundSetting', `pick background image failed: ${JSON.stringify(err)}`);
       promptAction.showToast({ message: '选择图片失败', duration: 1500 });
+    }
+  }
+
+  private async clearBackgroundImage(): Promise<void> {
+    const context = getContext(this) as common.UIAbilityContext;
+    const oldImage = this.bgImage;
+    try {
+      this.bgImage = '';
+      await this.saveSettings();
+      ScheduleBackgroundService.removeOwned(context, oldImage);
+      promptAction.showToast({ message: '已清除背景', duration: 1500 });
+    } catch (err) {
+      this.bgImage = oldImage;
+      console.error('BackgroundSetting', `clear background failed: ${JSON.stringify(err)}`);
+      promptAction.showToast({ message: '清除背景失败', duration: 1500 });
     }
   }
 
@@ -118,9 +146,7 @@ struct BackgroundSetting {
               .textAlign(TextAlign.Center)
               .backgroundColor('#FFFFFF')
               .onClick(() => {
-                this.bgImage = '';
-                this.saveSettings();
-                promptAction.showToast({ message: '已清除背景', duration: 1500 });
+                this.clearBackgroundImage();
               })
           }
           .width('90%')

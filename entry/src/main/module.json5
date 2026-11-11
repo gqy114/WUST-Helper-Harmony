@@ -13,6 +13,10 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
+    "querySchemes": [
+      "mqq",
+      "mqqapi"
+    ],
     "abilities": [
       {
         "name": "EntryAbility",

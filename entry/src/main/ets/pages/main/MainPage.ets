@@ -15,6 +15,8 @@ import { ApiService } from '../../net/ApiService';
 import { promptAction } from '@kit.ArkUI';
 import router from '@ohos.router';
 import { HomeBanner, HomeContentApi, HomeNotice } from '../../net/HomeContentApi';
+import { BannerImageLoader } from '../../utils/BannerImageLoader';
+import { image } from '@kit.ImageKit';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
 import { CampusWallApi, CampusWallPost } from '../../net/CampusWallApi';
 
@@ -103,6 +105,11 @@ struct MainPage {
   @State private showCampusTab: boolean = true;
   @State private visibleToolTitles: string[] = [];
   @State private homeBanners: HomeBanner[] = [];
+  // 图片加载失败的 banner 不再渲染：后端配了失效/防盗链图片时，避免整块空白。
+  @State private failedBannerKeys: string[] = [];
+  // 自己抓取解码后的 banner 图：状态码异常但响应体是图片时也能显示。
+  @State private bannerPixels: Map<string, image.PixelMap> = new Map();
+  private bannerLoading: boolean = false;
   @State private homeNoticeText: string = '公告：欢迎使用武科大助手，随时随地开启校园之旅';
   @State private campusWallUnread: number = 0;
   @State private campusLostUnread: number = 0;
@@ -160,6 +167,12 @@ struct MainPage {
     this.refreshCatEasterEgg();
     this.verifyLoginState();
     this.loadCommunityBadges();
+    // 断网恢复后返回首页 / 切回首页时：只对还没拿到图的 banner 重试一次。
+    if (this.homeBanners.length > 0 &&
+      this.homeBanners.some((banner: HomeBanner) => !this.bannerPixels.has(this.bannerKey(banner)))) {
+      BannerImageLoader.clearFailures();
+      this.loadBannerPixels();
+    }
   }
 
   aboutToDisappear(): void {
@@ -347,9 +360,72 @@ struct MainPage {
     } catch { this.visibleToolTitles = defaults; }
   }
 
+  private bannerKey(banner: HomeBanner): string {
+    return `${banner.id || 0}-${banner.imageUrl}`;
+  }
+
+  /** 只返回图片可用的 banner；全部失败时由 Swiper 显示默认渐变占位。 */
+  private visibleBanners(): HomeBanner[] {
+    if (this.failedBannerKeys.length === 0) return this.homeBanners;
+    return this.homeBanners.filter((banner: HomeBanner) => {
+      const key = this.bannerKey(banner);
+      // 网络加载失败过，但自行下载解码成功：仍然显示，不能一直隐藏。
+      return this.failedBannerKeys.indexOf(key) < 0 || this.bannerPixels.has(key);
+    });
+  }
+
+  private markBannerFailed(banner: HomeBanner): void {
+    const key = this.bannerKey(banner);
+    if (this.failedBannerKeys.indexOf(key) >= 0) return;
+    console.warn(TAG, `banner image load failed: ${banner.imageUrl}`);
+    this.failedBannerKeys = this.failedBannerKeys.concat([key]);
+  }
+
+  private bannerPixel(banner: HomeBanner): image.PixelMap | undefined {
+    return this.bannerPixels.get(this.bannerKey(banner));
+  }
+
+  /** 优先用自行解码的图片，没有时退回网络 URL（由 onError 兜底）。 */
+  private bannerSource(banner: HomeBanner): image.PixelMap | string {
+    const pixel = this.bannerPixel(banner);
+    if (pixel) return pixel;
+    return banner.imageUrl;
+  }
+
+  /** 逐张抓取 banner 图片字节并解码，成功后替换 Image 的网络加载。 */
+  private async loadBannerPixels(): Promise<void> {
+    if (this.bannerLoading) return;
+    this.bannerLoading = true;
+    try {
+      const banners = this.homeBanners;
+      for (let i = 0; i < banners.length; i++) {
+        const banner = banners[i];
+        const key = this.bannerKey(banner);
+        if (this.bannerPixels.has(key)) continue;
+        const pixel = await BannerImageLoader.load(banner.imageUrl);
+        if (!pixel) continue;
+        const next = new Map<string, image.PixelMap>(this.bannerPixels);
+        next.set(key, pixel);
+        this.bannerPixels = next;
+        // 之前网络加载失败被隐藏的 banner，解码成功后要重新显示。
+        if (this.failedBannerKeys.indexOf(key) >= 0) {
+          this.failedBannerKeys = this.failedBannerKeys.filter((value: string) => value !== key);
+        }
+      }
+    } finally {
+      this.bannerLoading = false;
+    }
+  }
+
   private async loadHomeContent(): Promise<void> {
     try {
+      this.failedBannerKeys = [];
+      this.bannerPixels = new Map();
+      // 每次进入首页都允许重新尝试之前失败的图片（断网恢复后不用重启 App）。
+      BannerImageLoader.clearFailures();
       this.homeBanners = await HomeContentApi.banners();
+      // 不阻塞公告加载：图片抓取/解码在后台进行，成功后自动替换占位。
+      this.loadBannerPixels();
     } catch (error) {
       console.warn(TAG, `load home banners failed: ${JSON.stringify(error)}`);
     }
@@ -535,6 +611,12 @@ struct MainPage {
       .height('100%')
       .onChange((index: number) => {
         this.currentTab = index;
+        // 底部 Tab 切回首页时，补一次失败轮播图重试（页面不会重新走 onPageShow）。
+        if (index === TabIndex.HOME && this.homeBanners.length > 0 &&
+          this.homeBanners.some((banner: HomeBanner) => !this.bannerPixels.has(this.bannerKey(banner)))) {
+          BannerImageLoader.clearFailures();
+          this.loadBannerPixels();
+        }
       })
       if (this.currentTab === TabIndex.HOME && this.showCampusCat) {
         Image(this.catGirl
@@ -616,10 +698,22 @@ struct MainPage {
 
         // ── Banner ──
         Swiper() {
-          if (this.homeBanners.length > 0) {
-            ForEach(this.homeBanners, (banner: HomeBanner) => {
-              Image(banner.imageUrl).width('100%').height('100%').objectFit(ImageFit.Cover)
-            }, (banner: HomeBanner, index: number) => `${banner.id || index}-${banner.imageUrl}`)
+          if (this.visibleBanners().length > 0) {
+            ForEach(this.visibleBanners(), (banner: HomeBanner) => {
+              // 渐变垫底：图片加载过程中或失败后都不会出现整块白。
+              Stack() {
+                Row() {
+                  Column() {
+                    Text('武科大助手').fontSize(24).fontWeight(FontWeight.Bold).fontColor(Color.White)
+                    Text('校园生活 一手掌握').fontSize(14).fontColor('#FFFFFF').opacity(0.8).margin({ top: 6 })
+                  }.alignItems(HorizontalAlign.Start)
+                  Blank()
+                }.padding(20).width('100%').height('100%').alignItems(VerticalAlign.Center)
+                  .linearGradient({ angle: 135, colors: [['#667eea', 0], ['#764ba2', 1]] })
+                Image(this.bannerSource(banner)).width('100%').height('100%').objectFit(ImageFit.Cover)
+                  .onError(() => this.markBannerFailed(banner))
+              }.width('100%').height('100%')
+            }, (banner: HomeBanner, index: number) => this.bannerKey(banner))
           } else {
             Row() {
               Column() {
@@ -633,9 +727,9 @@ struct MainPage {
         }
         .width('100%')
         .height(150)
-        .autoPlay(this.homeBanners.length > 1)
+        .autoPlay(this.visibleBanners().length > 1)
         .interval(4500)
-        .loop(this.homeBanners.length > 1)
+        .loop(this.visibleBanners().length > 1)
         .borderRadius(16)
         .clip(true)
         .margin({ left: 16, right: 16 })

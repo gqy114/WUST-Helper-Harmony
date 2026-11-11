@@ -14,38 +14,60 @@ const QQ_GROUP_NUMBER = '648599822';
 @Entry
 @Component
 struct QQGroupPage {
-  private copyGroupNumber(): void {
+  private async copyGroupNumber(showResult: boolean = true): Promise<boolean> {
     try {
       const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, QQ_GROUP_NUMBER);
-      pasteboard.getSystemPasteboard().setData(data)
-        .then(() => {
-          promptAction.showToast({ message: `已复制群号 ${QQ_GROUP_NUMBER}`, duration: 1800 });
-        })
-        .catch((error: BusinessError) => {
-          console.warn('QQGroupPage', `copy failed: ${JSON.stringify(error)}`);
-          promptAction.showToast({ message: '复制失败，请手动记录群号', duration: 1800 });
-        });
+      await pasteboard.getSystemPasteboard().setData(data);
+      if (showResult) {
+        promptAction.showToast({ message: `已复制群号 ${QQ_GROUP_NUMBER}`, duration: 1800 });
+      }
+      return true;
     } catch (error) {
-      console.warn('QQGroupPage', `pasteboard unavailable: ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '复制失败，请手动记录群号', duration: 1800 });
+      const businessError = error as BusinessError;
+      console.warn('QQGroupPage', `copy failed: ${JSON.stringify(businessError)}`);
+      if (showResult) {
+        promptAction.showToast({ message: '复制失败，请手动记录群号', duration: 1800 });
+      }
+      return false;
     }
   }
 
-  private openQqApp(): void {
+  /**
+   * 优先用 openLink 打开 QQ 的深链（会按 scheme 找到已安装的 QQ），
+   * 再退回隐式 Want；都不行就复制群号并提示手动加入，
+   * 不再出现“点了没反应”的情况。
+   */
+  private async openQqApp(): Promise<void> {
+    const context = getContext(this) as common.UIAbilityContext;
+    const links: string[] = [
+      `mqqapi://card/show_pslcard?src_type=internal&version=1&uin=${QQ_GROUP_NUMBER}&card_type=group&source=qrcode`,
+      'mqq://'
+    ];
+    for (let i = 0; i < links.length; i++) {
+      try {
+        await context.openLink(links[i]);
+        return;
+      } catch (error) {
+        console.warn('QQGroupPage', `openLink failed: ${JSON.stringify(error)}`);
+      }
+    }
     try {
-      const context = getContext(this) as common.UIAbilityContext;
       const want: Want = {
         action: 'ohos.want.action.viewData',
         uri: 'mqq://'
       };
-      context.startAbility(want).catch((error: BusinessError) => {
-        console.warn('QQGroupPage', `open qq failed: ${JSON.stringify(error)}`);
-        promptAction.showToast({ message: '未找到 QQ，请复制群号后手动打开', duration: 2200 });
-      });
+      await context.startAbility(want);
+      return;
     } catch (error) {
       console.warn('QQGroupPage', `startAbility failed: ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '未找到 QQ，请复制群号后手动打开', duration: 2200 });
     }
+    const copied = await this.copyGroupNumber(false);
+    promptAction.showToast({
+      message: copied
+        ? '未检测到 QQ，已复制群号，可在 QQ 中搜索加入'
+        : '未检测到 QQ，且复制失败，请手动记录群号',
+      duration: 2500
+    });
   }
 
   build() {
