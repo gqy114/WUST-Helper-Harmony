@@ -324,9 +324,24 @@ export class AppStorage {
   async setMessage(v: string): Promise<void> { return this.putStr('login_msg', v); }
   async getIsGraduate(): Promise<boolean> { return this.getBool('isGraduate'); }
   async setIsGraduate(v: boolean): Promise<void> {
+    // 身份变化也属于“账号状态切换”：先让正在提交的令牌/资料写入完成，
+    // 再清掉旧身份令牌，避免切换期间旧令牌仍可被使用。
+    // 注意不要排到 accountWriteChain 上，否则会与正在等待的切号互相等待。
+    this.accountChangesPending++;
     this.bumpSessionEpoch();
-    if ((await this.getIsGraduate()) !== v) this.authIdentityVersion++;
-    return this.putBool('isGraduate', v);
+    try {
+      await this.profileWriteChain;
+      const previous = await this.getIsGraduate();
+      if (previous !== v) {
+        this.authIdentityVersion++;
+        await this.putStr('appAuthAccessToken', '');
+        await this.putStr('appAuthRefreshToken', '');
+      }
+      await this.putBool('isGraduate', v);
+      this.authIdentityAppliedVersion = this.authIdentityVersion;
+    } finally {
+      this.accountChangesPending--;
+    }
   }
   async getTokenUpdateTime(): Promise<number> { return this.getNum('token_update_time'); }
   async setTokenUpdateTime(v: number): Promise<void> { return this.putNum('token_update_time', v); }

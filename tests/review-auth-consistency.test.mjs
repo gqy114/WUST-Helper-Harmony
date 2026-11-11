@@ -91,3 +91,32 @@ test('a restore that starts while switching accounts cannot leave the previous a
   assert.equal(await storage.getAppAuthAccessToken(), '');
   assert.equal(await storage.getAppAuthRefreshToken(), '');
 });
+
+test('a token write in flight when the student type changes is cleared before the switch completes', async () => {
+  const storage = await createStorage();
+  await storage.setIsGraduate(false);
+  await storage.setStudentId('A');
+  const epoch = storage.getSessionEpoch();
+  const put = storage.kvStore.put;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let paused = false;
+  storage.kvStore.put = async (key, value) => {
+    if (!paused && key === 'appAuthAccessToken' && value === JSON.stringify('undergraduate-token')) {
+      paused = true;
+      await gate;
+    }
+    await put(key, value);
+  };
+
+  const write = storage.setAppAuthTokensIfSession(epoch, 'A', 'undergraduate-token', 'refresh', 1, 2);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const switching = storage.setIsGraduate(true);
+  release();
+  await write;
+  await switching;
+
+  assert.equal(await storage.getIsGraduate(), true);
+  assert.equal(await storage.getAppAuthAccessToken(), '', '旧身份令牌不能在切换期间保留');
+  assert.equal(await storage.getAppAuthRefreshToken(), '');
+});
