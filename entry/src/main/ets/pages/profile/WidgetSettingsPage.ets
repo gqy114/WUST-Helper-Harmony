@@ -82,7 +82,8 @@ struct WidgetSettingsPage {
     this.selectedTab = mode === WIDGET_MODE_DAILY ? 1 : (mode === WIDGET_MODE_WEEKLY ? 2 : 0);
     this.accent = await WidgetPrefs.getAccent(storage);
     this.countdowns = await WidgetPrefs.getCountdowns(storage);
-    this.examCountdowns = await WidgetPrefs.getExamCountdowns(storage);
+    const sid = (await storage.getStudentId()).trim();
+    this.examCountdowns = await WidgetPrefs.getExamCountdowns(storage, sid);
     this.backgroundPath = await WidgetPrefs.getBackground(storage);
     this.backgroundOpacity = await WidgetPrefs.getBackgroundOpacity(storage);
     this.theme = await WidgetPrefs.getTheme(storage);
@@ -104,9 +105,15 @@ struct WidgetSettingsPage {
   private async syncExamCountdowns(toast: boolean): Promise<void> {
     const storage = AppStorage.getInstance();
     try {
+      // 同步期间可能切账号：先记住发起同步的学号，写缓存前确认仍是同一账号。
+      const sid = (await storage.getStudentId()).trim();
       let term = await storage.getSemester();
       if (!term) term = await storage.getSelectSemester();
       const exams: CountdownItem[] = await CountdownApi.listExams(term);
+      if ((await storage.getStudentId()).trim() !== sid) {
+        console.warn(TAG, 'account changed while syncing exams, drop result');
+        return;
+      }
       const items: WidgetCountdownItem[] = [];
       for (let i = 0; i < exams.length; i++) {
         const exam = exams[i];
@@ -117,7 +124,7 @@ struct WidgetSettingsPage {
         if (exam.seatNumber) detailParts.push(`座位 ${exam.seatNumber}`);
         items.push({ title: exam.name, date: exam.time, detail: detailParts.join(' · ') });
       }
-      await WidgetPrefs.setExamCountdowns(storage, items);
+      await WidgetPrefs.setExamCountdowns(storage, items, sid);
       this.examCountdowns = items;
       if (toast) {
         promptAction.showToast({ message: items.length > 0 ? `已同步 ${items.length} 场考试` : '暂未查到考试安排', duration: 1800 });

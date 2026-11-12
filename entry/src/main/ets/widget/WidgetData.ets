@@ -99,12 +99,19 @@ export class WidgetPrefs {
     await storage.setSettingString(COUNTDOWN_KEY, JSON.stringify(items));
   }
 
-  static async getExamCountdowns(storage: AppStorage): Promise<WidgetCountdownItem[]> {
-    return WidgetPrefs.readItems(storage, EXAM_KEY);
+  /** 考试倒计时按学号分开存：切账号时不会读到上一个账号的考试。 */
+  private static examStorageKey(sid: string): string {
+    return sid ? `${EXAM_KEY}_${sid}` : EXAM_KEY;
   }
 
-  static async setExamCountdowns(storage: AppStorage, items: WidgetCountdownItem[]): Promise<void> {
-    await storage.setSettingString(EXAM_KEY, JSON.stringify(items));
+  static async getExamCountdowns(storage: AppStorage, sid: string = ''): Promise<WidgetCountdownItem[]> {
+    const current = (sid || (await storage.getStudentId())).trim();
+    return WidgetPrefs.readItems(storage, WidgetPrefs.examStorageKey(current));
+  }
+
+  static async setExamCountdowns(storage: AppStorage, items: WidgetCountdownItem[], sid: string): Promise<void> {
+    const current = (sid || '').trim();
+    await storage.setSettingString(WidgetPrefs.examStorageKey(current), JSON.stringify(items));
   }
 
   static async getBackground(storage: AppStorage): Promise<string> {
@@ -331,7 +338,8 @@ export class WidgetData {
     let snapshot: WidgetSnapshot;
     if (mode === WIDGET_MODE_COUNTDOWN) {
       // 优先展示考试倒计时；没有考试数据时退回手动倒计时。
-      let items = await WidgetPrefs.getExamCountdowns(storage);
+      const sid = (await storage.getStudentId()).trim();
+      let items = await WidgetPrefs.getExamCountdowns(storage, sid);
       if (items.length === 0) items = await WidgetPrefs.getCountdowns(storage);
       snapshot = WidgetData.countdownSnapshot(items, accent);
     } else {
