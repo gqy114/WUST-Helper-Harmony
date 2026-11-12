@@ -1,5 +1,4 @@
 import { AppStorage } from './AppStorage';
-import { LibraryApi, LibraryFavoriteEntry } from '../net/LibraryApi';
 
 /** 图书馆模块里可以被收藏的条目（公告/活动/资源）。 */
 export interface LibraryFavorite {
@@ -10,75 +9,21 @@ export interface LibraryFavorite {
   tag: string;
 }
 
-interface PendingFavorites {
-  adds: LibraryFavorite[];
-  removes: LibraryFavorite[];
-}
-
-const STORAGE_PREFIX = 'libraryFavorites';
-const MIGRATION_OWNER_KEY = 'libraryFavoritesMigrationOwner';
-
-function toEntry(item: LibraryFavorite): LibraryFavoriteEntry {
-  return { kind: item.kind, itemId: item.id, title: item.title, link: item.link, tag: item.tag };
-}
-
-function toFavorite(entry: LibraryFavoriteEntry): LibraryFavorite {
-  const result: LibraryFavorite = {
-    kind: entry.kind || '',
-    id: entry.itemId || 0,
-    title: entry.title || '',
-    link: entry.link || '',
-    tag: entry.tag || '',
-  };
-  return result;
-}
-
-function validFavorite(item: LibraryFavorite): boolean {
-  return !!item && !!item.kind && (item.id || 0) > 0;
-}
-
-function normalizeFavorite(item: LibraryFavorite): LibraryFavorite {
-  const result: LibraryFavorite = {
-    kind: item.kind,
-    id: item.id,
-    title: item.title || '',
-    link: item.link || '',
-    tag: item.tag || '',
-  };
-  return result;
-}
-
-function sameFavorite(left: LibraryFavorite, right: LibraryFavorite): boolean {
-  return left.kind === right.kind && left.id === right.id;
-}
+const LEGACY_STORAGE_KEY = 'libraryFavorites';
+const STORAGE_PREFIX = 'libraryFavorites_';
 
 /**
- * 图书馆收藏：服务端（/api/v1/library/favorites）为准，本机 preferences 作为离线缓存。
+ * 图书馆收藏：只保存在本机，不做云端同步。
  *
- * - 收藏/取消收藏先改本机，再尝试同步服务端；失败进待同步队列（持久化），重启后继续补发。
- * - 本机缓存与待同步队列都按学号隔离；切换账号会重新加载，不会看到上一个账号的收藏。
- * - 旧版本的全局 libraryFavorites 只认领给第一个登录的账号，避免被后续账号重复继承。
- * - 账号首次同步时，本地已有收藏会先补传再拉取，云端空列表不会把旧收藏清掉。
- *
- * 读取与写入都要经过同一个就绪 Promise 和写入队列：之前 ensureLoaded() 先把 loaded
- * 置 true 再 await 读取，页面刚打开就点收藏时 items 还是空数组，写回会覆盖旧收藏。
+ * 产品约定：活动资讯、资源导航的“内容”从服务端获取，但“收藏了哪一条”
+ * 只记录在当前设备上。换设备/重装后需要重新收藏。
+ * 收藏按学号隔离，切换账号不会看到上一个账号的收藏。
  */
 export class LibraryFavorites {
   private static instance: LibraryFavorites;
   private items: LibraryFavorite[] = [];
   private loaded: boolean = false;
   private loadedSid: string = '';
-  private loadPromise: Promise<void> | null = null;
-  private loadSid: string = '';
-  private writeChain: Promise<void> = Promise.resolve();
-  private migrationChain: Promise<void> = Promise.resolve();
-  private storageKey: string = STORAGE_PREFIX;
-  private synced: boolean = false;
-  private pendingAdds: LibraryFavorite[] = [];
-  private pendingRemoves: LibraryFavorite[] = [];
-  private lastToggleServerOk: boolean = true;
-  // 账号切换时递增；异步任务发现代次变化就放弃写入，避免旧账号数据污染新账号。
-  private accountEpoch: number = 0;
 
   static getInstance(): LibraryFavorites {
     if (!LibraryFavorites.instance) {
@@ -87,162 +32,39 @@ export class LibraryFavorites {
     return LibraryFavorites.instance;
   }
 
-  /** 是否已成功和服务端对齐（页面用来显示同步状态）。 */
-  isSynced(): boolean {
-    return this.synced;
+  private storageKey(sid: string): string {
+    return sid ? `${STORAGE_PREFIX}${sid}` : LEGACY_STORAGE_KEY;
   }
 
-  /** 最近一次收藏/取消是否已同步到服务端（未登录或断网时为 false）。 */
-  isLastToggleSynced(): boolean {
-    return this.lastToggleServerOk;
+  private parse(raw: string): LibraryFavorite[] {
+    try {
+      const parsed = JSON.parse(raw) as LibraryFavorite[];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((item: LibraryFavorite) => !!item && !!item.kind && (item.id || 0) > 0);
+    } catch {
+      return [];
+    }
   }
 
-  private syncedKey(): string {
-    return `${this.storageKey}_synced`;
-  }
-
-  private pendingKey(): string {
-    return `${this.storageKey}_pending`;
-  }
-
-  /**
-   * 按当前登录学号确保数据已加载。
-   * 学号变化（切换账号）时必须丢弃上一个账号的内存数据并从新账号的 key 重新读取。
-   */
+  /** 首次读取时把旧版本共用的全局收藏迁移给当前账号；账号变化时重新读取。 */
   private async ensureLoaded(): Promise<void> {
     const storage = AppStorage.getInstance();
     const sid = (await storage.getStudentId()).trim();
     if (this.loaded && sid === this.loadedSid) return;
-    // 同一账号正在加载时共享同一个 Promise，不能重置状态再读一遍旧快照。
-    const pending = this.loadPromise;
-    if (pending && sid === this.loadSid) {
-      await pending;
-      return;
-    }
-    if (sid !== this.loadedSid || this.loadPromise) {
-      this.resetForAccount();
-    }
-    this.loadSid = sid;
-    const epoch = this.accountEpoch;
-    const load = this.loadFromStorage(sid, epoch);
-    const tracked = load.then(async (): Promise<void> => {
-      if (await this.isCurrentLoad(sid, epoch)) {
-        this.loaded = true;
-        this.loadedSid = sid;
-      }
-    });
-    this.loadPromise = tracked;
-    try {
-      await tracked;
-    } finally {
-      // 读取失败或切号后允许重试；不能清掉新账号自己的加载任务。
-      if (this.loadPromise === tracked && !this.loaded) this.loadPromise = null;
-    }
-  }
-
-  private async isCurrentLoad(sid: string, epoch: number): Promise<boolean> {
-    if (this.accountEpoch !== epoch || this.loadSid !== sid) return false;
-    const current = (await AppStorage.getInstance().getStudentId()).trim();
-    return this.accountEpoch === epoch && this.loadSid === sid && current === sid;
-  }
-
-  private resetForAccount(): void {
-    this.accountEpoch = this.accountEpoch + 1;
-    this.items = [];
-    this.pendingAdds = [];
-    this.pendingRemoves = [];
-    this.synced = false;
-    this.lastToggleServerOk = true;
-    this.loaded = false;
-    this.loadedSid = '';
-    this.loadPromise = null;
-    this.loadSid = '';
-  }
-
-  private async claimLegacy(sid: string, storageKey: string, epoch: number): Promise<string> {
-    const storage = AppStorage.getInstance();
-    // 不同账号的旧数据认领需要串行，先确定归属，再复制到固定的账号 key。
-    const run = this.migrationChain.then(async (): Promise<string> => {
-      if (!await this.isCurrentLoad(sid, epoch)) return '';
-      const owner = await storage.getSettingString(MIGRATION_OWNER_KEY, '');
-      if (owner && owner !== sid) return '';
-      if (!await this.isCurrentLoad(sid, epoch)) return '';
-      const legacy = await storage.getSettingString(STORAGE_PREFIX, '');
-      if (!await this.isCurrentLoad(sid, epoch)) return '';
-      if (!owner) await storage.setSettingString(MIGRATION_OWNER_KEY, sid);
-      if (legacy) await storage.setSettingString(storageKey, legacy);
-      return legacy;
-    });
-    this.migrationChain = run.then((): void => {}, (): void => {});
-    return run;
-  }
-
-  private async loadFromStorage(sid: string, epoch: number): Promise<void> {
-    const storage = AppStorage.getInstance();
-    const storageKey = sid ? `${STORAGE_PREFIX}_${sid}` : STORAGE_PREFIX;
-    this.storageKey = storageKey;
-    let raw = await storage.getSettingString(storageKey, '');
-    if (!await this.isCurrentLoad(sid, epoch)) return;
+    const key = this.storageKey(sid);
+    let raw = await storage.getSettingString(key, '');
     if (!raw && sid) {
-      raw = await this.claimLegacy(sid, storageKey, epoch);
-    }
-
-    let items: LibraryFavorite[] = [];
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as LibraryFavorite[];
-        items = Array.isArray(parsed) ? parsed.filter(validFavorite) : [];
-      } catch {
-        items = [];
+      // 旧版本不区分账号，收藏存在 libraryFavorites；迁移一次后清空，避免被多个账号重复认领。
+      const legacy = await storage.getSettingString(LEGACY_STORAGE_KEY, '');
+      if (legacy && legacy !== '[]') {
+        raw = legacy;
+        await storage.setSettingString(key, legacy);
+        await storage.setSettingString(LEGACY_STORAGE_KEY, '[]');
       }
     }
-    let normalized: LibraryFavorite[] = [];
-    if (items.length > 0) {
-      normalized = items.map(normalizeFavorite);
-    }
-
-    const rawPending = await storage.getSettingString(`${storageKey}_pending`, '');
-    let adds: LibraryFavorite[] = [];
-    let removes: LibraryFavorite[] = [];
-    if (rawPending) {
-      try {
-        const parsed = JSON.parse(rawPending) as PendingFavorites;
-        adds = Array.isArray(parsed.adds) ? parsed.adds.filter(validFavorite) : [];
-        removes = Array.isArray(parsed.removes) ? parsed.removes.filter(validFavorite) : [];
-      } catch {
-        adds = [];
-        removes = [];
-      }
-    }
-
-    // 该账号从未成功同步过：本地收藏（含从旧版本迁移来的）要先补传，
-    // 否则首次拉取空的云端列表会把它们覆盖掉。
-    const everSynced = await storage.getSettingBool(`${storageKey}_synced`, false);
-    if (!everSynced) {
-      for (const item of normalized) {
-        if (!adds.some((value: LibraryFavorite) => sameFavorite(value, item))) {
-          adds.push(item);
-        }
-      }
-    }
-
-    // 读取期间可能已经切换了账号：旧结果直接丢弃。
-    if (!await this.isCurrentLoad(sid, epoch)) return;
-    this.items = normalized;
-    this.pendingAdds = adds.filter((value: LibraryFavorite) =>
-      !removes.some((removed: LibraryFavorite) => sameFavorite(removed, value)));
-    this.pendingRemoves = removes;
-    if (!everSynced && this.pendingAdds.length > 0) {
-      // 首次同步前就落盘待补发队列，避免进程被杀后旧收藏再也没机会上传。
-      await this.persistPendingWithKey(storageKey);
-    }
-  }
-
-  /** 异步等待之后确认账号没变：既看代次，也直接比较当前学号。 */
-  private async sameAccount(epoch: number): Promise<boolean> {
-    if (this.accountEpoch !== epoch) return false;
-    const sid = (await AppStorage.getInstance().getStudentId()).trim();
-    return sid === this.loadedSid;
+    this.items = this.parse(raw);
+    this.loadedSid = sid;
+    this.loaded = true;
   }
 
   private keyOf(kind: string, id: number): string {
@@ -254,174 +76,30 @@ export class LibraryFavorites {
     return this.items.slice();
   }
 
-  /** 收藏列表是同步缓存，列表页渲染时直接调用。 */
+  /** 收藏列表是同步缓存，列表页渲染时直接调用（需先 list() 完成加载）。 */
   has(kind: string, id: number): boolean {
     const key = this.keyOf(kind, id);
     return this.items.some((item: LibraryFavorite) => this.keyOf(item.kind, item.id) === key);
   }
 
-  /** 切换收藏；返回切换后的状态（true=已收藏）。服务端同步失败时排队，不影响本机结果。 */
+  /** 切换收藏；返回切换后的状态（true=已收藏）。只写入本机。 */
   async toggle(item: LibraryFavorite): Promise<boolean> {
     await this.ensureLoaded();
-    const epoch = this.accountEpoch;
-    // 连续点击时按顺序执行，后一次不会用旧快照覆盖前一次的结果。
-    const run = this.writeChain.then(() => this.applyToggle(item, epoch));
-    this.writeChain = run.then(() => {}, () => {});
-    return run;
-  }
-
-  private async applyToggle(item: LibraryFavorite, expectedEpoch: number): Promise<boolean> {
-    // 队列等待期间切号时取消旧操作，不能把旧账号的点击套用到新账号。
-    if (!await this.sameAccount(expectedEpoch)) throw new Error('favorite account changed');
-    await this.ensureLoaded();
-    if (!await this.sameAccount(expectedEpoch)) throw new Error('favorite account changed');
-    const epoch = this.accountEpoch;
-    const storageKey = this.storageKey;
     const key = this.keyOf(item.kind, item.id);
     const index = this.items.findIndex((value: LibraryFavorite) => this.keyOf(value.kind, value.id) === key);
-    // 这条收藏如果一直没同步成功（还在待补发队列里），取消时只需撤掉补发，
-    // 不需要再排一个删除请求。
-    const neverSynced = this.pendingAdds.some((value: LibraryFavorite) =>
-      this.keyOf(value.kind, value.id) === key);
     let favorited = false;
     if (index >= 0) {
       this.items.splice(index, 1);
-      this.pendingAdds = this.pendingAdds.filter((value: LibraryFavorite) => this.keyOf(value.kind, value.id) !== key);
-      if (!neverSynced) this.pendingRemoves.unshift(item);
     } else {
       this.items.unshift(item);
-      this.pendingRemoves = this.pendingRemoves.filter((value: LibraryFavorite) => this.keyOf(value.kind, value.id) !== key);
-      this.pendingAdds.unshift(item);
       favorited = true;
     }
-    const pendingSnapshot = this.serializePending();
-    await this.persistWithKey(storageKey);
-    // 先落盘再发请求：即使发送途中切号/断网，这条操作也不会丢，仍留在本账号队列里。
-    await this.persistPendingWithKey(storageKey, pendingSnapshot);
-
-    const token = await this.currentToken();
-    // 读令牌期间可能已经切号：拿到的是别人令牌时绝不能发出去。
-    if (!await this.sameAccount(epoch)) throw new Error('favorite account changed');
-    const ok = token
-      ? (favorited
-        ? await LibraryApi.addFavorite(toEntry(item), token)
-        : await LibraryApi.removeFavorite(item.kind, item.id, token))
-      : false;
-    if (!await this.sameAccount(epoch)) throw new Error('favorite account changed');
-    if (ok) {
-      this.synced = true;
-      if (favorited) {
-        this.pendingAdds = this.pendingAdds.filter((value: LibraryFavorite) =>
-          this.keyOf(value.kind, value.id) !== key);
-      } else {
-        this.pendingRemoves = this.pendingRemoves.filter((value: LibraryFavorite) =>
-          this.keyOf(value.kind, value.id) !== key);
-      }
-      await this.persistPendingWithKey(storageKey);
-    }
-    this.lastToggleServerOk = ok;
+    await this.persist();
     return favorited;
   }
 
-  private async currentToken(): Promise<string> {
-    // 退出登录后 AppAuth token 可能尚未清理。没有当前学号时它不再代表一个
-    // 可确认的账号，不能拿去访问收藏接口，否则会把匿名访问误发给后端。
-    if (!this.loadedSid) return '';
-    return (await AppStorage.getInstance().getAppAuthAccessToken()).trim();
-  }
-
-  /**
-   * 与服务端对齐：先补发离线期间的增删，再拉取云端列表覆盖本机。
-   * 返回是否同步成功；失败时保留本机数据（离线可用）。
-   */
-  async syncFromServer(): Promise<boolean> {
-    await this.ensureLoaded();
-    const epoch = this.accountEpoch;
-    // 同步也进写入队列，避免和用户刚点的收藏互相覆盖。
-    const run = this.writeChain.then(async (): Promise<boolean> => {
-      if (!await this.sameAccount(epoch)) return false;
-      return this.applySync(epoch);
-    });
-    this.writeChain = run.then(() => {}, () => {});
-    return run;
-  }
-
-  private async applySync(expectedEpoch: number): Promise<boolean> {
-    await this.ensureLoaded();
-    if (!await this.sameAccount(expectedEpoch)) return false;
-    const epoch = this.accountEpoch;
-    const storageKey = this.storageKey;
-    const flushed = await this.flushPending();
-    if (!await this.sameAccount(epoch)) return false;
-    if (!flushed) return false;
-    const token = await this.currentToken();
-    // 读令牌和查询之间也可能切号，拿到令牌后再确认一次再发请求。
-    if (!await this.sameAccount(epoch)) return false;
-    const remote = token ? await LibraryApi.listFavorites(token) : null;
-    if (!await this.sameAccount(epoch)) return false;
-    if (remote === null) return false;
-    this.items = remote
-      .filter((entry: LibraryFavoriteEntry) => !!entry.kind && (entry.itemId || 0) > 0)
-      .map((entry: LibraryFavoriteEntry) => toFavorite(entry));
-    const pendingSnapshot = this.serializePending();
-    await this.persistWithKey(storageKey);
-    await this.persistPendingWithKey(storageKey, pendingSnapshot);
-    await AppStorage.getInstance().setSettingBool(`${storageKey}_synced`, true);
-    if (!await this.sameAccount(epoch)) return false;
-    this.synced = true;
-    return true;
-  }
-
-  private async flushPending(): Promise<boolean> {
-    await this.ensureLoaded();
-    // 补发过程中可能切换账号：每次发送前、每个请求返回后都要核对，
-    // 否则 A 剩下的收藏会带着 B 的登录态发到 B 的账号上。
-    const epoch = this.accountEpoch;
-    const storageKey = this.storageKey;
-    const adds = this.pendingAdds.slice();
-    for (const item of adds) {
-      if (!await this.sameAccount(epoch)) return false;
-      const token = await this.currentToken();
-      // 令牌读取后才切号时，拿到的可能是新账号令牌，必须在这里拦住。
-      if (!await this.sameAccount(epoch)) return false;
-      const ok = token ? await LibraryApi.addFavorite(toEntry(item), token) : false;
-      if (!await this.sameAccount(epoch)) return false;
-      if (ok) {
-        this.pendingAdds = this.pendingAdds.filter((value: LibraryFavorite) =>
-          this.keyOf(value.kind, value.id) !== this.keyOf(item.kind, item.id));
-        await this.persistPendingWithKey(storageKey);
-      }
-    }
-    const removes = this.pendingRemoves.slice();
-    for (const item of removes) {
-      if (!await this.sameAccount(epoch)) return false;
-      const token = await this.currentToken();
-      if (!await this.sameAccount(epoch)) return false;
-      const ok = token ? await LibraryApi.removeFavorite(item.kind, item.id, token) : false;
-      if (!await this.sameAccount(epoch)) return false;
-      if (ok) {
-        this.pendingRemoves = this.pendingRemoves.filter((value: LibraryFavorite) =>
-          this.keyOf(value.kind, value.id) !== this.keyOf(item.kind, item.id));
-        await this.persistPendingWithKey(storageKey);
-      }
-    }
-    return this.pendingAdds.length === 0 && this.pendingRemoves.length === 0;
-  }
-
-  private async persistWithKey(storageKey: string): Promise<void> {
-    await AppStorage.getInstance().setSettingString(storageKey, JSON.stringify(this.items));
-  }
-
-  private serializePending(): string {
-    if (this.pendingAdds.length === 0 && this.pendingRemoves.length === 0) {
-      return '';
-    }
-    const payload: PendingFavorites = { adds: this.pendingAdds, removes: this.pendingRemoves };
-    return JSON.stringify(payload);
-  }
-
-  private async persistPendingWithKey(storageKey: string, snapshot?: string): Promise<void> {
-    const serialized = snapshot !== undefined ? snapshot : this.serializePending();
-    await AppStorage.getInstance().setSettingString(`${storageKey}_pending`, serialized);
+  private async persist(): Promise<void> {
+    const key = this.storageKey(this.loadedSid);
+    await AppStorage.getInstance().setSettingString(key, JSON.stringify(this.items));
   }
 }
