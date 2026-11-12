@@ -595,7 +595,9 @@ struct WidgetSettingsPage {
                 this.pickTheme();
               })
               Divider().color('#F0F0F0').margin({ left: 16 })
-              this.appearanceRow('标题颜色', '', true, () => {})
+              this.appearanceRow('标题颜色', '默认', true, () => {
+                promptAction.showToast({ message: '标题颜色将在后续版本开放', duration: 1600 });
+              })
               Divider().color('#F0F0F0').margin({ left: 16 })
               Row() {
                 Text('不透明度').fontSize(16).fontColor('#222222').width(110)
