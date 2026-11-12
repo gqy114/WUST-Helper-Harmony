@@ -7,7 +7,7 @@
  *  - onFormEvent：卡片上按钮（message = 'refresh'）触发时刷新
  */
 import { formBindingData, FormExtensionAbility, formInfo, formProvider } from '@kit.FormKit';
-import { Want } from '@kit.AbilityKit';
+import { Configuration, ConfigurationConstant, Want } from '@kit.AbilityKit';
 import { AppStorage } from '../store/AppStorage';
 import { WidgetData, WidgetSnapshot } from '../widget/WidgetData';
 
@@ -25,7 +25,8 @@ export default class EntryFormAbility extends FormExtensionAbility {
   private async buildBindingData(): Promise<formBindingData.FormBindingData> {
     try {
       await this.ensureStorage();
-      const snapshot: WidgetSnapshot = await WidgetData.build(AppStorage.getInstance());
+      const dark = this.systemDark();
+      const snapshot: WidgetSnapshot = await WidgetData.build(AppStorage.getInstance(), dark);
       return formBindingData.createFormBindingData(snapshot);
     } catch (error) {
       console.warn(TAG, `build binding data failed: ${JSON.stringify(error)}`);
@@ -39,10 +40,32 @@ export default class EntryFormAbility extends FormExtensionAbility {
         line3: '',
         line4: '',
         line5: '',
-        accent: '#1EC98D',
+        days: '',
+        detail: '',
+        accent: '#EC5A3C',
+        bg: '',
+        bgOpacity: 0.7,
+        cardBg: '#FFFFFF',
+        textColor: '#111111',
+        subColor: '#666666',
         updatedAt: ''
       });
     }
+  }
+
+  /** 当前系统是否深色；用于“跟随系统”主题。 */
+  private systemDark(): boolean {
+    try {
+      return this.context.config?.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+    } catch (error) {
+      console.warn(TAG, `read color mode failed: ${JSON.stringify(error)}`);
+      return false;
+    }
+  }
+
+  onConfigurationUpdate(newConfig: Configuration): void {
+    console.info(TAG, 'config updated, refreshing forms');
+    this.refreshAllForms();
   }
 
   onAddForm(want: Want): formBindingData.FormBindingData {
@@ -59,7 +82,14 @@ export default class EntryFormAbility extends FormExtensionAbility {
       line3: '',
       line4: '',
       line5: '',
-      accent: '#1EC98D',
+      days: '',
+      detail: '',
+      accent: '#EC5A3C',
+      bg: '',
+      bgOpacity: 0.7,
+      cardBg: '#FFFFFF',
+      textColor: '#111111',
+      subColor: '#666666',
       updatedAt: ''
     });
   }

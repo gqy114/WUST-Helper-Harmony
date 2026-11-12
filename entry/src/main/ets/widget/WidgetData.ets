@@ -11,13 +11,24 @@ export const WIDGET_MODE_COUNTDOWN: string = 'countdown';
 export const WIDGET_MODE_DAILY: string = 'daily';
 export const WIDGET_MODE_WEEKLY: string = 'weekly';
 
+export const WIDGET_THEME_SYSTEM: string = 'system';
+export const WIDGET_THEME_LIGHT: string = 'light';
+export const WIDGET_THEME_DARK: string = 'dark';
+
 const MODE_KEY: string = 'widgetMode';
 const COUNTDOWN_KEY: string = 'widgetCountdowns';
+const EXAM_KEY: string = 'widgetExamCountdowns';
 const ACCENT_KEY: string = 'widgetAccent';
+const BACKGROUND_KEY: string = 'widgetBackgroundPath';
+const OPACITY_KEY: string = 'widgetBackgroundOpacity';
+const THEME_KEY: string = 'widgetTheme';
+
+export const DEFAULT_BACKGROUND_OPACITY: number = 0.7;
 
 export interface WidgetCountdownItem {
   title: string;
   date: string;
+  detail?: string;
 }
 
 export interface WidgetSnapshot {
@@ -30,11 +41,33 @@ export interface WidgetSnapshot {
   line3: string;
   line4: string;
   line5: string;
+  /** 倒计时天数，考试倒计时用 */
+  days: string;
+  /** 倒计时补充信息，例如考场 */
+  detail: string;
   accent: string;
+  /** 自定义背景图（应用沙箱路径），空串表示纯色 */
+  bg: string;
+  /** 只作用于背景图的不透明度 */
+  bgOpacity: number;
+  cardBg: string;
+  textColor: string;
+  subColor: string;
   updatedAt: string;
 }
 
 const WEEKDAY_NAMES: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+function themeColors(dark: boolean): string[] {
+  // [卡片底色, 主文字, 次文字]
+  return dark ? ['#1C1C1E', '#FFFFFF', '#B9BDC6'] : ['#FFFFFF', '#111111', '#666666'];
+}
+
+function normalizeOpacity(value: number): number {
+  if (isNaN(value)) return DEFAULT_BACKGROUND_OPACITY;
+  const bounded = Math.min(1, Math.max(0.2, value));
+  return bounded;
+}
 
 export class WidgetPrefs {
   static async getMode(storage: AppStorage): Promise<string> {
@@ -50,8 +83,8 @@ export class WidgetPrefs {
   }
 
   static async getAccent(storage: AppStorage): Promise<string> {
-    const accent = await storage.getSettingString(ACCENT_KEY, '#1EC98D');
-    return accent.length > 0 ? accent : '#1EC98D';
+    const accent = await storage.getSettingString(ACCENT_KEY, '#EC5A3C');
+    return accent.length > 0 ? accent : '#EC5A3C';
   }
 
   static async setAccent(storage: AppStorage, accent: string): Promise<void> {
@@ -59,10 +92,51 @@ export class WidgetPrefs {
   }
 
   static async getCountdowns(storage: AppStorage): Promise<WidgetCountdownItem[]> {
-    const raw = await storage.getSettingString(COUNTDOWN_KEY, '');
-    if (raw.length === 0) {
-      return [];
-    }
+    return WidgetPrefs.readItems(storage, COUNTDOWN_KEY);
+  }
+
+  static async setCountdowns(storage: AppStorage, items: WidgetCountdownItem[]): Promise<void> {
+    await storage.setSettingString(COUNTDOWN_KEY, JSON.stringify(items));
+  }
+
+  static async getExamCountdowns(storage: AppStorage): Promise<WidgetCountdownItem[]> {
+    return WidgetPrefs.readItems(storage, EXAM_KEY);
+  }
+
+  static async setExamCountdowns(storage: AppStorage, items: WidgetCountdownItem[]): Promise<void> {
+    await storage.setSettingString(EXAM_KEY, JSON.stringify(items));
+  }
+
+  static async getBackground(storage: AppStorage): Promise<string> {
+    return storage.getSettingString(BACKGROUND_KEY, '');
+  }
+
+  static async setBackground(storage: AppStorage, path: string): Promise<void> {
+    await storage.setSettingString(BACKGROUND_KEY, path);
+  }
+
+  static async getBackgroundOpacity(storage: AppStorage): Promise<number> {
+    const raw = await storage.getSettingString(OPACITY_KEY, `${DEFAULT_BACKGROUND_OPACITY}`);
+    return normalizeOpacity(parseFloat(raw));
+  }
+
+  static async setBackgroundOpacity(storage: AppStorage, value: number): Promise<void> {
+    await storage.setSettingString(OPACITY_KEY, `${normalizeOpacity(value)}`);
+  }
+
+  static async getTheme(storage: AppStorage): Promise<string> {
+    const theme = await storage.getSettingString(THEME_KEY, WIDGET_THEME_SYSTEM);
+    if (theme === WIDGET_THEME_LIGHT || theme === WIDGET_THEME_DARK) return theme;
+    return WIDGET_THEME_SYSTEM;
+  }
+
+  static async setTheme(storage: AppStorage, theme: string): Promise<void> {
+    await storage.setSettingString(THEME_KEY, theme);
+  }
+
+  private static async readItems(storage: AppStorage, key: string): Promise<WidgetCountdownItem[]> {
+    const raw = await storage.getSettingString(key, '');
+    if (raw.length === 0) return [];
     try {
       const parsed = JSON.parse(raw) as WidgetCountdownItem[];
       if (!Array.isArray(parsed)) return [];
@@ -70,17 +144,17 @@ export class WidgetPrefs {
       for (let i = 0; i < parsed.length; i++) {
         const item = parsed[i];
         if (item && typeof item.title === 'string' && typeof item.date === 'string') {
-          items.push({ title: item.title, date: item.date });
+          items.push({
+            title: item.title,
+            date: item.date,
+            detail: typeof item.detail === 'string' ? item.detail : ''
+          });
         }
       }
       return items;
     } catch {
       return [];
     }
-  }
-
-  static async setCountdowns(storage: AppStorage, items: WidgetCountdownItem[]): Promise<void> {
-    await storage.setSettingString(COUNTDOWN_KEY, JSON.stringify(items));
   }
 }
 
@@ -93,10 +167,11 @@ export class WidgetData {
     return `${date.getFullYear()}-${WidgetData.two(date.getMonth() + 1)}-${WidgetData.two(date.getDate())}`;
   }
 
-  /** 解析 YYYY-MM-DD，失败返回 null。 */
+  /** 解析 YYYY-MM-DD 或带时间的字符串，失败返回 null。 */
   private static parseDate(value: string): Date | null {
     if (!value) return null;
-    const parts = value.split('-');
+    const dayPart = value.trim().slice(0, 10);
+    const parts = dayPart.split('-');
     if (parts.length !== 3) return null;
     const year = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10);
@@ -123,31 +198,42 @@ export class WidgetData {
     return week;
   }
 
+  /** 按小时轮换：多个考试倒计时时，每小时切换显示下一个。 */
+  private static rotationIndex(total: number): number {
+    if (total <= 1) return 0;
+    return Math.floor(Date.now() / (60 * 60 * 1000)) % total;
+  }
+
   private static countdownSnapshot(items: WidgetCountdownItem[], accent: string): WidgetSnapshot {
     const today = new Date();
     const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    let title = '倒计时';
-    let subtitle = '还没有添加倒计时';
+    let title = '考试倒计时';
+    let subtitle = '还没有考试安排';
+    let detail = '';
+    let days = '';
     let line0 = '';
+
     const sorted: WidgetCountdownItem[] = [];
     for (let i = 0; i < items.length; i++) sorted.push(items[i]);
     sorted.sort((left: WidgetCountdownItem, right: WidgetCountdownItem): number => {
       return left.date.localeCompare(right.date);
     });
-
     const upcoming: WidgetCountdownItem[] = [];
     for (let i = 0; i < sorted.length; i++) {
       const date = WidgetData.parseDate(sorted[i].date);
       if (date === null) continue;
       if (date.getTime() >= todayDay.getTime()) upcoming.push(sorted[i]);
     }
-    const target = upcoming.length > 0 ? upcoming[0] : (sorted.length > 0 ? sorted[0] : null);
-    if (target !== null) {
+    const pool = upcoming.length > 0 ? upcoming : sorted;
+    if (pool.length > 0) {
+      const target = pool[WidgetData.rotationIndex(pool.length)];
       title = target.title;
+      detail = target.detail || '';
       const date = WidgetData.parseDate(target.date);
       if (date !== null) {
-        const days = Math.round((date.getTime() - todayDay.getTime()) / (24 * 60 * 60 * 1000));
-        subtitle = days >= 0 ? `还有 ${days} 天` : `已过去 ${-days} 天`;
+        const remain = Math.round((date.getTime() - todayDay.getTime()) / (24 * 60 * 60 * 1000));
+        days = `${remain}`;
+        subtitle = remain >= 0 ? `还有 ${remain} 天` : `已过去 ${-remain} 天`;
         line0 = `${target.date} ${WEEKDAY_NAMES[date.getDay()]}`;
       }
     }
@@ -161,7 +247,14 @@ export class WidgetData {
       line3: '',
       line4: '',
       line5: '',
+      days: days,
+      detail: detail,
       accent: accent,
+      bg: '',
+      bgOpacity: DEFAULT_BACKGROUND_OPACITY,
+      cardBg: '',
+      textColor: '',
+      subColor: '',
       updatedAt: WidgetData.formatDate(today)
     };
   }
@@ -210,25 +303,52 @@ export class WidgetData {
       line3: lines[3],
       line4: '',
       line5: '',
+      days: '',
+      detail: '',
       accent: accent,
+      bg: '',
+      bgOpacity: DEFAULT_BACKGROUND_OPACITY,
+      cardBg: '',
+      textColor: '',
+      subColor: '',
       updatedAt: WidgetData.formatDate(today)
     };
   }
 
-  static async build(storage: AppStorage): Promise<WidgetSnapshot> {
+  /**
+   * 生成卡片数据。
+   * @param systemDark 系统是否深色（“跟随系统”主题时使用）。
+   */
+  static async build(storage: AppStorage, systemDark: boolean = false): Promise<WidgetSnapshot> {
     const mode = await WidgetPrefs.getMode(storage);
     const accent = await WidgetPrefs.getAccent(storage);
+    const theme = await WidgetPrefs.getTheme(storage);
+    const dark = theme === WIDGET_THEME_DARK || (theme === WIDGET_THEME_SYSTEM && systemDark);
+    const colors = themeColors(dark);
+    const bg = await WidgetPrefs.getBackground(storage);
+    const bgOpacity = await WidgetPrefs.getBackgroundOpacity(storage);
+
+    let snapshot: WidgetSnapshot;
     if (mode === WIDGET_MODE_COUNTDOWN) {
-      const items = await WidgetPrefs.getCountdowns(storage);
-      return WidgetData.countdownSnapshot(items, accent);
+      // 优先展示考试倒计时；没有考试数据时退回手动倒计时。
+      let items = await WidgetPrefs.getExamCountdowns(storage);
+      if (items.length === 0) items = await WidgetPrefs.getCountdowns(storage);
+      snapshot = WidgetData.countdownSnapshot(items, accent);
+    } else {
+      let courses: CourseData[] = [];
+      try {
+        courses = await storage.getCurrentCourses();
+      } catch {
+        courses = [];
+      }
+      const week = await WidgetData.currentWeek(storage);
+      snapshot = WidgetData.courseSnapshot(courses, week, mode, accent);
     }
-    let courses: CourseData[] = [];
-    try {
-      courses = await storage.getCurrentCourses();
-    } catch {
-      courses = [];
-    }
-    const week = await WidgetData.currentWeek(storage);
-    return WidgetData.courseSnapshot(courses, week, mode, accent);
+    snapshot.bg = bg;
+    snapshot.bgOpacity = bgOpacity;
+    snapshot.cardBg = colors[0];
+    snapshot.textColor = colors[1];
+    snapshot.subColor = colors[2];
+    return snapshot;
   }
 }
