@@ -18,6 +18,9 @@ async function makeStore(db = new Map(), options = {}) {
   const storage = {
     getStudentId: async () => state.sid,
     getSettingString: async (key, def = '') => {
+      if (options.delayedGet) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
       const raw = db.has(key) ? db.get(key) : JSON.stringify(def);
       try {
         return JSON.parse(raw);
@@ -25,6 +28,15 @@ async function makeStore(db = new Map(), options = {}) {
         return def;
       }
     },
+    getSettingBool: async (key, def = false) => {
+      const raw = db.has(key) ? db.get(key) : JSON.stringify(def);
+      try {
+        return JSON.parse(raw) === true;
+      } catch {
+        return def;
+      }
+    },
+    setSettingBool: async (key, value) => { db.set(key, JSON.stringify(value)); },
     setSettingString: async (key, value) => { db.set(key, JSON.stringify(value)); },
   };
   const context = createContext({ console, JSON, Array });
@@ -104,4 +116,31 @@ test('未登录时收藏仍然可用，存在旧版全局 key 下', async () => 
   await favorites.toggle(favorite(5));
   assert.equal(favorites.has('article', 5), true);
   assert.match(db.get('libraryFavorites'), /test-5/);
+});
+
+test('页面刚打开就收藏：并发读取不会覆盖新收藏', async () => {
+  const db = new Map([['libraryFavorites_2024001', JSON.stringify(JSON.stringify([favorite(1, '旧收藏')]))]]);
+  const { favorites } = await makeStore(db, { delayedGet: true });
+  // 不 await list()，直接收藏，模拟“刚打开页面就点收藏”。
+  const listing = favorites.list();
+  const toggling = favorites.toggle(favorite(2, '新收藏'));
+  await listing;
+  assert.equal(await toggling, true);
+  const saved = JSON.parse(await (async () => {
+    const raw = db.get('libraryFavorites_2024001');
+    return JSON.parse(raw);
+  })());
+  assert.deepEqual(saved.map((item) => item.id).sort((a, b) => a - b), [1, 2], '新收藏不能被并发读取覆盖');
+});
+
+test('旧数据只迁移一次：已迁移后切换账号不会再认领', async () => {
+  const db = new Map([['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))]]);
+  const { favorites, state } = await makeStore(db);
+  assert.deepEqual(Array.from(await favorites.list(), (item) => item.id), [3]);
+
+  // 手动放回旧 key，模拟历史残留：迁移标记已写完，新账号不应再认领。
+  db.set('libraryFavorites', JSON.stringify(JSON.stringify([favorite(9)])));
+  state.sid = '2024002';
+  assert.deepEqual(Array.from(await favorites.list()), [], '第二个账号不应认领旧数据');
+  assert.equal(JSON.parse(db.get('libraryFavoritesMigrationDone')), true, '迁移标记应已写入');
 });

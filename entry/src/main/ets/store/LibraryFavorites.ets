@@ -24,6 +24,10 @@ export class LibraryFavorites {
   private items: LibraryFavorite[] = [];
   private loaded: boolean = false;
   private loadedSid: string = '';
+  // 串行化加载：页面刚打开时 list() 与用户点击触发的 toggle() 不能各读一份再互相覆盖。
+  private loadChain: Promise<void> = Promise.resolve();
+  // 旧数据只迁移一次，避免切换账号时把上一个账号的收藏带给新账号。
+  private static readonly MIGRATION_FLAG = 'libraryFavoritesMigrationDone';
 
   static getInstance(): LibraryFavorites {
     if (!LibraryFavorites.instance) {
@@ -46,25 +50,38 @@ export class LibraryFavorites {
     }
   }
 
-  /** 首次读取时把旧版本共用的全局收藏迁移给当前账号；账号变化时重新读取。 */
-  private async ensureLoaded(): Promise<void> {
+  private async loadFor(sid: string): Promise<void> {
     const storage = AppStorage.getInstance();
-    const sid = (await storage.getStudentId()).trim();
-    if (this.loaded && sid === this.loadedSid) return;
     const key = this.storageKey(sid);
     let raw = await storage.getSettingString(key, '');
-    if (!raw && sid) {
-      // 旧版本不区分账号，收藏存在 libraryFavorites；迁移一次后清空，避免被多个账号重复认领。
+    const migrated = await storage.getSettingBool(LibraryFavorites.MIGRATION_FLAG, false);
+    if (!migrated) {
+      // 旧版本不区分账号，收藏存在 libraryFavorites；只迁移给升级后第一个读取的账号。
       const legacy = await storage.getSettingString(LEGACY_STORAGE_KEY, '');
-      if (legacy && legacy !== '[]') {
+      if (!raw && sid && legacy && legacy !== '[]') {
         raw = legacy;
         await storage.setSettingString(key, legacy);
-        await storage.setSettingString(LEGACY_STORAGE_KEY, '[]');
       }
+      await storage.setSettingString(LEGACY_STORAGE_KEY, '[]');
+      await storage.setSettingBool(LibraryFavorites.MIGRATION_FLAG, true);
     }
     this.items = this.parse(raw);
     this.loadedSid = sid;
     this.loaded = true;
+  }
+
+  /** 账号变化时重新读取；并发调用共享同一次加载。 */
+  private async ensureLoaded(): Promise<void> {
+    const storage = AppStorage.getInstance();
+    const wanted = (await storage.getStudentId()).trim();
+    if (this.loaded && wanted === this.loadedSid) return;
+    const run = this.loadChain.then(async (): Promise<void> => {
+      const sid = (await storage.getStudentId()).trim();
+      if (this.loaded && sid === this.loadedSid) return;
+      await this.loadFor(sid);
+    });
+    this.loadChain = run.catch((): void => undefined);
+    await run;
   }
 
   private keyOf(kind: string, id: number): string {
