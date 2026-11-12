@@ -162,6 +162,40 @@ export class AppStorage {
     return this.commitProfileWrite(epoch, () => this.putStr(`userName_${account}`, value));
   }
 
+  /**
+   * 仅当会话（代次 + 学号）未变时才写入整套应用认证令牌；返回是否写入。
+   *
+   * 认证恢复请求可能持续数秒，期间用户切号：旧请求返回后不能把旧账号的令牌
+   * 写给新账号。写入走同一条串行链，且 setStudentId 会先等待链上的写入完成，
+   * 因此“校验通过后开始写”的旧写入一定在新学号落盘之前结束。
+   */
+  async setAppAuthTokensIfSession(epoch: number, sid: string,
+    accessToken: string, refreshToken: string,
+    expiresAt: number, refreshExpiresAt: number): Promise<boolean> {
+    const account = (sid || '').trim();
+    if (!account) return false;
+    return this.commitSessionWrite(epoch, account, async (): Promise<void> => {
+      await this.putStr('appAuthAccessToken', accessToken);
+      await this.putStr('appAuthRefreshToken', refreshToken);
+      await this.putNum('appAuthExpiresAt', expiresAt);
+      await this.putNum('appAuthRefreshExpiresAt', refreshExpiresAt);
+    });
+  }
+
+  private commitSessionWrite(epoch: number, sid: string, writer: () => Promise<void>): Promise<boolean> {
+    const account = (sid || '').trim();
+    if (!account) return Promise.resolve(false);
+    const run = this.profileWriteChain.then(async (): Promise<boolean> => {
+      if (this.accountChangesPending > 0 || this.sessionEpoch !== epoch) return false;
+      if ((await this.getStudentId()).trim() !== account) return false;
+      if (this.accountChangesPending > 0 || this.sessionEpoch !== epoch) return false;
+      await writer();
+      return true;
+    });
+    this.profileWriteChain = run.then((): void => {}, (): void => {});
+    return run;
+  }
+
   private async getBool(key: string, def: boolean = false): Promise<boolean> {
     const raw = await this.kvStore?.get(key, JSON.stringify(def));
     if (raw === undefined) {
@@ -210,6 +244,10 @@ export class AppStorage {
   // 账号资料写入的串行链：见 commitProfileWrite。
   private profileWriteChain: Promise<void> = Promise.resolve();
   private accountWriteChain: Promise<void> = Promise.resolve();
+  // 从发起切号到学号落盘期间，不允许认证恢复把旧账号令牌重新写入。
+  private accountChangesPending: number = 0;
+  private authIdentityVersion: number = 0;
+  private authIdentityAppliedVersion: number = 0;
 
   /** 最近一次课表缓存的写入标记：异步写入者用它判断自己是否仍是最后一次写入。 */
   private courseCacheMarker: string = '';
@@ -249,18 +287,34 @@ export class AppStorage {
   async setToken(v: string): Promise<void> { return this.putStr('token', v); }
   async getStudentId(): Promise<string> { return this.getStr('studentId'); }
   async setStudentId(v: string): Promise<void> {
+    this.accountChangesPending++;
     this.bumpSessionEpoch();
     const changeAccount = async (): Promise<void> => {
+      // 等正在提交的资料/令牌写入完成：它们属于旧账号，必须在新学号落盘前写完，
+      // 否则旧请求的结果可能被写到新账号下。
+      await this.profileWriteChain;
+      const previousSid = (await this.getStudentId()).trim();
+      const identityVersion = this.authIdentityVersion;
+      // 资料刷新会重复保存相同学号；只有身份确实改变时才清除令牌。
+      if (previousSid !== (v || '').trim() || identityVersion !== this.authIdentityAppliedVersion) {
+        await this.putStr('appAuthAccessToken', '');
+        await this.putStr('appAuthRefreshToken', '');
+      }
       // 先由旧账号认领旧全局资料；不能等切号后才由新账号第一次读取触发迁移。
       await this.claimLegacyProfileForAccount(await this.getStudentId());
       await this.putStr('studentId', v);
       // 登录后立即认领旧档案。
       await this.claimLegacyArchives();
       await this.claimLegacyProfileForAccount(v);
+      this.authIdentityAppliedVersion = identityVersion;
     };
     const run = this.accountWriteChain.then(changeAccount, changeAccount);
     this.accountWriteChain = run.then((): void => {}, (): void => {});
-    await run;
+    try {
+      await run;
+    } finally {
+      this.accountChangesPending--;
+    }
   }
   async getPassword(): Promise<string> { return this.getStr('password'); }
   async setPassword(v: string): Promise<void> { return this.putStr('password', v); }
@@ -270,8 +324,24 @@ export class AppStorage {
   async setMessage(v: string): Promise<void> { return this.putStr('login_msg', v); }
   async getIsGraduate(): Promise<boolean> { return this.getBool('isGraduate'); }
   async setIsGraduate(v: boolean): Promise<void> {
+    // 身份变化也属于“账号状态切换”：先让正在提交的令牌/资料写入完成，
+    // 再清掉旧身份令牌，避免切换期间旧令牌仍可被使用。
+    // 注意不要排到 accountWriteChain 上，否则会与正在等待的切号互相等待。
+    this.accountChangesPending++;
     this.bumpSessionEpoch();
-    return this.putBool('isGraduate', v);
+    try {
+      await this.profileWriteChain;
+      const previous = await this.getIsGraduate();
+      if (previous !== v) {
+        this.authIdentityVersion++;
+        await this.putStr('appAuthAccessToken', '');
+        await this.putStr('appAuthRefreshToken', '');
+      }
+      await this.putBool('isGraduate', v);
+      this.authIdentityAppliedVersion = this.authIdentityVersion;
+    } finally {
+      this.accountChangesPending--;
+    }
   }
   async getTokenUpdateTime(): Promise<number> { return this.getNum('token_update_time'); }
   async setTokenUpdateTime(v: number): Promise<void> { return this.putNum('token_update_time', v); }

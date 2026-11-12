@@ -279,26 +279,36 @@ export class ApiService {
   static async loginAppAuthFromSavedCredentials(
     storage: AppStorage,
   ): Promise<void> {
+    // 先同步固定会话代次，再读凭据：请求期间切号，返回结果一律丢弃。
+    const sessionEpoch = storage.getSessionEpoch();
     const studentId = await storage.getStudentId();
     const password = await storage.getPassword();
     if (!studentId || !password) {
       console.warn('ApiService', 'missing saved credentials for app auth');
       return;
     }
+    if (storage.getSessionEpoch() !== sessionEpoch) {
+      console.warn('ApiService', 'account changed while reading credentials, auth restore cancelled');
+      return;
+    }
     const isGraduate = await storage.getIsGraduate();
     const data = await ApiService.loginAppAuth(studentId, password, isGraduate);
     if (data && data.code === 200 && data.data) {
       const d = data.data;
-      await storage.setAppAuthAccessToken(d.accessToken ?? '');
-      await storage.setAppAuthRefreshToken(d.refreshToken ?? '');
-      await storage.setAppAuthExpiresAt(d.expiresAt ?? 0);
-      await storage.setAppAuthRefreshExpiresAt(d.refreshExpiresAt ?? 0);
+      // 令牌写入走会话校验队列；切号后不把旧账号令牌写给新账号。
+      const saved = await storage.setAppAuthTokensIfSession(sessionEpoch, studentId,
+        d.accessToken ?? '', d.refreshToken ?? '', d.expiresAt ?? 0, d.refreshExpiresAt ?? 0);
+      if (!saved) {
+        console.warn('ApiService', 'account changed during auth restore, tokens discarded');
+        return;
+      }
       if (d.user) {
         if (d.user.displayName?.trim()) {
           // 可根据业务需要存到 UserInfo
         }
         if (d.user.avatarUrl?.trim()) {
-          await storage.setAvatarUrl(d.user.avatarUrl.trim());
+          // 头像按发起认证的账号写入，不污染当前账号。
+          await storage.setAvatarUrlForAccount(sessionEpoch, studentId, d.user.avatarUrl.trim());
         }
       }
       console.info('ApiService', 'app auth restored');
