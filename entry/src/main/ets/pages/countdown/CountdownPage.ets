@@ -1,5 +1,6 @@
 import { promptAction, router } from '@kit.ArkUI';
 import { CountdownApi, CountdownItem } from '../../net/CountdownApi';
+import { AppStorage } from '../../store/AppStorage';
 
 @Entry
 @Component
@@ -8,6 +9,7 @@ struct CountdownPage {
   @State private eventCount: number = 0;
   @State private events: CountdownItem[] = [];
   @State private loading: boolean = false;
+  @State private loadHint: string = '';
   @State private showAddDialog: boolean = false;
   @State private dialogOpacity: number = 0;
   @State private dialogScale: number = 0.85;
@@ -32,17 +34,31 @@ struct CountdownPage {
 
   private async loadCountdowns(): Promise<void> {
     this.loading = true;
+    this.loadHint = '';
     let custom: CountdownItem[] = [];
     let exams: CountdownItem[] = [];
-    try { custom = await CountdownApi.list(); } catch { console.warn('CountdownPage', '自定义倒计时获取失败'); }
     try {
-      const storage = (await import('../../store/AppStorage')).AppStorage.getInstance();
+      custom = await CountdownApi.list();
+    } catch (error) {
+      console.warn('CountdownPage', `自定义倒计时获取失败: ${JSON.stringify(error)}`);
+    }
+    try {
+      // 固定静态引用：动态 import 在卡片/扩展进程或部分设备上会失败，导致考试列表永远为空。
+      const storage = AppStorage.getInstance();
+      const token = (await storage.getToken()).trim();
       let term = await storage.getSemester();
       if (!term) term = await storage.getSelectSemester();
+      console.info('CountdownPage', `加载考试安排 term=${term} hasToken=${token.length > 0}`);
       exams = await CountdownApi.listExams(term);
-    } catch { console.warn('CountdownPage', '考试列表获取失败'); }
+    } catch (error) {
+      console.warn('CountdownPage', `考试列表获取失败: ${JSON.stringify(error)}`);
+      this.loadHint = '考试安排获取失败，请重新登录或稍后重试';
+    }
     this.events = custom.concat(exams).sort((a: CountdownItem, b: CountdownItem) => this.eventTimestamp(a.time) - this.eventTimestamp(b.time));
     this.eventCount = this.events.length;
+    if (this.events.length === 0 && this.loadHint.length === 0) {
+      this.loadHint = '暂无倒计时或考试安排';
+    }
     this.loading = false;
   }
 
@@ -258,6 +274,14 @@ struct CountdownPage {
             Column() {
               Image($r('app.media.empty')).width(92).height(92).objectFit(ImageFit.Contain).margin({ bottom: 14 })
               Text('没有内容').fontSize(25).fontWeight(FontWeight.Bold).fontColor('#20C78A')
+              if (this.loadHint.length > 0) {
+                Text(this.loadHint)
+                  .fontSize(14)
+                  .fontColor('#999999')
+                  .margin({ top: 10 })
+                  .padding({ left: 24, right: 24 })
+                  .textAlign(TextAlign.Center)
+              }
             }
           } else {
             Scroll() { Column() {
