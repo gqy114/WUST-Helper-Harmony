@@ -24,3 +24,14 @@ test('诊断日志不输出令牌内容', async () => {
   assert.match(page, /hasToken=\$\{token\.length > 0\}/, '日志应只输出是否有令牌');
   assert.doesNotMatch(page, /console\.(info|warn|error)\([^)]*token\)/, '日志不能直接输出令牌');
 });
+
+test('部分失败不会被当成“暂无”，且其它倒计时存在时也能看到提示', async () => {
+  const page = await source('entry/src/main/ets/pages/countdown/CountdownPage.ets');
+  assert.match(page, /this\.examFailed = true;/, '考试失败没有记录状态');
+  assert.match(page, /this\.customFailed = true;/, '自定义倒计时失败没有记录状态');
+  assert.match(page, /if \(this\.examFailed\) \{[\s\S]*?考试安排获取失败/, '考试失败时应显示失败原因');
+  assert.match(page, /else if \(this\.customFailed\)/, '自定义失败应显示对应原因');
+  assert.match(page, /else if \(this\.events\.length === 0\) \{[\s\S]*?暂无倒计时或考试安排/, '只有都成功且为空才显示暂无');
+  const hintRows = page.match(/if \(this\.loadHint\.length > 0\) \{/g) || [];
+  assert.ok(hintRows.length >= 2, '列表非空时也要显示失败提示');
+});

@@ -10,6 +10,8 @@ struct CountdownPage {
   @State private events: CountdownItem[] = [];
   @State private loading: boolean = false;
   @State private loadHint: string = '';
+  @State private examFailed: boolean = false;
+  @State private customFailed: boolean = false;
   @State private showAddDialog: boolean = false;
   @State private dialogOpacity: number = 0;
   @State private dialogScale: number = 0.85;
@@ -35,12 +37,15 @@ struct CountdownPage {
   private async loadCountdowns(): Promise<void> {
     this.loading = true;
     this.loadHint = '';
+    this.examFailed = false;
+    this.customFailed = false;
     let custom: CountdownItem[] = [];
     let exams: CountdownItem[] = [];
     try {
       custom = await CountdownApi.list();
     } catch (error) {
       console.warn('CountdownPage', `自定义倒计时获取失败: ${JSON.stringify(error)}`);
+      this.customFailed = true;
     }
     try {
       // 固定静态引用：动态 import 在卡片/扩展进程或部分设备上会失败，导致考试列表永远为空。
@@ -52,11 +57,15 @@ struct CountdownPage {
       exams = await CountdownApi.listExams(term);
     } catch (error) {
       console.warn('CountdownPage', `考试列表获取失败: ${JSON.stringify(error)}`);
-      this.loadHint = '考试安排获取失败，请重新登录或稍后重试';
+      this.examFailed = true;
     }
     this.events = custom.concat(exams).sort((a: CountdownItem, b: CountdownItem) => this.eventTimestamp(a.time) - this.eventTimestamp(b.time));
     this.eventCount = this.events.length;
-    if (this.events.length === 0 && this.loadHint.length === 0) {
+    if (this.examFailed) {
+      this.loadHint = '考试安排获取失败，请重新登录或稍后重试';
+    } else if (this.customFailed) {
+      this.loadHint = '自定义倒计时获取失败，请稍后重试';
+    } else if (this.events.length === 0) {
       this.loadHint = '暂无倒计时或考试安排';
     }
     this.loading = false;
@@ -285,6 +294,15 @@ struct CountdownPage {
             }
           } else {
             Scroll() { Column() {
+              // 有其它倒计时时也要提示考试/自定义项获取失败，不能默默隐藏。
+              if (this.loadHint.length > 0) {
+                Text(this.loadHint)
+                  .fontSize(13)
+                  .fontColor('#999999')
+                  .width('100%')
+                  .padding({ left: 18, right: 18, top: 10, bottom: 10 })
+                  .textAlign(TextAlign.Center)
+              }
               ForEach(this.events, (item: CountdownItem) => Row() {
                 Column().width(5).height(92).backgroundColor(item.source === 'exam' ? '#FFAA54' : '#20C78A').margin({ right: 18 });
                 Column() {
