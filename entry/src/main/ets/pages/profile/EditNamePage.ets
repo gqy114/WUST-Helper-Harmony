@@ -120,7 +120,9 @@ struct EditNamePage {
         if (await this.isAccountChanged(storage, session)) return false;
         await ApiService.loginAppAuthFromSavedCredentials(storage);
         if (await this.isAccountChanged(storage, session)) return false;
-        token = (await storage.getAppAuthAccessToken()).trim();
+        // 读取令牌期间切号会拿到新账号的令牌，必须放弃本次发送。
+        token = await storage.getAppAuthAccessTokenForSession(session.epoch, session.sid);
+        if (await this.isAccountChanged(storage, session)) return false;
       } catch (error) {
         console.warn('EditNamePage', `restore app auth failed: ${JSON.stringify(error)}`);
       }
@@ -138,7 +140,8 @@ struct EditNamePage {
     try {
       await ApiService.loginAppAuthFromSavedCredentials(storage);
       if (await this.isAccountChanged(storage, session)) return false;
-      token = (await storage.getAppAuthAccessToken()).trim();
+      token = await storage.getAppAuthAccessTokenForSession(session.epoch, session.sid);
+      if (await this.isAccountChanged(storage, session)) return false;
       if (token) {
         const synced = await UserApi.updateAppDisplayName(value, token);
         return synced && !(await this.isAccountChanged(storage, session));
