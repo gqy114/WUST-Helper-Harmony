@@ -156,6 +156,24 @@ export class UserApi {
     if (!data) return null;
     return data;
   }
+
+  /** 修改昵称（/api/v1/profile/display-name）：成功后服务端与社区/其他设备才能同步。 */
+  static async updateAppDisplayName(displayName: string, tokenSnapshot?: string): Promise<boolean> {
+    const token = tokenSnapshot !== undefined
+      ? tokenSnapshot.trim()
+      : (await AppStorage.getInstance().getAppAuthAccessToken()).trim();
+    if (!token) return false;
+    const headers: AppProfileHeaders = {
+      Authorization: `Bearer ${token}`,
+      Platform: 'android',
+      Accept: 'application/json',
+    };
+    const body: DisplayNameBody = { displayName };
+    const result = await HttpRequest.postJson<AppProfileUpdateResponse>(
+      'https://lyzyy.love:8081/api/v1/profile/display-name', body, headers, 15000, true);
+    const code = result.data?.code;
+    return code === 200 || code === 0;
+  }
 }
 
 interface AppProfileHeaders extends Record<string, string> {
@@ -169,6 +187,17 @@ export interface AppProfile {
   displayName?: string;
   avatarUrl?: string;
   realName?: string;
+}
+
+interface DisplayNameBody extends Record<string, string> {
+  displayName: string;
+}
+
+interface AppProfileUpdateResponse {
+  code?: number;
+  message?: string;
+  msg?: string;
+  data?: boolean;
 }
 
 interface AppProfileResponse {

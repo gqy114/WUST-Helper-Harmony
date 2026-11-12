@@ -366,6 +366,20 @@ export class AppStorage {
   // ── App Auth ──
 
   async getAppAuthAccessToken(): Promise<string> { return this.getStr('appAuthAccessToken'); }
+
+  /**
+   * 读取应用认证令牌，同时确认会话（代次 + 学号）未变。
+   * 读取期间切号会返回空串，调用方不能拿新账号的令牌发送旧账号的数据。
+   */
+  async getAppAuthAccessTokenForSession(epoch: number, sid: string): Promise<string> {
+    const account = (sid || '').trim();
+    if (!account) return '';
+    if (this.sessionEpoch !== epoch || this.accountChangesPending > 0) return '';
+    if ((await this.getStudentId()).trim() !== account) return '';
+    const token = await this.getStr('appAuthAccessToken');
+    if (this.sessionEpoch !== epoch || this.accountChangesPending > 0) return '';
+    return token;
+  }
   async setAppAuthAccessToken(v: string): Promise<void> { return this.putStr('appAuthAccessToken', v); }
   async getAppAuthRefreshToken(): Promise<string> { return this.getStr('appAuthRefreshToken'); }
   async setAppAuthRefreshToken(v: string): Promise<void> { return this.putStr('appAuthRefreshToken', v); }
