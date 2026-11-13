@@ -99,19 +99,27 @@ export class WidgetPrefs {
     await storage.setSettingString(COUNTDOWN_KEY, JSON.stringify(items));
   }
 
-  /** 考试倒计时按学号分开存：切账号时不会读到上一个账号的考试。 */
-  private static examStorageKey(sid: string): string {
-    return sid ? `${EXAM_KEY}_${sid}` : EXAM_KEY;
+  /** 考试倒计时按学号 + 学期分开存：切账号/切学期都不会读到旧数据。 */
+  private static examStorageKey(sid: string, term: string): string {
+    const account = sid || 'guest';
+    const semester = term || 'unknown';
+    return `${EXAM_KEY}_${account}_${semester}`;
   }
 
-  static async getExamCountdowns(storage: AppStorage, sid: string = ''): Promise<WidgetCountdownItem[]> {
+  static async getExamCountdowns(storage: AppStorage, sid: string = '', term: string = ''): Promise<WidgetCountdownItem[]> {
     const current = (sid || (await storage.getStudentId())).trim();
-    return WidgetPrefs.readItems(storage, WidgetPrefs.examStorageKey(current));
+    let currentTerm = (term || '').trim();
+    if (!currentTerm) {
+      currentTerm = (await storage.getSemester()).trim();
+      if (!currentTerm) currentTerm = (await storage.getSelectSemester()).trim();
+    }
+    return WidgetPrefs.readItems(storage, WidgetPrefs.examStorageKey(current, currentTerm));
   }
 
-  static async setExamCountdowns(storage: AppStorage, items: WidgetCountdownItem[], sid: string): Promise<void> {
-    const current = (sid || '').trim();
-    await storage.setSettingString(WidgetPrefs.examStorageKey(current), JSON.stringify(items));
+  static async setExamCountdowns(storage: AppStorage, items: WidgetCountdownItem[], sid: string,
+    term: string): Promise<void> {
+    await storage.setSettingString(WidgetPrefs.examStorageKey((sid || '').trim(), (term || '').trim()),
+      JSON.stringify(items));
   }
 
   static async getBackground(storage: AppStorage): Promise<string> {
@@ -339,7 +347,9 @@ export class WidgetData {
     if (mode === WIDGET_MODE_COUNTDOWN) {
       // 优先展示考试倒计时；没有考试数据时退回手动倒计时。
       const sid = (await storage.getStudentId()).trim();
-      let items = await WidgetPrefs.getExamCountdowns(storage, sid);
+      let term = (await storage.getSemester()).trim();
+      if (!term) term = (await storage.getSelectSemester()).trim();
+      let items = await WidgetPrefs.getExamCountdowns(storage, sid, term);
       if (items.length === 0) items = await WidgetPrefs.getCountdowns(storage);
       snapshot = WidgetData.countdownSnapshot(items, accent);
     } else {

@@ -85,7 +85,9 @@ struct WidgetSettingsPage {
     this.accent = await WidgetPrefs.getAccent(storage);
     this.countdowns = await WidgetPrefs.getCountdowns(storage);
     const sid = (await storage.getStudentId()).trim();
-    this.examCountdowns = await WidgetPrefs.getExamCountdowns(storage, sid);
+    let cachedTerm = (await storage.getSemester()).trim();
+    if (!cachedTerm) cachedTerm = (await storage.getSelectSemester()).trim();
+    this.examCountdowns = await WidgetPrefs.getExamCountdowns(storage, sid, cachedTerm);
     this.backgroundPath = await WidgetPrefs.getBackground(storage);
     this.backgroundOpacity = await WidgetPrefs.getBackgroundOpacity(storage);
     this.theme = await WidgetPrefs.getTheme(storage);
@@ -146,7 +148,7 @@ struct WidgetSettingsPage {
         console.warn(TAG, 'term/account changed before saving exams, drop result');
         return;
       }
-      await WidgetPrefs.setExamCountdowns(storage, items, sid);
+      await WidgetPrefs.setExamCountdowns(storage, items, sid, term);
       this.examCountdowns = items;
       // 数据变了要把已发布的桌面卡片和预览一起刷新，否则卡片不会立即更新。
       await this.refreshWidgets(false);
