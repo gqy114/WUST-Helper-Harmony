@@ -70,6 +70,8 @@ struct WidgetSettingsPage {
   @State private cropperBusy: boolean = false;
   private cropStartOffsetX: number = 0;
   private cropStartOffsetY: number = 0;
+  // 考试同步串行执行：旧学期保存尚未结束时，新学期同步会排在它后面。
+  private examSyncChain: Promise<void> = Promise.resolve();
 
   aboutToAppear(): void {
     this.loadSettings();
@@ -101,8 +103,15 @@ struct WidgetSettingsPage {
     }
   }
 
+  /** 串行执行考试同步：旧学期的保存不会和新学期交错覆盖。 */
+  private syncExamCountdowns(toast: boolean): Promise<void> {
+    const run = this.examSyncChain.then((): Promise<void> => this.syncExamCountdownsInternal(toast));
+    this.examSyncChain = run.then((): void => undefined, (): void => undefined);
+    return run;
+  }
+
   /** 从教务同步考试安排，写进卡片数据源。 */
-  private async syncExamCountdowns(toast: boolean): Promise<void> {
+  private async syncExamCountdownsInternal(toast: boolean): Promise<void> {
     const storage = AppStorage.getInstance();
     try {
       // 同步期间可能切账号或切学期：先记住发起同步的账号与学期，回来后再校验。
@@ -129,6 +138,13 @@ struct WidgetSettingsPage {
         if (exam.location) detailParts.push(exam.location);
         if (exam.seatNumber) detailParts.push(`座位 ${exam.seatNumber}`);
         items.push({ title: exam.name, date: exam.time, detail: detailParts.join(' · ') });
+      }
+      // 落盘前再校验一次：避免“旧学期数据正在保存时切学期”把新学期覆盖掉。
+      let termBeforeSave = await storage.getSemester();
+      if (!termBeforeSave) termBeforeSave = await storage.getSelectSemester();
+      if (termBeforeSave !== term || (await storage.getStudentId()).trim() !== sid) {
+        console.warn(TAG, 'term/account changed before saving exams, drop result');
+        return;
       }
       await WidgetPrefs.setExamCountdowns(storage, items, sid);
       this.examCountdowns = items;
