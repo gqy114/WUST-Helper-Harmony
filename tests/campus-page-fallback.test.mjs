@@ -14,7 +14,7 @@ test('校园资讯加载失败、HTTP 错误和超时都有可见兜底', async 
   assert.match(code, /const LOAD_TIMEOUT_MS = 12_000;/, '缺少无回调时的超时保护');
   assert.match(code, /if \(this\.loadError\) \{\s*this\.fallbackContent\(\)/,
     '加载失败后没有切换到本地兜底页');
-  assert.match(code, /Button\('重新加载'\)/, '兜底页缺少重试入口');
+  assert.match(code, /Text\('重试'\)/, '兜底页缺少重试入口');
 });
 
 test('加载结束后校验实际页面内容，不能把空白页当作成功', async () => {

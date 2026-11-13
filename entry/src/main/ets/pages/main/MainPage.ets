@@ -700,29 +700,15 @@ struct MainPage {
         Swiper() {
           if (this.visibleBanners().length > 0) {
             ForEach(this.visibleBanners(), (banner: HomeBanner) => {
-              // 渐变垫底：图片加载过程中或失败后都不会出现整块白。
+              // 默认 banner 垫底：接口图片还没加载/失败时也不会出现白块。
               Stack() {
-                Row() {
-                  Column() {
-                    Text('武科大助手').fontSize(24).fontWeight(FontWeight.Bold).fontColor(Color.White)
-                    Text('校园生活 一手掌握').fontSize(14).fontColor('#FFFFFF').opacity(0.8).margin({ top: 6 })
-                  }.alignItems(HorizontalAlign.Start)
-                  Blank()
-                }.padding(20).width('100%').height('100%').alignItems(VerticalAlign.Center)
-                  .linearGradient({ angle: 135, colors: [['#667eea', 0], ['#764ba2', 1]] })
+                Image($r('app.media.default_banner')).width('100%').height('100%').objectFit(ImageFit.Cover)
                 Image(this.bannerSource(banner)).width('100%').height('100%').objectFit(ImageFit.Cover)
                   .onError(() => this.markBannerFailed(banner))
               }.width('100%').height('100%')
             }, (banner: HomeBanner, index: number) => this.bannerKey(banner))
           } else {
-            Row() {
-              Column() {
-                Text('武科大助手').fontSize(24).fontWeight(FontWeight.Bold).fontColor(Color.White)
-                Text('校园生活 一手掌握').fontSize(14).fontColor('#FFFFFF').opacity(0.8).margin({ top: 6 })
-              }.alignItems(HorizontalAlign.Start)
-              Blank()
-            }.padding(20).width('100%').height('100%').alignItems(VerticalAlign.Center)
-              .linearGradient({ angle: 135, colors: [['#667eea', 0], ['#764ba2', 1]] })
+            Image($r('app.media.default_banner')).width('100%').height('100%').objectFit(ImageFit.Cover)
           }
         }
         .width('100%')
