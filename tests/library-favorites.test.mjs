@@ -49,7 +49,7 @@ async function makeStore(db = new Map(), options = {}) {
     throw new Error(`Unexpected import: ${name}`);
   });
   await mod.evaluate();
-  return { favorites: mod.namespace.LibraryFavorites.getInstance(), db, state };
+  return { favorites: mod.namespace.LibraryFavorites.getInstance(), klass: mod.namespace.LibraryFavorites, db, state };
 }
 
 test('收藏只写入本机 preferences，不调用任何网络接口', async () => {
@@ -90,9 +90,10 @@ test('收藏按学号隔离，切换账号看不到上一个账号的收藏', as
   assert.ok(db.has('libraryFavorites_2024001'));
 });
 
-test('旧版本全局收藏只迁移给第一个账号，之后其他账号为空', async () => {
+test('旧版本全局收藏只在启动迁移时给当前账号，之后其他账号为空', async () => {
   const db = new Map([['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))]]);
-  const { favorites, state } = await makeStore(db);
+  const { favorites, klass, state } = await makeStore(db);
+  await klass.migrateLegacyForCurrentAccount();
 
   assert.deepEqual(Array.from(await favorites.list(), (item) => item.id), [3]);
   assert.equal(db.get('libraryFavorites'), JSON.stringify('[]'), '迁移后旧 key 应清空');
@@ -135,7 +136,8 @@ test('页面刚打开就收藏：并发读取不会覆盖新收藏', async () =>
 
 test('旧数据只迁移一次：已迁移后切换账号不会再认领', async () => {
   const db = new Map([['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))]]);
-  const { favorites, state } = await makeStore(db);
+  const { favorites, klass, state } = await makeStore(db);
+  await klass.migrateLegacyForCurrentAccount();
   assert.deepEqual(Array.from(await favorites.list(), (item) => item.id), [3]);
 
   // 手动放回旧 key，模拟历史残留：迁移标记已写完，新账号不应再认领。
@@ -175,4 +177,12 @@ test('连续快速收藏按顺序写入，不丢数据', async () => {
   assert.deepEqual(results, [true, true, true]);
   const saved = JSON.parse(JSON.parse(db.get('libraryFavorites_2024001')));
   assert.deepEqual(saved.map((item) => item.id).sort((a, b) => a - b), [1, 2, 3]);
+});
+
+test('未执行启动迁移时，切换账号不会把旧收藏带给新账号', async () => {
+  const db = new Map([['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))]]);
+  const { favorites, state } = await makeStore(db);
+  state.sid = '2024002';
+  assert.deepEqual(Array.from(await favorites.list()), [], '页面加载不再做迁移，新账号不应认领');
+  assert.ok(db.get('libraryFavorites').includes('test-3'), '旧数据应原地保留，等启动迁移处理');
 });

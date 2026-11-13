@@ -52,22 +52,32 @@ export class LibraryFavorites {
     }
   }
 
-  private async loadFor(sid: string): Promise<void> {
+  /**
+   * 应用启动时调用一次：把旧版本全局收藏迁移给“当前已登录”的账号，并写迁移标记。
+   * 不在页面加载时迁移，避免快速切号时被新账号认领。
+   */
+  static async migrateLegacyForCurrentAccount(): Promise<void> {
     const storage = AppStorage.getInstance();
-    const key = this.storageKey(sid);
-    let raw = await storage.getSettingString(key, '');
     const migrated = await storage.getSettingBool(LibraryFavorites.MIGRATION_FLAG, false);
-    // 未登录时直接用旧版全局 key，不能清空它，否则游客收藏会在下次启动时丢失。
-    if (!migrated && sid) {
-      // 旧版本不区分账号，收藏存在 libraryFavorites；只迁移给升级后第一个登录的账号。
-      const legacy = await storage.getSettingString(LEGACY_STORAGE_KEY, '');
-      if (!raw && legacy && legacy !== '[]') {
-        raw = legacy;
+    if (migrated) return;
+    const sid = (await storage.getStudentId()).trim();
+    if (!sid) return;
+    const legacy = await storage.getSettingString(LEGACY_STORAGE_KEY, '');
+    if (legacy && legacy !== '[]') {
+      const key = `${STORAGE_PREFIX}${sid}`;
+      const existing = await storage.getSettingString(key, '');
+      if (!existing) {
         await storage.setSettingString(key, legacy);
       }
       await storage.setSettingString(LEGACY_STORAGE_KEY, '[]');
-      await storage.setSettingBool(LibraryFavorites.MIGRATION_FLAG, true);
     }
+    await storage.setSettingBool(LibraryFavorites.MIGRATION_FLAG, true);
+  }
+
+  private async loadFor(sid: string): Promise<void> {
+    const storage = AppStorage.getInstance();
+    const key = this.storageKey(sid);
+    const raw = await storage.getSettingString(key, '');
     this.items = this.parse(raw);
     this.loadedSid = sid;
     this.loaded = true;
