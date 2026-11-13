@@ -135,6 +135,10 @@ export struct VolunteerPage {
 
   private errorMessage(error: Object, fallback: string): string {
     const message: string = `${error}`.replace(/^Error:\s*/, '');
+    // 后端在服务异常/参数不匹配时会返回“无效的第二课堂查询请求”，对用户没有意义。
+    if (message.indexOf('无效') >= 0 || message.indexOf('404') >= 0 || message.indexOf('Not Found') >= 0) {
+      return '第二课堂服务暂不可用，请稍后重试';
+    }
     return message.length > 0 && message !== '[object Object]' ? message : fallback;
   }
 

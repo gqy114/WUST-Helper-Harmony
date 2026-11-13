@@ -7,6 +7,7 @@
 import { promptAction, router } from '@kit.ArkUI';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { common, Want } from '@kit.AbilityKit';
+import { bundleManager } from '@kit.AbilityKit';
 
 /** 官方用户群号，与后端 wusthelper_android.json 的 qqGroup 保持一致。 */
 const QQ_GROUP_NUMBER = '648599822';
@@ -43,23 +44,32 @@ struct QQGroupPage {
       `mqqapi://card/show_pslcard?src_type=internal&version=1&uin=${QQ_GROUP_NUMBER}&card_type=group&source=qrcode`,
       'mqq://'
     ];
-    for (let i = 0; i < links.length; i++) {
+    // 设备没装 QQ 时 openLink 会弹系统“暂无可用打开方式”，先检测再决定，避免弹窗吓人。
+    let canOpen = false;
+    try {
+      canOpen = bundleManager.canOpenLink(links[0]);
+    } catch (error) {
+      console.warn('QQGroupPage', `canOpenLink failed: ${JSON.stringify(error)}`);
+    }
+    if (canOpen) {
+      for (let i = 0; i < links.length; i++) {
+        try {
+          await context.openLink(links[i]);
+          return;
+        } catch (error) {
+          console.warn('QQGroupPage', `openLink failed: ${JSON.stringify(error)}`);
+        }
+      }
       try {
-        await context.openLink(links[i]);
+        const want: Want = {
+          action: 'ohos.want.action.viewData',
+          uri: 'mqq://'
+        };
+        await context.startAbility(want);
         return;
       } catch (error) {
-        console.warn('QQGroupPage', `openLink failed: ${JSON.stringify(error)}`);
+        console.warn('QQGroupPage', `startAbility failed: ${JSON.stringify(error)}`);
       }
-    }
-    try {
-      const want: Want = {
-        action: 'ohos.want.action.viewData',
-        uri: 'mqq://'
-      };
-      await context.startAbility(want);
-      return;
-    } catch (error) {
-      console.warn('QQGroupPage', `startAbility failed: ${JSON.stringify(error)}`);
     }
     const copied = await this.copyGroupNumber(false);
     promptAction.showToast({
