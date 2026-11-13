@@ -114,17 +114,17 @@ export class LibraryFavorites {
 
   /** 切换收藏；返回切换后的状态（true=已收藏）。只写入本机，写操作排队避免并发丢数据。 */
   async toggle(item: LibraryFavorite): Promise<boolean> {
-    const run = this.writeChain.then((): Promise<boolean> => this.applyToggle(item));
+    // 在入队时就记下账号：排队期间即使切号，也不会把这次操作写到新账号。
+    const sidAtCall = (await AppStorage.getInstance().getStudentId()).trim();
+    const run = this.writeChain.then((): Promise<boolean> => this.applyToggle(item, sidAtCall));
     this.writeChain = run.then((): void => undefined, (): void => undefined);
     return run;
   }
 
-  private async applyToggle(item: LibraryFavorite): Promise<boolean> {
-    // 记住发起修改的账号；如果加载期间切了账号，这次修改直接丢弃，绝不写到新账号。
-    const sidAtCall = (await AppStorage.getInstance().getStudentId()).trim();
+  private async applyToggle(item: LibraryFavorite, sidAtCall: string): Promise<boolean> {
     await this.ensureLoaded();
     if (this.loadedSid !== sidAtCall) {
-      console.warn('LibraryFavorites', 'account changed during toggle, drop write');
+      console.warn('LibraryFavorites', 'account changed before toggle applied, drop write');
       return false;
     }
     const sid = this.loadedSid;

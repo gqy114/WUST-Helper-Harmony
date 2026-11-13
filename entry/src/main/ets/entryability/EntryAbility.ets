@@ -3,7 +3,6 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { StorageUtil } from '../utils/StorageUtil';
 import { AppStorage } from '../store/AppStorage';
-import { LibraryFavorites } from '../store/LibraryFavorites';
 
 const DOMAIN = 0x0000;
 
@@ -56,13 +55,6 @@ export default class EntryAbility extends UIAbility {
       StorageUtil.init(this.context),
       AppStorage.getInstance().init(this.context),
     ]).then(async () => {
-      // 旧版全局收藏只在启动时迁移给当前已登录账号，避免切号时被新账号认领。
-      try {
-        await LibraryFavorites.migrateLegacyForCurrentAccount();
-      } catch (migrationError) {
-        hilog.warn(DOMAIN, 'testTag', 'Failed to migrate legacy favorites: %{public}s',
-          JSON.stringify(migrationError));
-      }
       // 统一先进入开屏页，由 LaunchPage 决定登录页或主页，并展示自定义 open.png。
       loadPage('pages/splash/LaunchPage');
     }).catch(() => {

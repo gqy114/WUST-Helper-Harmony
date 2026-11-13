@@ -186,3 +186,22 @@ test('未执行启动迁移时，切换账号不会把旧收藏带给新账号',
   assert.deepEqual(Array.from(await favorites.list()), [], '页面加载不再做迁移，新账号不应认领');
   assert.ok(db.get('libraryFavorites').includes('test-3'), '旧数据应原地保留，等启动迁移处理');
 });
+
+test('排队中的收藏在切号后不会写到新账号', async () => {
+  const db = new Map();
+  const { favorites, state } = await makeStore(db, { sid: '2024001', delayedGet: true });
+  const first = favorites.toggle(favorite(1, 'A1'));
+  const second = favorites.toggle(favorite(2, 'A2'));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  state.sid = '2024002';
+  await first;
+  await second;
+  assert.equal(db.has('libraryFavorites_2024002'), false, 'B 的 key 不能被排队操作创建');
+  const savedA = JSON.parse(JSON.parse(db.get('libraryFavorites_2024001')));
+  assert.deepEqual(savedA.map((item) => item.id).sort((a, b) => a - b), [1], '第二位操作切号后应被丢弃');
+});
+
+test('旧收藏迁移放在开屏页执行，避免登录后切号才迁移', async () => {
+  const page = await source('pages/splash/LaunchPage.ets');
+  assert.match(page, /LibraryFavorites\.migrateLegacyForCurrentAccount\(\)/, '开屏页没有触发旧收藏迁移');
+});

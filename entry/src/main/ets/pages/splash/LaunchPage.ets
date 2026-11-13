@@ -11,6 +11,7 @@ import { ApiService } from '../../net/ApiService';
 import { RouterUtil } from '../../utils/RouterUtil';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
 import { LaunchPrefetchService } from '../../service/LaunchPrefetchService';
+import { LibraryFavorites } from '../../store/LibraryFavorites';
 
 const TAG = 'LaunchPage';
 
@@ -35,6 +36,10 @@ struct LaunchPage {
     // 竖屏锁定 → 在 module.json5 abilities[].orientation = "portrait"
     // 页面过渡动画 → 使用 pageTransition 声明式 API（见底部）
     console.info(TAG, 'aboutToAppear');
+    // 开屏期间用户无法切号，此时迁移旧版收藏最安全；失败不影响启动。
+    LibraryFavorites.migrateLegacyForCurrentAccount().catch((error: Error) => {
+      console.warn(TAG, `migrate legacy favorites failed: ${JSON.stringify(error)}`);
+    });
   }
 
   onPageShow(): void {
