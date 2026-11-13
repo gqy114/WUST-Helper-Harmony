@@ -105,13 +105,19 @@ struct WidgetSettingsPage {
   private async syncExamCountdowns(toast: boolean): Promise<void> {
     const storage = AppStorage.getInstance();
     try {
-      // 同步期间可能切账号：先记住发起同步的学号，写缓存前确认仍是同一账号。
+      // 同步期间可能切账号或切学期：先记住发起同步的账号与学期，回来后再校验。
       const sid = (await storage.getStudentId()).trim();
       let term = await storage.getSemester();
       if (!term) term = await storage.getSelectSemester();
       const exams: CountdownItem[] = await CountdownApi.listExams(term);
       if ((await storage.getStudentId()).trim() !== sid) {
         console.warn(TAG, 'account changed while syncing exams, drop result');
+        return;
+      }
+      let currentTerm = await storage.getSemester();
+      if (!currentTerm) currentTerm = await storage.getSelectSemester();
+      if (currentTerm !== term) {
+        console.warn(TAG, 'semester changed while syncing exams, drop stale result');
         return;
       }
       const items: WidgetCountdownItem[] = [];
@@ -126,6 +132,8 @@ struct WidgetSettingsPage {
       }
       await WidgetPrefs.setExamCountdowns(storage, items, sid);
       this.examCountdowns = items;
+      // 数据变了要把已发布的桌面卡片和预览一起刷新，否则卡片不会立即更新。
+      await this.refreshWidgets(false);
       if (toast) {
         promptAction.showToast({ message: items.length > 0 ? `已同步 ${items.length} 场考试` : '暂未查到考试安排', duration: 1800 });
       }
