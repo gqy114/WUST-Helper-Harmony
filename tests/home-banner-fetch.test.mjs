@@ -16,13 +16,16 @@ test('BannerImageLoader 自行抓取字节解码，不依赖 HTTP 状态码', as
   assert.match(loader, /BannerImageLoader\.cache\.set/, '缺少缓存');
 });
 
-test('主页先展示渐变占位，再用解码后的图片覆盖', async () => {
+test('主页先用默认 banner 垫底，再用解码后的图片覆盖', async () => {
   const page = await source(`${root}/pages/main/MainPage.ets`);
   assert.match(page, /this\.loadBannerPixels\(\)/, 'banner 拉取后没有异步解码');
   assert.match(page, /private bannerSource\(banner: HomeBanner\): image\.PixelMap \| string/, '缺少图片来源选择');
   const block = page.slice(page.indexOf('// ── Banner ──'), page.indexOf('// ── 公告栏 ──'));
-  assert.match(block, /linearGradient/, '图片下方缺少渐变垫底');
-  assert.ok(block.indexOf('linearGradient') < block.indexOf('Image(this.bannerSource'), '应先铺渐变再放图片');
+  assert.match(block, /\$r\('app\.media\.default_banner'\)/, '缺少默认 banner 兜底');
+  assert.ok(block.indexOf('app.media.default_banner') < block.indexOf('Image(this.bannerSource'),
+    '应先铺默认 banner 再放接口图片');
+  const fallbackCount = (block.match(/app\.media\.default_banner/g) || []).length;
+  assert.ok(fallbackCount >= 2, '全部图片不可用时也要显示默认 banner');
   assert.match(block, /\.onError\(\(\) => this\.markBannerFailed\(banner\)\)/, '缺少失败兜底');
 });
 

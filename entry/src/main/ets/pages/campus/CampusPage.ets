@@ -223,35 +223,36 @@ export struct CampusPage {
   private fallbackContent() {
     Scroll() {
       Column() {
-        Column() {
+        // 资讯源不可用时只给一条紧凑提示，不遮挡下方校园服务（与安卓端一致）。
+        Row() {
           Image($r('app.media.empty'))
-            .width(72)
-            .height(72)
+            .width(30)
+            .height(30)
             .objectFit(ImageFit.Contain)
-          Text('校园资讯暂时无法加载')
-            .fontSize(18)
-            .fontWeight(FontWeight.Medium)
-            .fontColor('#444444')
-            .margin({ top: 10 })
-          Text(this.errorText || '资讯服务连接异常，其他校园功能仍可正常使用')
+          Column() {
+            Text('校园资讯暂不可用')
+              .fontSize(14)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#555555')
+              .width('100%')
+            Text('不影响下方校园服务使用')
+              .fontSize(11)
+              .fontColor('#999999')
+              .margin({ top: 2 })
+              .width('100%')
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          .margin({ left: 10 })
+          Text('重试')
             .fontSize(13)
-            .fontColor('#999999')
-            .textAlign(TextAlign.Center)
-            .margin({ top: 8 })
-          Button('重新加载')
-            .fontSize(14)
-            .fontColor(Color.White)
-            .height(38)
-            .padding({ left: 24, right: 24 })
-            .backgroundColor('#20C997')
-            .borderRadius(20)
-            .margin({ top: 16 })
+            .fontColor('#20C997')
             .onClick(() => this.retry())
         }
         .width('100%')
-        .padding({ top: 24, bottom: 24, left: 18, right: 18 })
+        .padding({ left: 14, right: 14, top: 10, bottom: 10 })
         .backgroundColor(Color.White)
-        .borderRadius(16)
+        .borderRadius(12)
 
         Text('校园服务')
           .fontSize(20)

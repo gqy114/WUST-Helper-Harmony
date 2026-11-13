@@ -54,6 +54,12 @@ export class BannerImageLoader {
         readTimeout: 20000,
         usingCache: true,
       });
+      // 只接受 2xx：图床对失效图片会返回 404 + “图片违规”占位图，不能当轮播图显示。
+      const status = response.responseCode;
+      if (status < 200 || status >= 300) {
+        BannerImageLoader.markFailed(key);
+        return undefined;
+      }
       const body = response.result as ArrayBuffer;
       if (!body || body.byteLength === 0) {
         BannerImageLoader.markFailed(key);
