@@ -26,6 +26,8 @@ export class LibraryFavorites {
   private loadedSid: string = '';
   // 串行化加载：页面刚打开时 list() 与用户点击触发的 toggle() 不能各读一份再互相覆盖。
   private loadChain: Promise<void> = Promise.resolve();
+  // 串行化写操作：连续快速收藏时按顺序落盘，避免后一次写入覆盖前一次。
+  private writeChain: Promise<void> = Promise.resolve();
   // 旧数据只迁移一次，避免切换账号时把上一个账号的收藏带给新账号。
   private static readonly MIGRATION_FLAG = 'libraryFavoritesMigrationDone';
 
@@ -55,10 +57,11 @@ export class LibraryFavorites {
     const key = this.storageKey(sid);
     let raw = await storage.getSettingString(key, '');
     const migrated = await storage.getSettingBool(LibraryFavorites.MIGRATION_FLAG, false);
-    if (!migrated) {
-      // 旧版本不区分账号，收藏存在 libraryFavorites；只迁移给升级后第一个读取的账号。
+    // 未登录时直接用旧版全局 key，不能清空它，否则游客收藏会在下次启动时丢失。
+    if (!migrated && sid) {
+      // 旧版本不区分账号，收藏存在 libraryFavorites；只迁移给升级后第一个登录的账号。
       const legacy = await storage.getSettingString(LEGACY_STORAGE_KEY, '');
-      if (!raw && sid && legacy && legacy !== '[]') {
+      if (!raw && legacy && legacy !== '[]') {
         raw = legacy;
         await storage.setSettingString(key, legacy);
       }
@@ -99,24 +102,36 @@ export class LibraryFavorites {
     return this.items.some((item: LibraryFavorite) => this.keyOf(item.kind, item.id) === key);
   }
 
-  /** 切换收藏；返回切换后的状态（true=已收藏）。只写入本机。 */
+  /** 切换收藏；返回切换后的状态（true=已收藏）。只写入本机，写操作排队避免并发丢数据。 */
   async toggle(item: LibraryFavorite): Promise<boolean> {
-    await this.ensureLoaded();
-    const key = this.keyOf(item.kind, item.id);
-    const index = this.items.findIndex((value: LibraryFavorite) => this.keyOf(value.kind, value.id) === key);
-    let favorited = false;
-    if (index >= 0) {
-      this.items.splice(index, 1);
-    } else {
-      this.items.unshift(item);
-      favorited = true;
-    }
-    await this.persist();
-    return favorited;
+    const run = this.writeChain.then((): Promise<boolean> => this.applyToggle(item));
+    this.writeChain = run.then((): void => undefined, (): void => undefined);
+    return run;
   }
 
-  private async persist(): Promise<void> {
-    const key = this.storageKey(this.loadedSid);
-    await AppStorage.getInstance().setSettingString(key, JSON.stringify(this.items));
+  private async applyToggle(item: LibraryFavorite): Promise<boolean> {
+    // 记住发起修改的账号；如果加载期间切了账号，这次修改直接丢弃，绝不写到新账号。
+    const sidAtCall = (await AppStorage.getInstance().getStudentId()).trim();
+    await this.ensureLoaded();
+    if (this.loadedSid !== sidAtCall) {
+      console.warn('LibraryFavorites', 'account changed during toggle, drop write');
+      return false;
+    }
+    const sid = this.loadedSid;
+    const key = this.keyOf(item.kind, item.id);
+    const next = this.items.slice();
+    const index = next.findIndex((value: LibraryFavorite) => this.keyOf(value.kind, value.id) === key);
+    let favorited = false;
+    if (index >= 0) {
+      next.splice(index, 1);
+    } else {
+      next.unshift(item);
+      favorited = true;
+    }
+    await AppStorage.getInstance().setSettingString(this.storageKey(sid), JSON.stringify(next));
+    if (this.loadedSid === sid) {
+      this.items = next;
+    }
+    return favorited;
   }
 }

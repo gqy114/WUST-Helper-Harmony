@@ -144,3 +144,35 @@ test('旧数据只迁移一次：已迁移后切换账号不会再认领', async
   assert.deepEqual(Array.from(await favorites.list()), [], '第二个账号不应认领旧数据');
   assert.equal(JSON.parse(db.get('libraryFavoritesMigrationDone')), true, '迁移标记应已写入');
 });
+
+test('未登录收藏在重启后仍然存在（不会迁移时被清空）', async () => {
+  const db = new Map();
+  const first = await makeStore(db, { sid: '' });
+  await first.favorites.toggle(favorite(5));
+
+  const second = await makeStore(db, { sid: '' });
+  assert.deepEqual(Array.from(await second.favorites.list(), (item) => item.id), [5], '游客收藏不能丢失');
+});
+
+test('切号期间完成的收藏只写回原账号，不串到新账号', async () => {
+  const db = new Map();
+  const { favorites, state } = await makeStore(db, { sid: '2024001', delayedGet: true });
+  const toggling = favorites.toggle(favorite(1, 'A 的收藏'));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  state.sid = '2024002';
+  // 修改应落在发起时所在的 A 账号，B 的 key 不能被创建。
+  assert.equal(await toggling, true);
+  assert.equal(db.has('libraryFavorites_2024002'), false, 'B 不应被写入 A 的操作');
+  const savedA = JSON.parse(JSON.parse(db.get('libraryFavorites_2024001')));
+  assert.deepEqual(savedA.map((item) => item.id), [1], 'A 的收藏应写到 A 的 key');
+  const listB = await favorites.list();
+  assert.deepEqual(Array.from(listB), [], 'B 不应看到 A 的收藏');
+});
+
+test('连续快速收藏按顺序写入，不丢数据', async () => {
+  const { favorites, db } = await makeStore();
+  const results = await Promise.all([favorites.toggle(favorite(1)), favorites.toggle(favorite(2)), favorites.toggle(favorite(3))]);
+  assert.deepEqual(results, [true, true, true]);
+  const saved = JSON.parse(JSON.parse(db.get('libraryFavorites_2024001')));
+  assert.deepEqual(saved.map((item) => item.id).sort((a, b) => a - b), [1, 2, 3]);
+});
