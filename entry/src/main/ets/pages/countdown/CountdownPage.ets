@@ -41,6 +41,7 @@ struct CountdownPage {
     this.customFailed = false;
     let custom: CountdownItem[] = [];
     let exams: CountdownItem[] = [];
+    let hasToken: boolean = false;
     try {
       custom = await CountdownApi.list();
     } catch (error) {
@@ -51,9 +52,10 @@ struct CountdownPage {
       // 固定静态引用：动态 import 在卡片/扩展进程或部分设备上会失败，导致考试列表永远为空。
       const storage = AppStorage.getInstance();
       const token = (await storage.getToken()).trim();
+      hasToken = token.length > 0;
       let term = await storage.getSemester();
       if (!term) term = await storage.getSelectSemester();
-      console.info('CountdownPage', `加载考试安排 term=${term} hasToken=${token.length > 0}`);
+      console.info('CountdownPage', `加载考试安排 term=${term} hasToken=${hasToken}`);
       exams = await CountdownApi.listExams(term);
     } catch (error) {
       console.warn('CountdownPage', `考试列表获取失败: ${JSON.stringify(error)}`);
@@ -66,7 +68,10 @@ struct CountdownPage {
     } else if (this.customFailed) {
       this.loadHint = '自定义倒计时获取失败，请稍后重试';
     } else if (this.events.length === 0) {
-      this.loadHint = '暂无倒计时或考试安排';
+      // 后端在令牌失效时也可能返回“成功 + 空列表”，不能直接告诉用户“没有考试”。
+      this.loadHint = hasToken
+        ? '没有获取到考试安排：可能登录已失效，或本学期没有考试'
+        : '登录状态已失效，请重新登录后查看考试安排';
     }
     this.loading = false;
   }
