@@ -63,16 +63,20 @@ struct CountdownPage {
     }
     this.events = custom.concat(exams).sort((a: CountdownItem, b: CountdownItem) => this.eventTimestamp(a.time) - this.eventTimestamp(b.time));
     this.eventCount = this.events.length;
+    const hints: string[] = [];
     if (this.examFailed) {
-      this.loadHint = '考试安排获取失败，请重新登录或稍后重试';
-    } else if (this.customFailed) {
-      this.loadHint = '自定义倒计时获取失败，请稍后重试';
-    } else if (this.events.length === 0) {
-      // 后端在令牌失效时也可能返回“成功 + 空列表”，不能直接告诉用户“没有考试”。
-      this.loadHint = hasToken
+      hints.push('考试安排获取失败，请重新登录或稍后重试');
+    } else if (exams.length === 0) {
+      // 后端在令牌失效时也可能返回“成功 + 空列表”，不能直接告诉用户“没有考试”；
+      // 即使页面里已有自定义倒计时，也要提示考试没取到。
+      hints.push(hasToken
         ? '没有获取到考试安排：可能登录已失效，或本学期没有考试'
-        : '登录状态已失效，请重新登录后查看考试安排';
+        : '登录状态已失效，请重新登录后查看考试安排');
     }
+    if (this.customFailed) {
+      hints.push('自定义倒计时获取失败，请稍后重试');
+    }
+    this.loadHint = hints.join('；');
     this.loading = false;
   }
 
