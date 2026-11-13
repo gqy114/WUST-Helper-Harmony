@@ -31,8 +31,8 @@ test('部分失败不会被当成“暂无”，且其它倒计时存在时也�
   assert.match(page, /this\.examFailed = true;/, '考试失败没有记录状态');
   assert.match(page, /this\.customFailed = true;/, '自定义倒计时失败没有记录状态');
   assert.match(page, /if \(this\.examFailed\) \{[\s\S]*?考试安排获取失败/, '考试失败时应显示失败原因');
-  assert.match(page, /else if \(this\.customFailed\)/, '自定义失败应显示对应原因');
-  assert.match(page, /hasToken\s*\?\s*'没有获取到考试安排/, '空列表提示应按是否有令牌区分');
+  assert.match(page, /if \(this\.customFailed\) \{[\s\S]*?hints\.push/, '自定义失败应显示对应原因');
+  assert.match(page, /hints\.push\(hasToken/, '空列表提示应按是否有令牌区分');
   const hintRows = page.match(/if \(this\.loadHint\.length > 0\) \{/g) || [];
   assert.ok(hintRows.length >= 2, '列表非空时也要显示失败提示');
 });
