@@ -8,7 +8,7 @@ const source = (path) => readFile(new URL(`${root}/${path}`, import.meta.url), '
 
 test('未安装 QQ 时不再弹系统选择框，直接复制群号', async () => {
   const page = await source('pages/profile/QQGroupPage.ets');
-  assert.match(page, /bundleManager\.canOpenLink\(links\[0\]\)/, '打开前没有检测 QQ 是否安装');
+  assert.match(page, /bundleManager\.canOpenLink\(links\[i\]\)/, '只检测了第一种打开方式');
   assert.match(page, /if \(canOpen\) \{/, '未安装时仍会尝试 openLink');
   assert.match(page, /未检测到 QQ，已复制群号/, '缺少未安装时的复制提示');
 });

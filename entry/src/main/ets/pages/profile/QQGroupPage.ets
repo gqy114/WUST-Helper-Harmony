@@ -45,11 +45,17 @@ struct QQGroupPage {
       'mqq://'
     ];
     // 设备没装 QQ 时 openLink 会弹系统“暂无可用打开方式”，先检测再决定，避免弹窗吓人。
+    // 两个链接都要检测：有的设备只认 mqq:// 而不认 mqqapi://。
     let canOpen = false;
-    try {
-      canOpen = bundleManager.canOpenLink(links[0]);
-    } catch (error) {
-      console.warn('QQGroupPage', `canOpenLink failed: ${JSON.stringify(error)}`);
+    for (let i = 0; i < links.length; i++) {
+      try {
+        if (bundleManager.canOpenLink(links[i])) {
+          canOpen = true;
+          break;
+        }
+      } catch (error) {
+        console.warn('QQGroupPage', `canOpenLink failed: ${JSON.stringify(error)}`);
+      }
     }
     if (canOpen) {
       for (let i = 0; i < links.length; i++) {
