@@ -205,3 +205,14 @@ test('旧收藏迁移放在开屏页执行，避免登录后切号才迁移', as
   const page = await source('pages/splash/LaunchPage.ets');
   assert.match(page, /LibraryFavorites\.migrateLegacyForCurrentAccount\(\)/, '开屏页没有触发旧收藏迁移');
 });
+
+test('旧记录归属别的账号时，不把收藏迁移给当前账号', async () => {
+  const db = new Map([
+    ['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))],
+    ['libraryFavoritesMigrationOwner', JSON.stringify('2024001')]
+  ]);
+  const { favorites, klass } = await makeStore(db, { sid: '2024002' });
+  await klass.migrateLegacyForCurrentAccount();
+  assert.deepEqual(Array.from(await favorites.list()), [], 'B 不应拿到 A 的旧收藏');
+  assert.ok(db.get('libraryFavorites').includes('test-3'), '旧数据应保持原样');
+});

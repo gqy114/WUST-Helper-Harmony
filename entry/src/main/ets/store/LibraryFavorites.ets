@@ -62,6 +62,16 @@ export class LibraryFavorites {
     if (migrated) return;
     const sid = (await storage.getStudentId()).trim();
     if (!sid) return;
+    // 旧版本已经记录过收藏归属账号：只有本人登录才迁移，避免 A 的收藏转给 B。
+    const ownerKey = 'libraryFavoritesMigrationOwner';
+    const owner = (await storage.getSettingString(ownerKey, '')).trim();
+    if (owner && owner !== sid) {
+      await storage.setSettingBool(LibraryFavorites.MIGRATION_FLAG, true);
+      return;
+    }
+    if (!owner) {
+      await storage.setSettingString(ownerKey, sid);
+    }
     const legacy = await storage.getSettingString(LEGACY_STORAGE_KEY, '');
     if (legacy && legacy !== '[]') {
       const key = `${STORAGE_PREFIX}${sid}`;
