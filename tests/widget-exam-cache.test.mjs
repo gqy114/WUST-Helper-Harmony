@@ -33,3 +33,11 @@ test('设置页读取考试缓存也按当前账号与学期', async () => {
   assert.match(page, /let cachedTerm = \(await storage\.getSemester\(\)\)\.trim\(\);\s*if \(!cachedTerm\) cachedTerm = \(await storage\.getSelectSemester\(\)\)\.trim\(\);\s*this\.examCountdowns = await WidgetPrefs\.getExamCountdowns\(storage, sid, cachedTerm\)/,
     '设置页读取没有按账号+学期隔离');
 });
+
+test('同步完成时的刷新请求会排队执行，不会被跳过', async () => {
+  const page = await source('entry/src/main/ets/pages/profile/WidgetSettingsPage.ets');
+  assert.match(page, /private refreshChain: Promise<void> = Promise\.resolve\(\);/, '缺少刷新队列');
+  assert.match(page, /const run = this\.refreshChain\.then\(/, '刷新没有入队');
+  assert.doesNotMatch(page, /if \(this\.busy\) return;/, '仍在刷新期间直接丢弃请求');
+  assert.match(page, /this\.refreshChain = run\.then/, '刷新队列没有串起来');
+});

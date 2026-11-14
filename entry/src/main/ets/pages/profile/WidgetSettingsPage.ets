@@ -72,6 +72,8 @@ struct WidgetSettingsPage {
   private cropStartOffsetY: number = 0;
   // 考试同步串行执行：旧学期保存尚未结束时，新学期同步会排在它后面。
   private examSyncChain: Promise<void> = Promise.resolve();
+  // 卡片刷新排队执行：同步完成时若恰好正在刷新，会等这次结束后再刷一次。
+  private refreshChain: Promise<void> = Promise.resolve();
 
   aboutToAppear(): void {
     this.loadSettings();
@@ -173,9 +175,14 @@ struct WidgetSettingsPage {
     }
   }
 
-  /** 重新生成卡片数据并刷新所有已添加的卡片。 */
-  private async refreshWidgets(showToast: boolean = true): Promise<void> {
-    if (this.busy) return;
+  /** 重新生成卡片数据并刷新所有已添加的卡片；刷新排队执行，不会丢掉期间的新请求。 */
+  private refreshWidgets(showToast: boolean = true): Promise<void> {
+    const run = this.refreshChain.then((): Promise<void> => this.refreshWidgetsInternal(showToast));
+    this.refreshChain = run.then((): void => undefined, (): void => undefined);
+    return run;
+  }
+
+  private async refreshWidgetsInternal(showToast: boolean = true): Promise<void> {
     this.busy = true;
     const storage = AppStorage.getInstance();
     try {
