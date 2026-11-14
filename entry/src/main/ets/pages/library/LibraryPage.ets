@@ -44,14 +44,11 @@ struct LibraryPage {
   ];
 
   aboutToAppear(): void {
-    this.refreshFavorites(true);
+    this.refreshFavorites();
   }
 
-  /** 收藏：服务端为准，本机做离线缓存；sync=true 时先和服务端对齐。 */
-  private async refreshFavorites(sync: boolean = false): Promise<void> {
-    if (sync) {
-      await this.favoritesStore.syncFromServer();
-    }
+  /** 收藏只存本机：直接读本地缓存，不请求服务端。 */
+  private async refreshFavorites(): Promise<void> {
     this.favorites = await this.favoritesStore.list();
     this.favoriteTick = this.favoriteTick + 1;
   }
@@ -59,7 +56,7 @@ struct LibraryPage {
   private selectTab(index: number): void {
     this.selectedTab = index;
     if (index === 1) {
-      this.refreshFavorites(true);
+      this.refreshFavorites();
       return;
     }
     // 恢复该栏目自己的错误状态：否则从别的栏目切回来时错误已被清空，
@@ -181,18 +178,11 @@ struct LibraryPage {
   private async updateFavorite(item: LibraryFavorite): Promise<void> {
     try {
       await this.favoritesStore.toggle(item);
-      this.notifyIfOffline();
       await this.refreshFavorites();
     } catch (error) {
       console.warn('LibraryPage', `favorite update failed: ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '收藏未完成，请确认账号后重试' });
+      promptAction.showToast({ message: '收藏失败，请重试' });
     }
-  }
-
-  /** 服务端同步失败（未登录/断网）时提示一次，收藏仍在本地可用。 */
-  private notifyIfOffline(): void {
-    if (this.favoritesStore.isLastToggleSynced()) return;
-    promptAction.showToast({ message: '云端同步失败，变更已保存在本机' });
   }
 
   @Builder
