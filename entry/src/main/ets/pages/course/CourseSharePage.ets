@@ -1,4 +1,11 @@
 import router from '@ohos.router';
+import { promptAction } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
+import { fileIo } from '@kit.CoreFileKit';
+import { image } from '@kit.ImageKit';
+import { systemShare } from '@kit.ShareKit';
+import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import uniformTypeDescriptor from '@ohos.data.uniformTypeDescriptor';
 import { AppStorage } from '../../store/AppStorage';
 import { DynamicScheduleApi } from '../../net/DynamicScheduleApi';
 import {
@@ -65,6 +72,88 @@ struct CourseSharePage {
     return `${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds} 内可扫码`;
   }
 
+  /** 把二维码区域截图写到应用缓存，返回文件路径。 */
+  private async createQrFile(): Promise<string> {
+    const pixelMap: image.PixelMap = await this.getUIContext().getComponentSnapshot().get('courseShareQr');
+    const packer: image.ImagePacker = image.createImagePacker();
+    const buffer: ArrayBuffer = await packer.packing(pixelMap, { format: 'image/png', quality: 100 });
+    packer.release();
+    const context = getContext(this) as common.UIAbilityContext;
+    const path = `${context.cacheDir}/course_qr_${Date.now()}.png`;
+    const file = fileIo.openSync(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE);
+    try {
+      fileIo.writeSync(file.fd, buffer);
+    } finally {
+      fileIo.closeSync(file);
+    }
+    return path;
+  }
+
+  private copyToUri(sourcePath: string, targetUri: string): void {
+    const source = fileIo.openSync(sourcePath, fileIo.OpenMode.READ_ONLY);
+    const target = fileIo.openSync(targetUri, fileIo.OpenMode.WRITE_ONLY);
+    try {
+      const chunk = new ArrayBuffer(64 * 1024);
+      let read = 0;
+      while ((read = fileIo.readSync(source.fd, chunk)) > 0) {
+        fileIo.writeSync(target.fd, chunk, { length: read });
+      }
+    } finally {
+      fileIo.closeSync(source);
+      fileIo.closeSync(target);
+    }
+  }
+
+  private async saveQrImage(): Promise<void> {
+    if (this.share.qrValue.length === 0) {
+      promptAction.showToast({ message: '二维码还没生成，请稍后再试', duration: 1800 });
+      return;
+    }
+    try {
+      const path = await this.createQrFile();
+      const helper = photoAccessHelper.getPhotoAccessHelper(getContext(this));
+      const configs: photoAccessHelper.PhotoCreationConfig[] = [{
+        title: '课表二维码',
+        fileNameExtension: 'png',
+        photoType: photoAccessHelper.PhotoType.IMAGE
+      }];
+      const uris = await helper.showAssetsCreationDialog([`file://${path}`], configs);
+      if (!uris || uris.length === 0) {
+        promptAction.showToast({ message: '已取消保存', duration: 1500 });
+        return;
+      }
+      this.copyToUri(path, uris[0]);
+      promptAction.showToast({ message: '已保存到相册', duration: 1800 });
+    } catch (error) {
+      console.warn('CourseSharePage', `save qr failed: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '保存失败，请授予相册权限后重试', duration: 2200 });
+    }
+  }
+
+  private async shareQrImage(): Promise<void> {
+    if (this.share.qrValue.length === 0) {
+      promptAction.showToast({ message: '二维码还没生成，请稍后再试', duration: 1800 });
+      return;
+    }
+    try {
+      const path = await this.createQrFile();
+      const data = new systemShare.SharedData({
+        utd: uniformTypeDescriptor.UniformDataType.PNG,
+        uri: `file://${path}`,
+        title: '课表二维码'
+      });
+      const controller = new systemShare.ShareController(data);
+      const context = getContext(this) as common.UIAbilityContext;
+      await controller.show(context, {
+        selectionMode: systemShare.SelectionMode.SINGLE,
+        previewMode: systemShare.SharePreviewMode.DETAIL
+      });
+    } catch (error) {
+      console.warn('CourseSharePage', `share qr failed: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '分享失败，请重试', duration: 1800 });
+    }
+  }
+
   build() {
     Column() {
       Row() {
@@ -112,7 +201,7 @@ struct CourseSharePage {
                     .enabled(!this.share.loading).onClick(() => this.shareController.refresh());
                 }
               }.margin({ top: 12 });
-            }.width('100%').padding({ top: 20, bottom: 20 });
+            }.width('100%').padding({ top: 20, bottom: 20 }).id('courseShareQr');
             Divider().strokeWidth(1).color('#E5EAE8').margin({ left: 24, right: 24 });
             Row() {
               Column() {
@@ -137,9 +226,11 @@ struct CourseSharePage {
 
       Row() {
         Button('保存图片').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#2A8F70')
-          .backgroundColor('#EEF8F4').layoutWeight(1).height(60).borderRadius(20);
+          .backgroundColor('#EEF8F4').layoutWeight(1).height(60).borderRadius(20)
+          .onClick(() => { this.saveQrImage(); });
         Button('分享二维码').fontSize(20).fontWeight(FontWeight.Bold).fontColor(Color.White)
-          .backgroundColor('#20C894').layoutWeight(1.35).height(60).borderRadius(20).margin({ left: 16 });
+          .backgroundColor('#20C894').layoutWeight(1.35).height(60).borderRadius(20).margin({ left: 16 })
+          .onClick(() => { this.shareQrImage(); });
       }.width('100%').padding({ left: 24, right: 24, top: 16, bottom: 18 }).backgroundColor(Color.White);
     }.width('100%').height('100%').backgroundColor('#F7F8F7');
   }
