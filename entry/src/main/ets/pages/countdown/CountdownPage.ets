@@ -1,5 +1,6 @@
 import { promptAction, router } from '@kit.ArkUI';
 import { CountdownApi, CountdownItem } from '../../net/CountdownApi';
+import { AppStorage } from '../../store/AppStorage';
 
 @Entry
 @Component
@@ -8,6 +9,9 @@ struct CountdownPage {
   @State private eventCount: number = 0;
   @State private events: CountdownItem[] = [];
   @State private loading: boolean = false;
+  @State private loadHint: string = '';
+  @State private examFailed: boolean = false;
+  @State private customFailed: boolean = false;
   @State private showAddDialog: boolean = false;
   @State private dialogOpacity: number = 0;
   @State private dialogScale: number = 0.85;
@@ -32,17 +36,47 @@ struct CountdownPage {
 
   private async loadCountdowns(): Promise<void> {
     this.loading = true;
+    this.loadHint = '';
+    this.examFailed = false;
+    this.customFailed = false;
     let custom: CountdownItem[] = [];
     let exams: CountdownItem[] = [];
-    try { custom = await CountdownApi.list(); } catch { console.warn('CountdownPage', '自定义倒计时获取失败'); }
+    let hasToken: boolean = false;
     try {
-      const storage = (await import('../../store/AppStorage')).AppStorage.getInstance();
+      custom = await CountdownApi.list();
+    } catch (error) {
+      console.warn('CountdownPage', `自定义倒计时获取失败: ${JSON.stringify(error)}`);
+      this.customFailed = true;
+    }
+    try {
+      // 固定静态引用：动态 import 在卡片/扩展进程或部分设备上会失败，导致考试列表永远为空。
+      const storage = AppStorage.getInstance();
+      const token = (await storage.getToken()).trim();
+      hasToken = token.length > 0;
       let term = await storage.getSemester();
       if (!term) term = await storage.getSelectSemester();
+      console.info('CountdownPage', `加载考试安排 term=${term} hasToken=${hasToken}`);
       exams = await CountdownApi.listExams(term);
-    } catch { console.warn('CountdownPage', '考试列表获取失败'); }
+    } catch (error) {
+      console.warn('CountdownPage', `考试列表获取失败: ${JSON.stringify(error)}`);
+      this.examFailed = true;
+    }
     this.events = custom.concat(exams).sort((a: CountdownItem, b: CountdownItem) => this.eventTimestamp(a.time) - this.eventTimestamp(b.time));
     this.eventCount = this.events.length;
+    const hints: string[] = [];
+    if (this.examFailed) {
+      hints.push('考试安排获取失败，请重新登录或稍后重试');
+    } else if (exams.length === 0) {
+      // 后端在令牌失效时也可能返回“成功 + 空列表”，不能直接告诉用户“没有考试”；
+      // 即使页面里已有自定义倒计时，也要提示考试没取到。
+      hints.push(hasToken
+        ? '没有获取到考试安排：可能登录已失效，或本学期没有考试'
+        : '登录状态已失效，请重新登录后查看考试安排');
+    }
+    if (this.customFailed) {
+      hints.push('自定义倒计时获取失败，请稍后重试');
+    }
+    this.loadHint = hints.join('；');
     this.loading = false;
   }
 
@@ -258,9 +292,26 @@ struct CountdownPage {
             Column() {
               Image($r('app.media.empty')).width(92).height(92).objectFit(ImageFit.Contain).margin({ bottom: 14 })
               Text('没有内容').fontSize(25).fontWeight(FontWeight.Bold).fontColor('#20C78A')
+              if (this.loadHint.length > 0) {
+                Text(this.loadHint)
+                  .fontSize(14)
+                  .fontColor('#999999')
+                  .margin({ top: 10 })
+                  .padding({ left: 24, right: 24 })
+                  .textAlign(TextAlign.Center)
+              }
             }
           } else {
             Scroll() { Column() {
+              // 有其它倒计时时也要提示考试/自定义项获取失败，不能默默隐藏。
+              if (this.loadHint.length > 0) {
+                Text(this.loadHint)
+                  .fontSize(13)
+                  .fontColor('#999999')
+                  .width('100%')
+                  .padding({ left: 18, right: 18, top: 10, bottom: 10 })
+                  .textAlign(TextAlign.Center)
+              }
               ForEach(this.events, (item: CountdownItem) => Row() {
                 Column().width(5).height(92).backgroundColor(item.source === 'exam' ? '#FFAA54' : '#20C78A').margin({ right: 18 });
                 Column() {
