@@ -242,14 +242,14 @@ test('进入收藏页时按当前账号迁移，切回原账号能立即看到�
   assert.deepEqual(Array.from(await store.favorites.list(), (item) => item.id), [3], '加载时应完成迁移');
 });
 
-test('迁移会合并旧收藏与本机新收藏', async () => {
+test('本机已有收藏记录时以本机为准，忽略过期的旧数据', async () => {
   const db = new Map([
     ['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))],
     ['libraryFavorites_2024001', JSON.stringify(JSON.stringify([favorite(9)]))],
     ['libraryFavoritesMigrationOwner', JSON.stringify('2024001')]
   ]);
   const store = await makeStore(db, { sid: '2024001' });
-  assert.deepEqual(Array.from(await store.favorites.list(), (item) => item.id).sort((a, b) => a - b), [3, 9], '旧收藏和新收藏都要保留');
+  assert.deepEqual(Array.from(await store.favorites.list(), (item) => item.id), [9], '本机记录是权威状态');
   assert.equal(db.get('libraryFavorites'), JSON.stringify('[]'), '旧数据迁移后应清空');
 });
 
@@ -279,4 +279,14 @@ test('读取收藏期间切账号，返回的是新账号的收藏', async () =>
   state.sid = '2024002';
   const items = await listing;
   assert.deepEqual(Array.from(items, (item) => item.id), [7], '不能返回上一个账号的收藏');
+});
+
+test('旧版本里取消过的收藏，升级后不会因迁移复活', async () => {
+  const db = new Map([
+    ['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3), favorite(9)]))],
+    ['libraryFavorites_2024001', JSON.stringify(JSON.stringify([favorite(9)]))],
+    ['libraryFavoritesMigrationOwner', JSON.stringify('2024001')]
+  ]);
+  const store = await makeStore(db, { sid: '2024001' });
+  assert.deepEqual(Array.from(await store.favorites.list(), (item) => item.id), [9], '已取消的 3 不能重新出现');
 });

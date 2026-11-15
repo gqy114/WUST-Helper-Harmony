@@ -95,18 +95,12 @@ export class LibraryFavorites {
     if (legacy && legacy !== '[]') {
       const key = `${STORAGE_PREFIX}${account}`;
       const existingRaw = await storage.getSettingString(key, '');
-      const existing = LibraryFavorites.parseItems(existingRaw);
-      const legacyItems = LibraryFavorites.parseItems(legacy);
-      // 本机新收藏与旧收藏合并去重：既不丢旧记录，也不覆盖迁移期间新点的收藏。
-      const merged: LibraryFavorite[] = existing.slice();
-      for (let i = 0; i < legacyItems.length; i++) {
-        const candidate = legacyItems[i];
-        const duplicated = merged.some((item: LibraryFavorite) =>
-          item.kind === candidate.kind && item.id === candidate.id);
-        if (!duplicated) merged.push(candidate);
-      }
-      if (merged.length > 0) {
-        await storage.setSettingString(key, JSON.stringify(merged));
+      // 本机已有该账号记录时以本机为准：旧 key 只是过期快照，直接合并会让已取消的收藏复活。
+      if (existingRaw.length === 0) {
+        const legacyItems = LibraryFavorites.parseItems(legacy);
+        if (legacyItems.length > 0) {
+          await storage.setSettingString(key, JSON.stringify(legacyItems));
+        }
       }
       await storage.setSettingString(LEGACY_STORAGE_KEY, '[]');
     }
