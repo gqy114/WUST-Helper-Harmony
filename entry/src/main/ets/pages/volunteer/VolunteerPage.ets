@@ -139,9 +139,9 @@ export struct VolunteerPage {
     if (message.indexOf('工时码') >= 0) {
       return '工时码无效或已过期，请核对后重试';
     }
-    // 后端在服务异常/参数不匹配时会返回“无效的第二课堂查询请求”，对用户没有意义。
+    // 后端在服务异常/参数不匹配时会返回“无效的…”查询请求，改成用户能理解的志愿工时提示。
     if (message.indexOf('无效') >= 0 || message.indexOf('404') >= 0 || message.indexOf('Not Found') >= 0) {
-      return '第二课堂服务暂不可用，请稍后重试';
+      return '志愿工时服务暂不可用，请稍后重试';
     }
     return message.length > 0 && message !== '[object Object]' ? message : fallback;
   }

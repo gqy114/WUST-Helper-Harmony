@@ -29,9 +29,10 @@ test('双创学分请求带 Platform，错误文案不再直接是“未知错�
   assert.doesNotMatch(api, /throw new Error\(message \|\| '双创学分认证失败'\);/, '仍会直接抛后端原始错误');
 });
 
-test('第二课堂服务异常时给出可读提示', async () => {
+test('志愿工时服务异常时给出对应提示，不冒充第二课堂', async () => {
   const page = await source('pages/volunteer/VolunteerPage.ets');
-  assert.match(page, /第二课堂服务暂不可用，请稍后重试/, '缺少服务不可用提示');
+  assert.match(page, /志愿工时服务暂不可用，请稍后重试/, '缺少志愿工时服务提示');
+  assert.doesNotMatch(page, /第二课堂服务暂不可用/, '志愿工时页面不应提示第二课堂');
 });
 
 test('工时码无效/过期时提示码的问题，而不是服务不可用', async () => {
