@@ -1,4 +1,4 @@
-﻿import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { StorageUtil } from '../utils/StorageUtil';
@@ -54,7 +54,7 @@ export default class EntryAbility extends UIAbility {
     Promise.all([
       StorageUtil.init(this.context),
       AppStorage.getInstance().init(this.context),
-    ]).then(() => {
+    ]).then(async () => {
       // 统一先进入开屏页，由 LaunchPage 决定登录页或主页，并展示自定义 open.png。
       loadPage('pages/splash/LaunchPage');
     }).catch(() => {
