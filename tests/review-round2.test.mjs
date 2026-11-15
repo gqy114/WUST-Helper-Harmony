@@ -9,7 +9,7 @@ const source = (path) => readFile(new URL(`${root}/${path}`, import.meta.url), '
 test('未安装 QQ 时不再弹系统选择框，直接复制群号', async () => {
   const page = await source('pages/profile/QQGroupPage.ets');
   assert.match(page, /bundleManager\.canOpenLink\(links\[i\]\)/, '只检测了第一种打开方式');
-  assert.match(page, /if \(canOpen\) \{/, '未安装时仍会尝试 openLink');
+  assert.match(page, /openable\.push\(links\[i\]\)/, '没有收集可打开的链接');
   assert.match(page, /未检测到 QQ，已复制群号/, '缺少未安装时的复制提示');
 });
 
@@ -32,4 +32,19 @@ test('双创学分请求带 Platform，错误文案不再直接是“未知错�
 test('第二课堂服务异常时给出可读提示', async () => {
   const page = await source('pages/volunteer/VolunteerPage.ets');
   assert.match(page, /第二课堂服务暂不可用，请稍后重试/, '缺少服务不可用提示');
+});
+
+test('工时码无效/过期时提示码的问题，而不是服务不可用', async () => {
+  const page = await source('pages/volunteer/VolunteerPage.ets');
+  assert.match(page, /工时码无效或已过期，请核对后重试/, '缺少工时码无效提示');
+  const codeIndex = page.indexOf("message.indexOf('工时码')");
+  const serviceIndex = page.indexOf("message.indexOf('无效')");
+  assert.ok(codeIndex >= 0 && codeIndex < serviceIndex, '应先判断工时码，再判断服务不可用');
+});
+
+test('QQ 只尝试系统确认可打开的链接', async () => {
+  const page = await source('pages/profile/QQGroupPage.ets');
+  assert.match(page, /const openable: string\[\] = \[\];/, '缺少可用链接列表');
+  assert.match(page, /await context\.openLink\(openable\[i\]\)/, '仍在尝试不可用的链接');
+  assert.doesNotMatch(page, /await context\.openLink\(links\[i\]\)/, '不应直接遍历原始链接');
 });

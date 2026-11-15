@@ -6,7 +6,7 @@
  */
 import { promptAction, router } from '@kit.ArkUI';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
-import { common, Want } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
 import { bundleManager } from '@kit.AbilityKit';
 
 /** 官方用户群号，与后端 wusthelper_android.json 的 qqGroup 保持一致。 */
@@ -45,36 +45,23 @@ struct QQGroupPage {
       'mqq://'
     ];
     // 设备没装 QQ 时 openLink 会弹系统“暂无可用打开方式”，先检测再决定，避免弹窗吓人。
-    // 两个链接都要检测：有的设备只认 mqq:// 而不认 mqqapi://。
-    let canOpen = false;
+    // 只尝试系统确认可打开的链接：有的设备只认 mqq://，不能回退去试不可用的 mqqapi://。
+    const openable: string[] = [];
     for (let i = 0; i < links.length; i++) {
       try {
         if (bundleManager.canOpenLink(links[i])) {
-          canOpen = true;
-          break;
+          openable.push(links[i]);
         }
       } catch (error) {
         console.warn('QQGroupPage', `canOpenLink failed: ${JSON.stringify(error)}`);
       }
     }
-    if (canOpen) {
-      for (let i = 0; i < links.length; i++) {
-        try {
-          await context.openLink(links[i]);
-          return;
-        } catch (error) {
-          console.warn('QQGroupPage', `openLink failed: ${JSON.stringify(error)}`);
-        }
-      }
+    for (let i = 0; i < openable.length; i++) {
       try {
-        const want: Want = {
-          action: 'ohos.want.action.viewData',
-          uri: 'mqq://'
-        };
-        await context.startAbility(want);
+        await context.openLink(openable[i]);
         return;
       } catch (error) {
-        console.warn('QQGroupPage', `startAbility failed: ${JSON.stringify(error)}`);
+        console.warn('QQGroupPage', `openLink failed: ${JSON.stringify(error)}`);
       }
     }
     const copied = await this.copyGroupNumber(false);
