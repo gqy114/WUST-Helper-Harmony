@@ -1,7 +1,7 @@
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
-import { fileIo } from '@kit.CoreFileKit';
+import { fileIo, fileUri } from '@kit.CoreFileKit';
 import { image } from '@kit.ImageKit';
 import { systemShare } from '@kit.ShareKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
@@ -117,7 +117,8 @@ struct CourseSharePage {
         fileNameExtension: 'png',
         photoType: photoAccessHelper.PhotoType.IMAGE
       }];
-      const uris = await helper.showAssetsCreationDialog([`file://${path}`], configs);
+      // SDK 要求传应用文件 URI，不能手拼 file:// + 路径。
+      const uris = await helper.showAssetsCreationDialog([fileUri.getUriFromPath(path)], configs);
       if (!uris || uris.length === 0) {
         promptAction.showToast({ message: '已取消保存', duration: 1500 });
         return;
@@ -139,7 +140,7 @@ struct CourseSharePage {
       const path = await this.createQrFile();
       const data = new systemShare.SharedData({
         utd: uniformTypeDescriptor.UniformDataType.PNG,
-        uri: `file://${path}`,
+        uri: fileUri.getUriFromPath(path),
         title: '课表二维码'
       });
       const controller = new systemShare.ShareController(data);

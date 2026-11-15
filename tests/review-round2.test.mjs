@@ -18,6 +18,7 @@ test('课表二维码：保存/分享按钮已接线', async () => {
   assert.match(page, /Button\('保存图片'\)[\s\S]*?\.onClick\(\(\) => \{ this\.saveQrImage\(\); \}\)/, '保存按钮没有响应');
   assert.match(page, /Button\('分享二维码'\)[\s\S]*?\.onClick\(\(\) => \{ this\.shareQrImage\(\); \}\)/, '分享按钮没有响应');
   assert.match(page, /getComponentSnapshot\(\)\.get\('courseShareQr'\)/, '保存/分享没有截图二维码');
+  assert.match(page, /fileUri\.getUriFromPath\(path\)/, '文件 URI 没有用 SDK 接口生成');
   assert.match(page, /showAssetsCreationDialog/, '保存没有走向系统相册');
   assert.match(page, /new systemShare\.ShareController\(data\)/, '分享没有使用系统分享');
 });
