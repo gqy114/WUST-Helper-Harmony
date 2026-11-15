@@ -252,3 +252,18 @@ test('迁移不会覆盖本机已有新收藏', async () => {
   assert.deepEqual(Array.from(await store.favorites.list(), (item) => item.id), [9], '应以本机新收藏为准');
   assert.equal(db.get('libraryFavorites'), JSON.stringify('[]'), '旧数据迁移后应清空');
 });
+
+test('迁移过程中切号，两个账号不会同时认领同一份旧收藏', async () => {
+  const db = new Map([['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))]]);
+  const { klass, favorites, state } = await makeStore(db, { sid: '2024001', delayedGet: true });
+  const first = klass.migrateFor('2024001');
+  const second = klass.migrateFor('2024002');
+  await Promise.all([first, second]);
+
+  const legacyOwners = ['libraryFavorites_2024001', 'libraryFavorites_2024002']
+    .filter((key) => (db.get(key) || '').includes('test-3'));
+  assert.equal(legacyOwners.length, 1, '旧收藏只能被一个账号认领');
+
+  state.sid = legacyOwners[0] === 'libraryFavorites_2024001' ? '2024001' : '2024002';
+  assert.deepEqual(Array.from(await favorites.list(), (item) => item.id), [3]);
+});

@@ -53,10 +53,23 @@ export class LibraryFavorites {
   }
 
   /**
+   * 迁移串行化：迁移过程中切账号时，后一个账号会排在迁移结束后再判断归属，
+   * 不会出现两个账号同时认领同一份旧收藏。
+   */
+  private static migrateChain: Promise<void> = Promise.resolve();
+
+  static migrateFor(sid: string): Promise<void> {
+    const run = LibraryFavorites.migrateChain.then((): Promise<void> =>
+      LibraryFavorites.migrateForInternal(sid));
+    LibraryFavorites.migrateChain = run.then((): void => undefined, (): void => undefined);
+    return run;
+  }
+
+  /**
    * 把旧版本全局收藏迁移给“该收藏的归属账号”。
    * 迁移只写空的本机收藏，避免覆盖用户新点的收藏；切回原账号时会再次触发。
    */
-  static async migrateFor(sid: string): Promise<void> {
+  private static async migrateForInternal(sid: string): Promise<void> {
     const account = (sid || '').trim();
     if (!account) return;
     const storage = AppStorage.getInstance();
