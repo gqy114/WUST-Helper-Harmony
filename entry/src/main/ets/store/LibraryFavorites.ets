@@ -53,33 +53,32 @@ export class LibraryFavorites {
   }
 
   /**
-   * 应用启动时调用一次：把旧版本全局收藏迁移给“当前已登录”的账号，并写迁移标记。
-   * 不在页面加载时迁移，避免快速切号时被新账号认领。
+   * 把旧版本全局收藏迁移给“该收藏的归属账号”。
+   * 迁移只写空的本机收藏，避免覆盖用户新点的收藏；切回原账号时会再次触发。
    */
-  static async migrateLegacyForCurrentAccount(): Promise<void> {
+  static async migrateFor(sid: string): Promise<void> {
+    const account = (sid || '').trim();
+    if (!account) return;
     const storage = AppStorage.getInstance();
-    const migrated = await storage.getSettingBool(LibraryFavorites.MIGRATION_FLAG, false);
-    if (migrated) return;
-    const sid = (await storage.getStudentId()).trim();
-    if (!sid) return;
     // 旧版本已经记录过收藏归属账号：只有本人登录才迁移，避免 A 的收藏转给 B。
     const ownerKey = 'libraryFavoritesMigrationOwner';
     const owner = (await storage.getSettingString(ownerKey, '')).trim();
-    if (owner && owner !== sid) {
+    if (owner && owner !== account) {
       // 不是归属账号：不清旧数据、也不写全局迁移标记，等原账号切回来还能迁移。
       return;
     }
-    if (owner === sid) {
+    if (owner === account) {
       const done = await storage.getSettingBool(LibraryFavorites.MIGRATION_FLAG, false);
       if (done) return;
     }
     if (!owner) {
-      await storage.setSettingString(ownerKey, sid);
+      await storage.setSettingString(ownerKey, account);
     }
     const legacy = await storage.getSettingString(LEGACY_STORAGE_KEY, '');
     if (legacy && legacy !== '[]') {
-      const key = `${STORAGE_PREFIX}${sid}`;
+      const key = `${STORAGE_PREFIX}${account}`;
       const existing = await storage.getSettingString(key, '');
+      // 只有本机收藏还是空的时候才迁移，绝不覆盖迁移期间新点的收藏。
       if (!existing) {
         await storage.setSettingString(key, legacy);
       }
@@ -88,8 +87,16 @@ export class LibraryFavorites {
     await storage.setSettingBool(LibraryFavorites.MIGRATION_FLAG, true);
   }
 
+  /** 应用启动/进入收藏页时调用：按当前账号补一次迁移（切回原账号也能看到旧收藏）。 */
+  static async migrateLegacyForCurrentAccount(): Promise<void> {
+    const sid = (await AppStorage.getInstance().getStudentId()).trim();
+    await LibraryFavorites.migrateFor(sid);
+  }
+
   private async loadFor(sid: string): Promise<void> {
     const storage = AppStorage.getInstance();
+    // 加载前补一次迁移：切回原账号时旧收藏立即出现。
+    await LibraryFavorites.migrateFor(sid);
     const key = this.storageKey(sid);
     const raw = await storage.getSettingString(key, '');
     this.items = this.parse(raw);

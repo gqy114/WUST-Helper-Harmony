@@ -179,12 +179,14 @@ test('连续快速收藏按顺序写入，不丢数据', async () => {
   assert.deepEqual(saved.map((item) => item.id).sort((a, b) => a - b), [1, 2, 3]);
 });
 
-test('未执行启动迁移时，切换账号不会把旧收藏带给新账号', async () => {
-  const db = new Map([['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))]]);
-  const { favorites, state } = await makeStore(db);
-  state.sid = '2024002';
-  assert.deepEqual(Array.from(await favorites.list()), [], '页面加载不再做迁移，新账号不应认领');
-  assert.ok(db.get('libraryFavorites').includes('test-3'), '旧数据应原地保留，等启动迁移处理');
+test('旧收藏有归属账号时，切换账号不会把旧收藏带给新账号', async () => {
+  const db = new Map([
+    ['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))],
+    ['libraryFavoritesMigrationOwner', JSON.stringify('2024001')]
+  ]);
+  const { favorites, state } = await makeStore(db, { sid: '2024002' });
+  assert.deepEqual(Array.from(await favorites.list()), [], '新账号不应认领别人的旧收藏');
+  assert.ok(db.get('libraryFavorites').includes('test-3'), '旧数据应原地保留，等原账号来迁移');
 });
 
 test('排队中的收藏在切号后不会写到新账号', async () => {
@@ -229,4 +231,24 @@ test('原账号切回来后仍能迁移自己的旧收藏', async () => {
   store.state.sid = '2024001';
   await store.klass.migrateLegacyForCurrentAccount();
   assert.deepEqual(Array.from(await store.favorites.list(), (item) => item.id), [3], '原账号切回来应能看到旧收藏');
+});
+
+test('进入收藏页时按当前账号迁移，切回原账号能立即看到旧收藏', async () => {
+  const db = new Map([
+    ['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))],
+    ['libraryFavoritesMigrationOwner', JSON.stringify('2024001')]
+  ]);
+  const store = await makeStore(db, { sid: '2024001' });
+  assert.deepEqual(Array.from(await store.favorites.list(), (item) => item.id), [3], '加载时应完成迁移');
+});
+
+test('迁移不会覆盖本机已有新收藏', async () => {
+  const db = new Map([
+    ['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))],
+    ['libraryFavorites_2024001', JSON.stringify(JSON.stringify([favorite(9)]))],
+    ['libraryFavoritesMigrationOwner', JSON.stringify('2024001')]
+  ]);
+  const store = await makeStore(db, { sid: '2024001' });
+  assert.deepEqual(Array.from(await store.favorites.list(), (item) => item.id), [9], '应以本机新收藏为准');
+  assert.equal(db.get('libraryFavorites'), JSON.stringify('[]'), '旧数据迁移后应清空');
 });
