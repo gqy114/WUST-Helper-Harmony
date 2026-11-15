@@ -216,3 +216,17 @@ test('旧记录归属别的账号时，不把收藏迁移给当前账号', async
   assert.deepEqual(Array.from(await favorites.list()), [], 'B 不应拿到 A 的旧收藏');
   assert.ok(db.get('libraryFavorites').includes('test-3'), '旧数据应保持原样');
 });
+
+test('原账号切回来后仍能迁移自己的旧收藏', async () => {
+  const db = new Map([
+    ['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))],
+    ['libraryFavoritesMigrationOwner', JSON.stringify('2024001')]
+  ]);
+  const store = await makeStore(db, { sid: '2024002' });
+  await store.klass.migrateLegacyForCurrentAccount();
+  assert.deepEqual(Array.from(await store.favorites.list()), [], 'B 不应拿到 A 的收藏');
+
+  store.state.sid = '2024001';
+  await store.klass.migrateLegacyForCurrentAccount();
+  assert.deepEqual(Array.from(await store.favorites.list(), (item) => item.id), [3], '原账号切回来应能看到旧收藏');
+});

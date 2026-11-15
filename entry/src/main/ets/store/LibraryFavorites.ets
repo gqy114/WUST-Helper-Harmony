@@ -66,8 +66,12 @@ export class LibraryFavorites {
     const ownerKey = 'libraryFavoritesMigrationOwner';
     const owner = (await storage.getSettingString(ownerKey, '')).trim();
     if (owner && owner !== sid) {
-      await storage.setSettingBool(LibraryFavorites.MIGRATION_FLAG, true);
+      // 不是归属账号：不清旧数据、也不写全局迁移标记，等原账号切回来还能迁移。
       return;
+    }
+    if (owner === sid) {
+      const done = await storage.getSettingBool(LibraryFavorites.MIGRATION_FLAG, false);
+      if (done) return;
     }
     if (!owner) {
       await storage.setSettingString(ownerKey, sid);
