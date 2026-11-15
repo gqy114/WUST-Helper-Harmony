@@ -1,16 +1,20 @@
 /**
  * 小组件设置页。
  *
- * 之前这个页面是纯静态预览：齿轮、刷新、加号、外观行都没有点击事件，
- * 也没有真正的桌面卡片，所以审核侧表现为“点击设置/刷新/添加无响应”。
- * 现在页面与 EntryFormAbility 共用 WidgetPrefs / WidgetData：
- *  - 设置：切换卡片内容类型、编辑倒计时
+ * 与 EntryFormAbility 共用 WidgetPrefs / WidgetData：
+ *  - 设置：切换卡片内容类型、编辑倒计时、同步考试倒计时
  *  - 刷新：重新生成数据并刷新所有已添加的卡片
  *  - 添加：打开系统小组件管理页
+ *  - 外观：自定义背景（选图 + 2:1 裁剪）、主题（滚轮选择）、背景不透明度
  */
 import { promptAction, router } from '@kit.ArkUI';
 import { formBindingData, formInfo, formProvider } from '@kit.FormKit';
+import { common, ConfigurationConstant } from '@kit.AbilityKit';
+import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { image } from '@kit.ImageKit';
+import { fileIo } from '@kit.CoreFileKit';
 import { AppStorage } from '../../store/AppStorage';
+import { CountdownApi, CountdownItem } from '../../net/CountdownApi';
 import {
   WidgetCountdownItem,
   WidgetData,
@@ -18,14 +22,22 @@ import {
   WidgetSnapshot,
   WIDGET_MODE_COUNTDOWN,
   WIDGET_MODE_DAILY,
-  WIDGET_MODE_WEEKLY
+  WIDGET_MODE_WEEKLY,
+  WIDGET_THEME_DARK,
+  WIDGET_THEME_LIGHT,
+  WIDGET_THEME_SYSTEM,
+  DEFAULT_BACKGROUND_OPACITY
 } from '../../widget/WidgetData';
 
 const TAG = 'WidgetSettingsPage';
 const WIDGET_TABS: string[] = ['倒计时', '每日课表', '每周课表'];
 const TAB_MODES: string[] = [WIDGET_MODE_COUNTDOWN, WIDGET_MODE_DAILY, WIDGET_MODE_WEEKLY];
-const ACCENT_COLORS: string[] = ['#1EC98D', '#3B82F6', '#F59E0B', '#EC4899', '#8B5CF6'];
+const THEME_LABELS: string[] = ['跟随系统', '简洁白', '主题黑'];
+const THEME_VALUES: string[] = [WIDGET_THEME_SYSTEM, WIDGET_THEME_LIGHT, WIDGET_THEME_DARK];
 const BUNDLE_NAME = 'wust.linghang.wusthelper';
+// 卡片默认 4:2，裁剪框按 2:1 显示。
+const CROP_WIDTH = 300;
+const CROP_HEIGHT = 150;
 
 @Entry
 @Component
@@ -36,10 +48,32 @@ struct WidgetSettingsPage {
   @State private countdownTitle: string = '';
   @State private countdownDate: string = '';
   @State private countdowns: WidgetCountdownItem[] = [];
+  @State private examCountdowns: WidgetCountdownItem[] = [];
   @State private snapshot: WidgetSnapshot | null = null;
-  @State private accent: string = '#1EC98D';
+  @State private accent: string = '#EC5A3C';
   @State private publishedCount: number = 0;
   @State private busy: boolean = false;
+
+  // 外观：背景 / 不透明度 / 主题
+  @State private backgroundPath: string = '';
+  @State private backgroundOpacity: number = DEFAULT_BACKGROUND_OPACITY;
+  @State private theme: string = WIDGET_THEME_SYSTEM;
+
+  // 裁剪器
+  @State private showingCropper: boolean = false;
+  @State private cropImageUri: string = '';
+  @State private cropImageWidth: number = 0;
+  @State private cropImageHeight: number = 0;
+  @State private cropScale: number = 1;
+  @State private cropOffsetX: number = 0;
+  @State private cropOffsetY: number = 0;
+  @State private cropperBusy: boolean = false;
+  private cropStartOffsetX: number = 0;
+  private cropStartOffsetY: number = 0;
+  // 考试同步串行执行：旧学期保存尚未结束时，新学期同步会排在它后面。
+  private examSyncChain: Promise<void> = Promise.resolve();
+  // 卡片刷新排队执行：同步完成时若恰好正在刷新，会等这次结束后再刷一次。
+  private refreshChain: Promise<void> = Promise.resolve();
 
   aboutToAppear(): void {
     this.loadSettings();
@@ -52,7 +86,83 @@ struct WidgetSettingsPage {
     this.selectedTab = mode === WIDGET_MODE_DAILY ? 1 : (mode === WIDGET_MODE_WEEKLY ? 2 : 0);
     this.accent = await WidgetPrefs.getAccent(storage);
     this.countdowns = await WidgetPrefs.getCountdowns(storage);
-    this.snapshot = await WidgetData.build(storage);
+    const sid = (await storage.getStudentId()).trim();
+    let cachedTerm = (await storage.getSemester()).trim();
+    if (!cachedTerm) cachedTerm = (await storage.getSelectSemester()).trim();
+    this.examCountdowns = await WidgetPrefs.getExamCountdowns(storage, sid, cachedTerm);
+    this.backgroundPath = await WidgetPrefs.getBackground(storage);
+    this.backgroundOpacity = await WidgetPrefs.getBackgroundOpacity(storage);
+    this.theme = await WidgetPrefs.getTheme(storage);
+    this.snapshot = await WidgetData.build(storage, this.systemDark());
+    // 后台同步一次考试倒计时，失败不影响页面。
+    this.syncExamCountdowns(false);
+  }
+
+  private systemDark(): boolean {
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      return context.config?.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 串行执行考试同步：旧学期的保存不会和新学期交错覆盖。 */
+  private syncExamCountdowns(toast: boolean): Promise<void> {
+    const run = this.examSyncChain.then((): Promise<void> => this.syncExamCountdownsInternal(toast));
+    this.examSyncChain = run.then((): void => undefined, (): void => undefined);
+    return run;
+  }
+
+  /** 从教务同步考试安排，写进卡片数据源。 */
+  private async syncExamCountdownsInternal(toast: boolean): Promise<void> {
+    const storage = AppStorage.getInstance();
+    try {
+      // 同步期间可能切账号或切学期：先记住发起同步的账号与学期，回来后再校验。
+      const sid = (await storage.getStudentId()).trim();
+      let term = await storage.getSemester();
+      if (!term) term = await storage.getSelectSemester();
+      const exams: CountdownItem[] = await CountdownApi.listExams(term);
+      if ((await storage.getStudentId()).trim() !== sid) {
+        console.warn(TAG, 'account changed while syncing exams, drop result');
+        return;
+      }
+      let currentTerm = await storage.getSemester();
+      if (!currentTerm) currentTerm = await storage.getSelectSemester();
+      if (currentTerm !== term) {
+        console.warn(TAG, 'semester changed while syncing exams, drop stale result');
+        return;
+      }
+      const items: WidgetCountdownItem[] = [];
+      for (let i = 0; i < exams.length; i++) {
+        const exam = exams[i];
+        if (!exam.name || !exam.time) continue;
+        const detailParts: string[] = [];
+        if (exam.examType) detailParts.push(exam.examType);
+        if (exam.location) detailParts.push(exam.location);
+        if (exam.seatNumber) detailParts.push(`座位 ${exam.seatNumber}`);
+        items.push({ title: exam.name, date: exam.time, detail: detailParts.join(' · ') });
+      }
+      // 落盘前再校验一次：避免“旧学期数据正在保存时切学期”把新学期覆盖掉。
+      let termBeforeSave = await storage.getSemester();
+      if (!termBeforeSave) termBeforeSave = await storage.getSelectSemester();
+      if (termBeforeSave !== term || (await storage.getStudentId()).trim() !== sid) {
+        console.warn(TAG, 'term/account changed before saving exams, drop result');
+        return;
+      }
+      await WidgetPrefs.setExamCountdowns(storage, items, sid, term);
+      this.examCountdowns = items;
+      // 数据变了要把已发布的桌面卡片和预览一起刷新，否则卡片不会立即更新。
+      await this.refreshWidgets(false);
+      if (toast) {
+        promptAction.showToast({ message: items.length > 0 ? `已同步 ${items.length} 场考试` : '暂未查到考试安排', duration: 1800 });
+      }
+    } catch (error) {
+      console.warn(TAG, `sync exams failed: ${JSON.stringify(error)}`);
+      if (toast) {
+        promptAction.showToast({ message: '考试安排同步失败，请稍后重试', duration: 1800 });
+      }
+    }
   }
 
   private async refreshPublishedCount(): Promise<void> {
@@ -65,13 +175,18 @@ struct WidgetSettingsPage {
     }
   }
 
-  /** 重新生成卡片数据并刷新所有已添加的卡片。 */
-  private async refreshWidgets(showToast: boolean = true): Promise<void> {
-    if (this.busy) return;
+  /** 重新生成卡片数据并刷新所有已添加的卡片；刷新排队执行，不会丢掉期间的新请求。 */
+  private refreshWidgets(showToast: boolean = true): Promise<void> {
+    const run = this.refreshChain.then((): Promise<void> => this.refreshWidgetsInternal(showToast));
+    this.refreshChain = run.then((): void => undefined, (): void => undefined);
+    return run;
+  }
+
+  private async refreshWidgetsInternal(showToast: boolean = true): Promise<void> {
     this.busy = true;
     const storage = AppStorage.getInstance();
     try {
-      this.snapshot = await WidgetData.build(storage);
+      this.snapshot = await WidgetData.build(storage, this.systemDark());
       const infos: formInfo.RunningFormInfo[] = await formProvider.getPublishedRunningFormInfos();
       this.publishedCount = infos.length;
       if (infos.length === 0) {
@@ -130,6 +245,158 @@ struct WidgetSettingsPage {
     }
   }
 
+  // ── 外观：主题 / 背景 / 不透明度 ──
+
+  private themeIndexValue(): number {
+    const index = THEME_VALUES.indexOf(this.theme);
+    return index >= 0 ? index : 0;
+  }
+
+  private themeLabel(): string {
+    return THEME_LABELS[this.themeIndexValue()];
+  }
+
+  private pickTheme(): void {
+    TextPickerDialog.show({
+      range: THEME_LABELS,
+      selected: this.themeIndexValue(),
+      onAccept: (result: TextPickerResult) => {
+        const index = result.index as number;
+        const value = THEME_VALUES[index];
+        if (!value) return;
+        this.theme = value;
+        WidgetPrefs.setTheme(AppStorage.getInstance(), value).then(() => this.refreshWidgets(false));
+      }
+    });
+  }
+
+  private themeColors(): string[] {
+    const dark = this.theme === WIDGET_THEME_DARK || (this.theme === WIDGET_THEME_SYSTEM && this.systemDark());
+    return dark ? ['#1C1C1E', '#FFFFFF', '#B9BDC6'] : ['#FFFFFF', '#111111', '#666666'];
+  }
+
+  private async chooseBackground(): Promise<void> {
+    try {
+      const options = new photoAccessHelper.PhotoSelectOptions();
+      options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+      options.maxSelectNumber = 1;
+      const picker = new photoAccessHelper.PhotoViewPicker();
+      const result = await picker.select(options);
+      if (!result.photoUris || result.photoUris.length === 0) return;
+      this.cropImageUri = result.photoUris[0];
+      await this.loadCropImageSize(this.cropImageUri);
+      this.resetCrop();
+      this.showingCropper = true;
+    } catch (error) {
+      console.warn(TAG, `choose background failed: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '选择图片失败', duration: 1500 });
+    }
+  }
+
+  private async loadCropImageSize(uri: string): Promise<void> {
+    try {
+      const source = image.createImageSource(uri);
+      const info = await source.getImageInfo();
+      this.cropImageWidth = info.size.width;
+      this.cropImageHeight = info.size.height;
+      source.release();
+    } catch (error) {
+      console.warn(TAG, `read background size failed: ${JSON.stringify(error)}`);
+      this.cropImageWidth = 0;
+      this.cropImageHeight = 0;
+    }
+  }
+
+  private resetCrop(): void {
+    this.cropScale = 1;
+    this.cropOffsetX = 0;
+    this.cropOffsetY = 0;
+  }
+
+  private cancelCrop(): void {
+    this.showingCropper = false;
+    this.cropImageUri = '';
+    this.resetCrop();
+  }
+
+  /** Cover 填充后图片的基础宽高，按 2:1 裁剪框计算。 */
+  private cropBaseWidth(): number {
+    if (this.cropImageWidth <= 0 || this.cropImageHeight <= 0) return CROP_WIDTH;
+    return CROP_WIDTH * Math.max(1, this.cropImageWidth / this.cropImageHeight);
+  }
+
+  private cropBaseHeight(): number {
+    if (this.cropImageWidth <= 0 || this.cropImageHeight <= 0) return CROP_HEIGHT;
+    return CROP_HEIGHT * Math.max(1, this.cropImageHeight / this.cropImageWidth);
+  }
+
+  private cropPanLimitX(): number {
+    return Math.max(0, (this.cropBaseWidth() * this.cropScale - CROP_WIDTH) / 2);
+  }
+
+  private cropPanLimitY(): number {
+    return Math.max(0, (this.cropBaseHeight() * this.cropScale - CROP_HEIGHT) / 2);
+  }
+
+  private applyCropPan(offsetX: number, offsetY: number): void {
+    const limitX = this.cropPanLimitX();
+    const limitY = this.cropPanLimitY();
+    this.cropOffsetX = Math.min(limitX, Math.max(-limitX, this.cropStartOffsetX + offsetX));
+    this.cropOffsetY = Math.min(limitY, Math.max(-limitY, this.cropStartOffsetY + offsetY));
+  }
+
+  private applyCropScale(scale: number): void {
+    this.cropScale = Math.min(4, Math.max(1, scale));
+    const limitX = this.cropPanLimitX();
+    const limitY = this.cropPanLimitY();
+    this.cropOffsetX = Math.min(limitX, Math.max(-limitX, this.cropOffsetX));
+    this.cropOffsetY = Math.min(limitY, Math.max(-limitY, this.cropOffsetY));
+  }
+
+  private async confirmCrop(): Promise<void> {
+    if (!this.cropImageUri || this.cropperBusy) return;
+    this.cropperBusy = true;
+    try {
+      const snapshot = await this.getUIContext().getComponentSnapshot().get('widgetCropBox');
+      this.showingCropper = false;
+      const packer = image.createImagePacker();
+      const options: image.PackingOption = { format: 'image/jpeg', quality: 92 };
+      const buffer = await packer.packing(snapshot, options);
+      const context = getContext(this) as common.UIAbilityContext;
+      const path = `${context.filesDir}/widget_bg.jpg`;
+      const file = fileIo.openSync(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
+      try {
+        fileIo.writeSync(file.fd, buffer);
+      } finally {
+        fileIo.closeSync(file);
+      }
+      const stored = `file://${path}`;
+      this.backgroundPath = stored;
+      await WidgetPrefs.setBackground(AppStorage.getInstance(), stored);
+      await this.refreshWidgets(false);
+      promptAction.showToast({ message: '背景已更新', duration: 1500 });
+    } catch (error) {
+      console.warn(TAG, `set background failed: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '设置背景失败，请重试', duration: 1500 });
+    } finally {
+      this.cropperBusy = false;
+      this.cropImageUri = '';
+      this.resetCrop();
+    }
+  }
+
+  private async clearBackground(): Promise<void> {
+    this.backgroundPath = '';
+    await WidgetPrefs.setBackground(AppStorage.getInstance(), '');
+    await this.refreshWidgets(false);
+  }
+
+  private async changeOpacity(value: number): Promise<void> {
+    this.backgroundOpacity = value;
+    await WidgetPrefs.setBackgroundOpacity(AppStorage.getInstance(), value);
+    await this.refreshWidgets(false);
+  }
+
   private pickDate(): void {
     const today = new Date();
     const oneYearLater = new Date(today.getFullYear() + 2, today.getMonth(), today.getDate());
@@ -177,55 +444,99 @@ struct WidgetSettingsPage {
     await this.refreshWidgets(false);
   }
 
+  private backgroundSource(): string {
+    return this.backgroundPath;
+  }
+
   @Builder
-  private toolbarIcon(label: string, action: () => void) {
-    Text(label)
-      .fontSize(24)
-      .fontColor('#666666')
-      .width(40)
-      .height(40)
-      .textAlign(TextAlign.Center)
-      .onClick(action)
+  private appearanceRow(title: string, value: string, showArrow: boolean, action: () => void) {
+    Row() {
+      Text(title).fontSize(16).fontColor('#222222').layoutWeight(1)
+      if (value.length > 0) {
+        Text(value).fontSize(14).fontColor('#999999').margin({ right: 6 })
+      }
+      if (showArrow) {
+        Image($r('app.media.ic_arrow_right')).width(18).height(18).fillColor('#BBBBBB')
+      }
+    }
+    .width('100%')
+    .height(54)
+    .padding({ left: 16, right: 16 })
+    .onClick(action)
   }
 
   @Builder
   private previewCard() {
-    Column() {
-      Row() {
-        Text(this.snapshot?.title ?? '梧桐助手')
-          .fontSize(19).fontWeight(FontWeight.Bold).fontColor('#111111')
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
-        this.toolbarIcon('⚙', () => { this.addOpen = true; })
-        Image($r('app.media.refresh')).width(24).height(24).fillColor('#666666')
-          .margin({ left: 4, right: 4 })
-          .onClick(() => { this.refreshWidgets(true); })
-        this.toolbarIcon('+', () => { this.addOpen = true; })
+    Stack() {
+      Row().width('100%').height('100%').backgroundColor(this.themeColors()[0])
+      if (this.backgroundPath.length > 0) {
+        Image(this.backgroundSource())
+          .width('100%').height('100%').objectFit(ImageFit.Cover)
+          .opacity(this.backgroundOpacity)
+      }
+      Column() {
+        Row() {
+          Blank()
+          Image($r('app.media.setting')).width(24).height(24).fillColor(this.themeColors()[2])
+            .onClick(() => { this.addOpen = true; })
+          Image($r('app.media.refresh')).width(24).height(24).fillColor(this.themeColors()[2])
+            .margin({ left: 8, right: 8 })
+            .onClick(() => { this.refreshWidgets(true); })
+          Image($r('app.media.add')).width(24).height(24).fillColor(this.themeColors()[2])
+            .onClick(() => { this.addOpen = true; })
+        }
+        .width('100%')
+        .height(36)
+
+        Row() {
+          Column() {
+            Text(this.snapshot?.title ?? '考试倒计时')
+              .fontSize(19).fontWeight(FontWeight.Bold).fontColor(this.themeColors()[1])
+              .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+            if (this.selectedTab === 0) {
+              Text(this.snapshot?.subtitle ?? '还没有考试安排')
+                .fontSize(13).fontColor(this.accent).margin({ top: 6 }).width('100%')
+              Text(this.snapshot?.line0 ?? '')
+                .fontSize(12).fontColor(this.themeColors()[2]).margin({ top: 6 }).width('100%')
+            }
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          if (this.selectedTab === 0) {
+            Column() {
+              Text(this.snapshot?.days && this.snapshot.days.length > 0 ? this.snapshot.days : '—')
+                .fontSize(46).fontWeight(FontWeight.Bold).fontColor(this.accent)
+              Text('天').fontSize(12).fontColor(this.themeColors()[2])
+            }
+            .width(84)
+            .alignItems(HorizontalAlign.Center)
+          }
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .alignItems(VerticalAlign.Center)
+
+        if (this.selectedTab !== 0) {
+          Column() {
+            Text(this.snapshot?.line0 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%')
+            Text(this.snapshot?.line1 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
+            Text(this.snapshot?.line2 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
+            Text(this.snapshot?.line3 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          .margin({ top: 6 })
+        }
       }
       .width('100%')
-      .height(52)
-
-      Text(this.snapshot?.subtitle ?? '还没有添加倒计时')
-        .fontSize(13).fontColor(this.accent)
-        .width('100%').maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-      if (this.selectedTab !== 0) {
-        Column() {
-          Text(this.snapshot?.line0 ?? '').fontSize(12).fontColor('#444444').width('100%')
-          Text(this.snapshot?.line1 ?? '').fontSize(12).fontColor('#444444').width('100%').margin({ top: 4 })
-          Text(this.snapshot?.line2 ?? '').fontSize(12).fontColor('#444444').width('100%').margin({ top: 4 })
-          Text(this.snapshot?.line3 ?? '').fontSize(12).fontColor('#444444').width('100%').margin({ top: 4 })
-        }
-        .width('100%').alignItems(HorizontalAlign.Start).margin({ top: 10 })
-      } else {
-        Text(this.snapshot?.line0 ?? '')
-          .fontSize(13).fontColor('#666666').width('100%').margin({ top: 10 })
-      }
+      .height('100%')
+      .padding(16)
     }
     .width('100%')
-    .padding(16)
-    .backgroundColor('#FFFFFF')
+    .aspectRatio(2)
     .borderRadius(14)
+    .clip(true)
     .border({ width: 1, color: '#E4E4E4' })
   }
 
@@ -267,7 +578,7 @@ struct WidgetSettingsPage {
               .width('100%').margin({ top: 22, bottom: 8 })
             Column() {
               if (this.countdowns.length === 0) {
-                Text('还没有倒计时，点击右下角“添加倒计时”')
+                Text('还没有倒计时，点击下方按钮添加')
                   .fontSize(14).fontColor('#999999').padding(16)
               }
               ForEach(this.countdowns, (item: WidgetCountdownItem, index: number) => {
@@ -292,23 +603,68 @@ struct WidgetSettingsPage {
               .margin({ top: 12 })
               .onClick(() => { this.addOpen = true })
 
+            Text('考试倒计时').fontSize(15).fontWeight(FontWeight.Medium).fontColor('#A7ABB3')
+              .width('100%').margin({ top: 22, bottom: 8 })
+            Column() {
+              Row() {
+                Text(this.examCountdowns.length > 0 ? `已同步 ${this.examCountdowns.length} 场考试，卡片按小时轮换显示` : '还没有同步考试安排')
+                  .fontSize(14).fontColor('#666666').layoutWeight(1)
+                Text('同步').fontSize(14).fontColor('#20C997')
+                  .onClick(() => { this.syncExamCountdowns(true).then(() => this.refreshWidgets(false)); })
+              }
+              .width('100%').padding(16)
+              Divider().color('#F0F0F0')
+              ForEach(this.examCountdowns.slice(0, 3), (item: WidgetCountdownItem, index: number) => {
+                Column() {
+                  Text(item.title).fontSize(15).fontColor('#222222').width('100%')
+                  Text(item.date).fontSize(12).fontColor('#999999').margin({ top: 3 }).width('100%')
+                }
+                .width('100%').padding({ left: 16, right: 16, top: 10, bottom: 10 })
+              }, (item: WidgetCountdownItem, index: number) => `exam-${index}-${item.title}`)
+            }
+            .width('100%').backgroundColor('#FFFFFF').borderRadius(13).clip(true)
+
             Text('外观').fontSize(15).fontWeight(FontWeight.Medium).fontColor('#A7ABB3')
               .width('100%').margin({ top: 22, bottom: 8 })
-            Row() {
-              ForEach(ACCENT_COLORS, (color: string) => {
-                Stack() {
-                  Circle().width(34).height(34).fill(color)
-                  if (this.accent === color) {
-                    Text('✓').fontSize(18).fontColor(Color.White).fontWeight(FontWeight.Bold)
-                  }
-                }
-                .width(46).height(46)
-                .onClick(() => { this.selectAccent(color); })
+            Column() {
+              this.appearanceRow('自定义背景', this.backgroundPath.length > 0 ? '已设置' : '', true, () => {
+                this.chooseBackground();
               })
+              Divider().color('#F0F0F0').margin({ left: 16 })
+              this.appearanceRow('默认主题', this.themeLabel(), true, () => {
+                this.pickTheme();
+              })
+              Divider().color('#F0F0F0').margin({ left: 16 })
+              this.appearanceRow('标题颜色', '默认', true, () => {
+                promptAction.showToast({ message: '标题颜色将在后续版本开放', duration: 1600 });
+              })
+              Divider().color('#F0F0F0').margin({ left: 16 })
+              Row() {
+                Text('不透明度').fontSize(16).fontColor('#222222').width(110)
+                Slider({
+                  value: Math.round(this.backgroundOpacity * 100),
+                  min: 20,
+                  max: 100,
+                  step: 1,
+                  style: SliderStyle.OutSet
+                })
+                  .layoutWeight(1)
+                  .selectedColor('#20C997')
+                  .onChange((value: number) => {
+                    this.changeOpacity(value / 100);
+                  })
+                Text(`${Math.round(this.backgroundOpacity * 100)}%`)
+                  .fontSize(15).fontColor('#20C997').width(56).textAlign(TextAlign.End)
+              }
+              .width('100%').height(58).padding({ left: 16, right: 16 })
+              if (this.backgroundPath.length > 0) {
+                Divider().color('#F0F0F0').margin({ left: 16 })
+                this.appearanceRow('清除背景', '', true, () => { this.clearBackground(); })
+              }
             }
-            .width('100%').padding(10).backgroundColor('#FFFFFF').borderRadius(13)
+            .width('100%').backgroundColor('#FFFFFF').borderRadius(13).clip(true)
 
-            Text('提示：小组件数据来自 App 内已保存的课表与倒计时。修改后点预览右上角的刷新按钮即可同步到桌面。')
+            Text('提示：不透明度只影响背景图片，不影响文字；“跟随系统”主题会随系统深浅色切换。修改后点预览右上角刷新按钮即可同步到桌面。')
               .fontSize(12).fontColor('#999999').lineHeight(18)
               .width('100%').margin({ top: 16, bottom: 30 })
           }.width('100%').padding({ left: 16, right: 16, top: 14, bottom: 30 })
@@ -356,6 +712,56 @@ struct WidgetSettingsPage {
         .borderRadius(20)
       }
 
+      if (this.showingCropper) {
+        Column() {
+          Row() {
+            Text('×').fontSize(40).fontColor('#111111').width(60).textAlign(TextAlign.Center)
+              .onClick(() => this.cancelCrop())
+            Text('裁剪背景').fontSize(22).fontWeight(FontWeight.Bold).fontColor('#111111').layoutWeight(1)
+            Text('✓').fontSize(38).fontColor('#111111').width(60).textAlign(TextAlign.Center)
+              .onClick(() => this.confirmCrop())
+          }
+          .width('100%').height(80).padding({ left: 8, right: 8 })
+
+          Stack({ alignContent: Alignment.Center }) {
+            Column().width(CROP_WIDTH).height(CROP_HEIGHT).backgroundColor('#111111')
+            Image(this.cropImageUri)
+              .width(this.cropBaseWidth() * this.cropScale)
+              .height(this.cropBaseHeight() * this.cropScale)
+              .objectFit(ImageFit.Fill)
+              .translate({ x: this.cropOffsetX, y: this.cropOffsetY })
+          }
+          .width(CROP_WIDTH)
+          .height(CROP_HEIGHT)
+          .clip(true)
+          .id('widgetCropBox')
+          .gesture(
+            GestureGroup(GestureMode.Parallel,
+              PanGesture({ fingers: 1 })
+                .onActionStart(() => {
+                  this.cropStartOffsetX = this.cropOffsetX;
+                  this.cropStartOffsetY = this.cropOffsetY;
+                })
+                .onActionUpdate((event: GestureEvent) => {
+                  this.applyCropPan(event.offsetX, event.offsetY);
+                }),
+              PinchGesture({ fingers: 2 })
+                .onActionUpdate((event: GestureEvent) => {
+                  this.applyCropScale(event.scale);
+                })
+            )
+          )
+          .borderRadius(8)
+
+          Text('拖动调整位置，双指缩放；卡片比例为 2:1')
+            .fontSize(13).fontColor('#888888').margin({ top: 18 })
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#F5F5F5')
+        .justifyContent(FlexAlign.Start)
+      }
+
       if (this.helpOpen) {
         Column()
           .width('100%')
@@ -367,11 +773,11 @@ struct WidgetSettingsPage {
           Text('小组件设置说明')
             .fontSize(22).fontWeight(FontWeight.Bold).fontColor('#555555')
             .width('100%').textAlign(TextAlign.Center).margin({ bottom: 18 })
-          Text('1. 小组件展示倒计时或今日课表，数据来自 App 内已保存的内容。')
+          Text('1. 倒计时卡片展示教务同步的考试安排；多场考试时按小时轮换。')
             .fontSize(15).fontColor('#777777').lineHeight(24).width('100%').margin({ bottom: 14 })
-          Text('2. 点击“添加小组件到桌面”可打开系统小组件管理页。')
+          Text('2. 点击“添加小组件到桌面”可打开系统小组件管理页，选择 4×2 卡片。')
             .fontSize(15).fontColor('#777777').lineHeight(24).width('100%').margin({ bottom: 14 })
-          Text('3. 修改设置后点预览卡片的刷新按钮即可同步到桌面。')
+          Text('3. 自定义背景会按卡片比例裁剪；不透明度只影响背景图片，不影响文字。')
             .fontSize(15).fontColor('#777777').lineHeight(24).width('100%').margin({ bottom: 20 })
           Button('知道了')
             .fontSize(16).fontWeight(FontWeight.Bold).fontColor(Color.White)
