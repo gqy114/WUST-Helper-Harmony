@@ -25,10 +25,24 @@ struct CourseSharePage {
   );
   private timer: number = -1;
   private appearanceId: number = 0;
+  // 普通课表二维码的实际内容：课表档案 JSON（扫码导入用）。
+  private staticQrPayload: string = '';
 
   aboutToAppear(): void {
     const appearanceId: number = ++this.appearanceId;
-    this.shareController.onChange = (state: ScheduleShareState): void => { this.share = state; };
+    this.shareController.onChange = (state: ScheduleShareState): void => {
+      // 普通课表二维码直接放课表档案 JSON，鸿蒙端“扫码导入课表档案”才能识别；
+      // 之前放的是 wusthelper:// 链接，扫出来只能当链接、导不进课表。
+      if (!state.isDynamic && state.qrValue.length > 0) {
+        if (this.staticQrPayload.length > 0 && this.staticQrPayload.length <= 2800) {
+          state.qrValue = this.staticQrPayload;
+        } else {
+          state.qrValue = '';
+          state.errorMsg = '当前课表过大，无法生成可导入的二维码，请改用动态课表';
+        }
+      }
+      this.share = state;
+    };
     if (this.timer !== -1) clearInterval(this.timer);
     this.timer = setInterval((): void => this.shareController.tick(), 1000);
     this.loadProfile(appearanceId);
@@ -51,6 +65,16 @@ struct CourseSharePage {
       if (appearanceId !== this.appearanceId) return;
       this.nickname = nickname;
       this.avatarUrl = avatarUrl;
+      try {
+        const courses = await storage.getCurrentCourses();
+        this.staticQrPayload = JSON.stringify({
+          name: `${nickname}的课表`,
+          semester: semester,
+          courses: courses
+        });
+      } catch (_) {
+        this.staticQrPayload = '';
+      }
       await this.shareController.initialize(nickname, semester);
     } catch (_) {
       if (appearanceId !== this.appearanceId) return;

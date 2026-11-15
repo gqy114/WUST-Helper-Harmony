@@ -55,3 +55,17 @@ test('第二课堂页面本身也会把“无效查询请求”转为可读提�
   assert.match(page, /第二课堂服务暂不可用，请稍后重试/, '第二课堂页面缺少可读提示');
   assert.match(page, /rawMessage\.indexOf\('无效'\)/, '没有识别后端的无效请求文案');
 });
+
+test('普通课表二维码放课表档案 JSON，可供鸿蒙扫码导入', async () => {
+  const page = await source('pages/course/CourseSharePage.ets');
+  assert.match(page, /private staticQrPayload: string = '';/, '缺少课表档案二维码内容');
+  assert.match(page, /name: `\$\{nickname\}的课表`/, '二维码内容不是课表档案结构');
+  assert.match(page, /state\.qrValue = this\.staticQrPayload/, '静态二维码仍在使用链接');
+  assert.match(page, /当前课表过大，无法生成可导入的二维码/, '缺少课表过大的提示');
+});
+
+test('扫码导入页面仍按课表档案 JSON 解析', async () => {
+  const page = await source('pages/course/CourseArchivePage.ets');
+  assert.match(page, /JSON\.parse\(content\) as CourseArchive/, '扫码导入没有解析课表档案');
+  assert.match(page, /Array\.isArray\(parsed\.courses\)/, '扫码导入没有校验课程数组');
+});
