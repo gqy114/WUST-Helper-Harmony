@@ -62,7 +62,11 @@ struct SecondClassroomPage {
       await storage.setSettingString(SYNC_KEY, this.lastSync);
       if (manual) promptAction.showToast({ message: '第二课堂数据已更新', duration: 1200 });
     } catch (error) {
-      const message = error instanceof Error ? error.message : '第二课堂数据获取失败';
+      const rawMessage = error instanceof Error ? error.message : '第二课堂数据获取失败';
+      // 后端服务异常时会返回“无效的第二课堂查询请求”，对用户没有意义。
+      const message = (rawMessage.indexOf('无效') >= 0 || rawMessage.indexOf('404') >= 0 ||
+        rawMessage.indexOf('Not Found') >= 0)
+        ? '第二课堂服务暂不可用，请稍后重试' : rawMessage;
       promptAction.showToast({
         message: this.hasData ? `更新失败，已显示上次数据：${message}` : message,
         duration: 2200

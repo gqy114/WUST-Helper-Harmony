@@ -48,3 +48,9 @@ test('QQ 只尝试系统确认可打开的链接', async () => {
   assert.match(page, /await context\.openLink\(openable\[i\]\)/, '仍在尝试不可用的链接');
   assert.doesNotMatch(page, /await context\.openLink\(links\[i\]\)/, '不应直接遍历原始链接');
 });
+
+test('第二课堂页面本身也会把“无效查询请求”转为可读提示', async () => {
+  const page = await source('pages/main/SecondClassroomPage.ets');
+  assert.match(page, /第二课堂服务暂不可用，请稍后重试/, '第二课堂页面缺少可读提示');
+  assert.match(page, /rawMessage\.indexOf\('无效'\)/, '没有识别后端的无效请求文案');
+});
