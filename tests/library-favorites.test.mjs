@@ -242,14 +242,14 @@ test('进入收藏页时按当前账号迁移，切回原账号能立即看到�
   assert.deepEqual(Array.from(await store.favorites.list(), (item) => item.id), [3], '加载时应完成迁移');
 });
 
-test('迁移不会覆盖本机已有新收藏', async () => {
+test('迁移会合并旧收藏与本机新收藏', async () => {
   const db = new Map([
     ['libraryFavorites', JSON.stringify(JSON.stringify([favorite(3)]))],
     ['libraryFavorites_2024001', JSON.stringify(JSON.stringify([favorite(9)]))],
     ['libraryFavoritesMigrationOwner', JSON.stringify('2024001')]
   ]);
   const store = await makeStore(db, { sid: '2024001' });
-  assert.deepEqual(Array.from(await store.favorites.list(), (item) => item.id), [9], '应以本机新收藏为准');
+  assert.deepEqual(Array.from(await store.favorites.list(), (item) => item.id).sort((a, b) => a - b), [3, 9], '旧收藏和新收藏都要保留');
   assert.equal(db.get('libraryFavorites'), JSON.stringify('[]'), '旧数据迁移后应清空');
 });
 
@@ -266,4 +266,17 @@ test('迁移过程中切号，两个账号不会同时认领同一份旧收藏',
 
   state.sid = legacyOwners[0] === 'libraryFavorites_2024001' ? '2024001' : '2024002';
   assert.deepEqual(Array.from(await favorites.list(), (item) => item.id), [3]);
+});
+
+test('读取收藏期间切账号，返回的是新账号的收藏', async () => {
+  const db = new Map([
+    ['libraryFavorites_2024001', JSON.stringify(JSON.stringify([favorite(1, 'A 的收藏')]))],
+    ['libraryFavorites_2024002', JSON.stringify(JSON.stringify([favorite(7, 'B 的收藏')]))]
+  ]);
+  const { favorites, state } = await makeStore(db, { sid: '2024001', delayedGet: true });
+  const listing = favorites.list();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  state.sid = '2024002';
+  const items = await listing;
+  assert.deepEqual(Array.from(items, (item) => item.id), [7], '不能返回上一个账号的收藏');
 });

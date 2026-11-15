@@ -43,6 +43,10 @@ export class LibraryFavorites {
   }
 
   private parse(raw: string): LibraryFavorite[] {
+    return LibraryFavorites.parseItems(raw);
+  }
+
+  private static parseItems(raw: string): LibraryFavorite[] {
     try {
       const parsed = JSON.parse(raw) as LibraryFavorite[];
       if (!Array.isArray(parsed)) return [];
@@ -90,10 +94,19 @@ export class LibraryFavorites {
     const legacy = await storage.getSettingString(LEGACY_STORAGE_KEY, '');
     if (legacy && legacy !== '[]') {
       const key = `${STORAGE_PREFIX}${account}`;
-      const existing = await storage.getSettingString(key, '');
-      // 只有本机收藏还是空的时候才迁移，绝不覆盖迁移期间新点的收藏。
-      if (!existing) {
-        await storage.setSettingString(key, legacy);
+      const existingRaw = await storage.getSettingString(key, '');
+      const existing = LibraryFavorites.parseItems(existingRaw);
+      const legacyItems = LibraryFavorites.parseItems(legacy);
+      // 本机新收藏与旧收藏合并去重：既不丢旧记录，也不覆盖迁移期间新点的收藏。
+      const merged: LibraryFavorite[] = existing.slice();
+      for (let i = 0; i < legacyItems.length; i++) {
+        const candidate = legacyItems[i];
+        const duplicated = merged.some((item: LibraryFavorite) =>
+          item.kind === candidate.kind && item.id === candidate.id);
+        if (!duplicated) merged.push(candidate);
+      }
+      if (merged.length > 0) {
+        await storage.setSettingString(key, JSON.stringify(merged));
       }
       await storage.setSettingString(LEGACY_STORAGE_KEY, '[]');
     }
@@ -136,7 +149,12 @@ export class LibraryFavorites {
   }
 
   async list(): Promise<LibraryFavorite[]> {
-    await this.ensureLoaded();
+    // 读取期间可能切账号：加载完成后再确认一次，发现变化就按新账号重新加载，避免闪出上一个账号的收藏。
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await this.ensureLoaded();
+      const current = (await AppStorage.getInstance().getStudentId()).trim();
+      if (current === this.loadedSid) break;
+    }
     return this.items.slice();
   }
 
