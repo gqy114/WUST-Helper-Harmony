@@ -501,6 +501,12 @@ export class AppStorage {
     }
   }
 
+  /** 实验课缓存按档案分开存，避免别人的实验课混进自己的课表。 */
+  private async physicalExperimentKey(archiveId: string): Promise<string> {
+    return this.archiveKey(archiveId && archiveId !== 'mine'
+      ? `physicalExperimentCourses_${archiveId}` : 'physicalExperimentCourses');
+  }
+
   private isPhysicalExperimentCourse(course: CourseData): boolean {
     return course.isPhysicalExperiment === true || course.courseName.indexOf('物理实验') >= 0 ||
       /^实验\d+-\d+/.test(course.courseName);
@@ -556,15 +562,38 @@ export class AppStorage {
    * 否则「移除实验课」清空缓存后，并发读取会把旧课表里的实验课迁移回来。
    */
   async getPhysicalExperimentCourses(): Promise<CourseData[]> {
-    return this.enqueueCourseWrite(() => this.readPhysicalExperimentCoursesUnlocked());
+    return this.enqueueCourseWrite(async () => {
+      const archiveId = await this.getCurrentArchiveId();
+      return this.readPhysicalExperimentCoursesUnlocked(archiveId);
+    });
   }
 
   /**
    * 已持有写入队列时使用的读取实现。
    * 队列内部不能再调用会再次入队的公开方法，否则会等待自身造成死锁。
    */
-  private async readPhysicalExperimentCoursesUnlocked(): Promise<CourseData[]> {
-    const saved = await this.getStoredCourses('physicalExperimentCourses');
+  private async readPhysicalExperimentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {
+    const key = await this.physicalExperimentKey(archiveId);
+    let saved = await this.getStoredCourses(key);
+    if (archiveId === 'mine' && saved.length === 0) {
+      // 更早版本把实验课存在不带学号前缀的全局 key 里：只迁移一次并清掉旧 key，
+      // 否则删除实验课后旧的全局数据会把它“复活”。
+      const migrated = await this.getStr('physicalExperimentMigrated', '');
+      if (!migrated && key !== 'physicalExperimentCourses') {
+        const plainLegacy = await this.getStoredCourses('physicalExperimentCourses');
+        if (plainLegacy.length > 0) {
+          saved = plainLegacy;
+          await this.putStr(key, JSON.stringify(plainLegacy));
+        }
+        await this.putStr('physicalExperimentCourses', '[]');
+        await this.putStr('physicalExperimentMigrated', '1');
+      }
+    }
+    // 旧版实验课混在 currentCourses 里的情况只属于「我的课表」；
+    // 别人的档案绝不能从这里吸收实验课，否则自己的实验课会被带到别人课表里。
+    if (archiveId !== 'mine') {
+      return saved;
+    }
     const current = await this.getStoredCourses('currentCourses');
     const legacy: CourseData[] = [];
     for (let i = 0; i < current.length; i++) {
@@ -572,21 +601,25 @@ export class AppStorage {
     }
     const merged = this.mergePhysicalExperiments(saved, legacy);
     if (merged.length !== saved.length) {
-      await this.putStr('physicalExperimentCourses', JSON.stringify(merged));
+      await this.putStr(key, JSON.stringify(merged));
     }
     return merged;
   }
 
   async setPhysicalExperimentCourses(value: CourseData[]): Promise<void> {
-    return this.enqueueCourseWrite(() => this.writePhysicalExperimentCoursesUnlocked(value));
+    return this.enqueueCourseWrite(async () => {
+      const archiveId = await this.getCurrentArchiveId();
+      await this.writePhysicalExperimentCoursesUnlocked(value, archiveId);
+    });
   }
 
-  private async writePhysicalExperimentCoursesUnlocked(value: CourseData[]): Promise<void> {
+  private async writePhysicalExperimentCoursesUnlocked(value: CourseData[],
+    archiveId: string = 'mine'): Promise<void> {
     const experiments: CourseData[] = [];
     for (let i = 0; i < value.length; i++) {
       if (this.isPhysicalExperimentCourse(value[i])) experiments.push(this.normalizePhysicalExperiment(value[i]));
     }
-    await this.putStr('physicalExperimentCourses', JSON.stringify(experiments));
+    await this.putStr(await this.physicalExperimentKey(archiveId), JSON.stringify(experiments));
   }
 
   /**
@@ -597,8 +630,10 @@ export class AppStorage {
   async resetCourseCache(): Promise<void> {
     return this.enqueueCourseWrite(async () => {
       this.courseCacheMarker = `reset_${Date.now()}`;
+      const archiveId = await this.getCurrentArchiveId();
       await this.putStr('currentCourses', '[]');
-      await this.putStr('physicalExperimentCourses', '[]');
+      await this.putStr(await this.physicalExperimentKey(archiveId), '[]');
+      await this.putStr(await this.physicalExperimentKey('mine'), '[]');
     });
   }
 
@@ -613,8 +648,10 @@ export class AppStorage {
         return false;
       }
       this.courseCacheMarker = `reset_${Date.now()}`;
+      const archiveId = await this.getCurrentArchiveId();
       await this.putStr('currentCourses', '[]');
-      await this.putStr('physicalExperimentCourses', '[]');
+      await this.putStr(await this.physicalExperimentKey(archiveId), '[]');
+      await this.putStr(await this.physicalExperimentKey('mine'), '[]');
       return true;
     });
   }
@@ -624,12 +661,19 @@ export class AppStorage {
    * 避免和「移除实验课」交错把已移除的课程又写回来。
    */
   async getCurrentCourses(): Promise<CourseData[]> {
-    return this.enqueueCourseWrite(() => this.readCurrentCoursesUnlocked());
+    return this.enqueueCourseWrite(async () => {
+      const archiveId = await this.getCurrentArchiveId();
+      return this.readCurrentCoursesUnlocked(archiveId);
+    });
   }
 
-  private async readCurrentCoursesUnlocked(): Promise<CourseData[]> {
+  private async readCurrentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {
     const current = await this.getStoredCourses('currentCourses');
-    const experiments = await this.readPhysicalExperimentCoursesUnlocked();
+    // 别人的课表只用自己的数据：绝不把自己的实验课合进去。
+    if (archiveId !== 'mine') {
+      return current;
+    }
+    const experiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
     const merged = this.mergePhysicalExperiments(current, experiments);
     if (merged.length !== current.length) {
       await this.putStr('currentCourses', JSON.stringify(merged));
@@ -655,18 +699,44 @@ export class AppStorage {
     const epochAtStart = this.sessionEpoch;
     return this.enqueueCourseWrite(async () => {
       if (this.sessionEpoch !== epochAtStart) return;
-      const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked();
+      const archiveId = await this.getCurrentArchiveId();
+      const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
       const incomingExperiments: CourseData[] = [];
       for (let i = 0; i < value.length; i++) {
         if (this.isPhysicalExperimentCourse(value[i])) incomingExperiments.push(value[i]);
       }
       const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
       if (this.sessionEpoch !== epochAtStart) return;
-      await this.writePhysicalExperimentCoursesUnlocked(experiments);
+      await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId);
       if (this.sessionEpoch !== epochAtStart) return;
       const merged = this.mergePhysicalExperiments(value, experiments);
       // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
       this.courseCacheMarker = marker !== undefined ? marker : `courses_${Date.now()}`;
+      await this.putStr('currentCourses', JSON.stringify(merged));
+    });
+  }
+
+  /**
+   * 切换课表档案：实验课缓存必须一起替换成该档案自己的内容。
+   * 否则切到别人的档案再切回来时，别人的实验课会留在全局缓存里、混进自己的课表。
+   */
+  async setCurrentArchiveCourses(archiveId: string, value: CourseData[]): Promise<void> {
+    const epochAtStart = this.sessionEpoch;
+    return this.enqueueCourseWrite(async () => {
+      if (this.sessionEpoch !== epochAtStart) return;
+      // 该档案自己的实验课缓存要保留：切回自己的档案时不能把已有实验课清掉。
+      const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
+      const incomingExperiments: CourseData[] = [];
+      for (let i = 0; i < value.length; i++) {
+        if (this.isPhysicalExperimentCourse(value[i])) {
+          incomingExperiments.push(this.normalizePhysicalExperiment(value[i]));
+        }
+      }
+      const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
+      await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId);
+      if (this.sessionEpoch !== epochAtStart) return;
+      const merged = this.mergePhysicalExperiments(value, experiments);
+      this.courseCacheMarker = `archive_${archiveId}_${Date.now()}`;
       await this.putStr('currentCourses', JSON.stringify(merged));
     });
   }
@@ -692,7 +762,34 @@ export class AppStorage {
       }
       if (removed === 0) return 0;
       this.courseCacheMarker = `remove_experiments_${Date.now()}`;
-      await this.putStr('physicalExperimentCourses', '[]');
+      const archiveId = await this.getCurrentArchiveId();
+      // 只清当前档案的实验课缓存；在别人的课表里删除，不能动「我的课表」。
+      await this.putStr(await this.physicalExperimentKey(archiveId), '[]');
+      // 同时清掉旧版全局缓存，避免下次读取把已删除的实验课重新迁移回来。
+      const archiveKey = await this.physicalExperimentKey(archiveId);
+      if (archiveKey !== 'physicalExperimentCourses') {
+        await this.putStr('physicalExperimentCourses', '[]');
+        await this.putStr('physicalExperimentMigrated', '1');
+      }
+      // 档案数据里如果还混着实验课，一并剔除，切回该档案时不会再出现。
+      const archivesRaw = await this.getStr(await this.archiveKey('courseArchives'), '');
+      const archives = this.parseArchives(archivesRaw);
+      let archivesChanged = false;
+      for (let i = 0; i < archives.length; i++) {
+        if (archives[i].id !== archiveId) continue;
+        const kept: CourseData[] = [];
+        const courses = archives[i].courses || [];
+        for (let j = 0; j < courses.length; j++) {
+          if (!this.isPhysicalExperimentCourse(courses[j])) kept.push(courses[j]);
+        }
+        if (kept.length !== courses.length) {
+          archives[i].courses = kept;
+          archivesChanged = true;
+        }
+      }
+      if (archivesChanged) {
+        await this.putStr(await this.archiveKey('courseArchives'), JSON.stringify(archives));
+      }
       await this.putStr('currentCourses', JSON.stringify(remaining));
       return removed;
     });

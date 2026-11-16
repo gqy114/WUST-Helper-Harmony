@@ -22,13 +22,14 @@ export class InnovationCreditApi {
     const result = await HttpRequest.postJson<InnovationCreditEnvelope>(
       InnovationCreditApi.URL,
       { username: studentId, password: password },
-      undefined, undefined, true,
+      { Platform: 'android' }, undefined, true,
     );
     const envelope = result.data;
     const message = ((envelope.msg || envelope.message || '') as string).trim();
     if (envelope.code !== 200 || !envelope.data) {
       // 例如 TWOVERIFY / invalid password 都在这条错误信息里。
-      throw new Error(message || '双创学分认证失败');
+      const detail = message && message !== '未知错误' ? `：${message}` : '';
+      throw new Error(`双创学分认证失败${detail}`);
     }
     return envelope.data;
   }

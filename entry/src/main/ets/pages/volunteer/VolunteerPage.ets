@@ -135,6 +135,14 @@ export struct VolunteerPage {
 
   private errorMessage(error: Object, fallback: string): string {
     const message: string = `${error}`.replace(/^Error:\s*/, '');
+    // 工时码本身无效/过期时，必须让用户知道是码的问题，不能笼统说服务不可用。
+    if (message.indexOf('工时码') >= 0) {
+      return '工时码无效或已过期，请核对后重试';
+    }
+    // 后端在服务异常/参数不匹配时会返回“无效的…”查询请求，改成用户能理解的志愿工时提示。
+    if (message.indexOf('无效') >= 0 || message.indexOf('404') >= 0 || message.indexOf('Not Found') >= 0) {
+      return '志愿工时服务暂不可用，请稍后重试';
+    }
     return message.length > 0 && message !== '[object Object]' ? message : fallback;
   }
 
