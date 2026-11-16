@@ -441,3 +441,11 @@ test('旧版实验课数据按归属账号迁移，切号不会认领', async ()
   assert.match(store, /physicalExperimentMigratedOwner/, '没有记录实验课数据归属账号');
   assert.match(store, /if \(owner && owner !== sid\) \{\s*return saved;\s*\}/, '换了账号仍在迁移旧实验课');
 });
+
+test('升级启动时在课表刷新前迁移旧实验课', async () => {
+  const store = await source('../entry/src/main/ets/store/AppStorage.ts');
+  assert.match(store, /async migrateLegacyExperimentsIfNeeded\(\): Promise<void>/, '缺少启动迁移方法');
+  assert.match(store, /const current = await this\.getStoredCourses\('currentCourses'\)/, '没有从旧课表读取实验课');
+  const ability = await source('../entry/src/main/ets/entryability/EntryAbility.ets');
+  assert.match(ability, /migrateLegacyExperimentsIfNeeded\(\)/, '启动时没有调用实验课迁移');
+});
