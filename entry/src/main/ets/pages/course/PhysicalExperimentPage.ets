@@ -301,7 +301,8 @@ export struct PhysicalExperimentPage {
       title: item.courseName || item.className || item.name || item.course || '物理实验',
       location: { location: item.classroom || '', longitude: 0, latitude: 0 },
       startTime: startTime.getTime(), endTime: endTime.getTime(),
-      description: `物理实验 ${item.startClock || ''}-${item.endClock || ''}`
+      description: `物理实验 ${item.startClock || ''}-${item.endClock || ''}`,
+      reminderTime: [15]
     };
   }
 
