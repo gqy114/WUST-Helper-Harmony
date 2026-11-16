@@ -20,7 +20,7 @@ struct CourseArchivePage {
     this.currentArchiveId = currentId || 'mine';
     const current = this.findArchive(this.currentArchiveId);
     if (current) {
-      await storage.setCurrentCourses(current.courses);
+      await storage.setCurrentArchiveCourses(this.currentArchiveId, current.courses);
       AppStorage.setOrCreate('currentCourses', current.courses);
     }
   }
@@ -37,7 +37,7 @@ struct CourseArchivePage {
   private async switchArchive(archive: CourseArchive): Promise<void> {
     this.currentArchiveId = archive.id;
     await PreferencesStorage.getInstance().setCurrentArchiveId(archive.id);
-    await PreferencesStorage.getInstance().setCurrentCourses(archive.courses);
+    await PreferencesStorage.getInstance().setCurrentArchiveCourses(archive.id, archive.courses);
     AppStorage.setOrCreate('currentArchiveId', archive.id);
     AppStorage.setOrCreate('currentCourses', archive.courses);
     promptAction.showToast({ message: `已切换到${archive.name}`, duration: 1500 });
@@ -87,18 +87,26 @@ struct CourseArchivePage {
   private async collectQrContent(context: common.UIAbilityContext): Promise<string> {
     const parts: string[] = [];
     let total = 0;
+    let shareId = '';
     for (let round = 0; round < 12; round++) {
       const content = await this.scanOnce(context);
       if (!content.startsWith('WUSTC2|')) {
         return content;
       }
-      const match = /^WUSTC2\|(\d+)\/(\d+)\|([\s\S]*)$/.exec(content);
+      const match = /^WUSTC2\|([0-9a-z]+)\|(\d+)\/(\d+)\|([\s\S]*)$/.exec(content);
       if (!match) return '';
-      const index = Number(match[1]);
-      const count = Number(match[2]);
+      const scannedId = match[1];
+      const index = Number(match[2]);
+      const count = Number(match[3]);
       if (count < 1 || count > 9 || index < 1 || index > count) return '';
+      // 不同课表的二维码不能混扫，否则会拼出一份混合课表。
+      if (shareId && scannedId !== shareId) {
+        promptAction.showToast({ message: '这些二维码不属于同一份课表，请重新扫码', duration: 2200 });
+        return '';
+      }
+      shareId = scannedId;
       total = count;
-      parts[index - 1] = match[3];
+      parts[index - 1] = match[4];
       let collected = 0;
       for (let i = 0; i < total; i++) {
         if (parts[i] !== undefined && parts[i].length >= 0) collected++;

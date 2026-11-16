@@ -30,6 +30,8 @@ struct CourseSharePage {
   private staticQrPayload: string = '';
   // 课程多时拆成多张二维码，扫码端依次扫完再导入。
   @State private qrParts: string[] = [];
+  // 同一份课表的多张二维码共享这个标识，扫码端据此拒绝混扫。
+  private shareId: string = '';
   // 华为文档：QRCode 组件最多支持 512 个字符，超过会被截断。
   private static readonly QR_MAX_CHARS = 500;
 
@@ -42,7 +44,7 @@ struct CourseSharePage {
           state.qrValue = '';
           state.errorMsg = '当前课表没有课程，暂无可分享内容';
         } else {
-          const parts = CourseSharePage.chunkify(this.staticQrPayload);
+          const parts = CourseSharePage.chunkify(this.staticQrPayload, this.shareId);
           this.qrParts = parts;
           if (parts.length === 0) {
             state.qrValue = '';
@@ -84,8 +86,11 @@ struct CourseSharePage {
         this.staticQrPayload = courses.length > 0
           ? CourseSharePage.encodeArchive(`${nickname}的课表`, semester, courses)
           : '';
+        // 同一份课表的多张二维码共享标识，扫码端会拒绝把两份课表混在一起。
+        this.shareId = CourseSharePage.makeShareId();
       } catch (_) {
         this.staticQrPayload = '';
+        this.shareId = '';
       }
       await this.shareController.initialize(nickname, semester);
     } catch (_) {
@@ -133,12 +138,18 @@ struct CourseSharePage {
     return `${head}|${rows.join(';')}`;
   }
 
+  static makeShareId(): string {
+    return `${Date.now().toString(36)}${Math.floor(Math.random() * 0xffff).toString(16)}`;
+  }
+
   /** 把紧凑课表拆成多张二维码；超过 9 张视为无法分享。 */
-  static chunkify(payload: string): string[] {
+  static chunkify(payload: string, shareId: string): string[] {
     const max = CourseSharePage.QR_MAX_CHARS;
     if (payload.length <= max) return [payload];
-    // 预留 "WUSTC2|9/9|" 前缀空间。
-    const chunkSize = max - 12;
+    const id = shareId || CourseSharePage.makeShareId();
+    // 预留 "WUSTC2|<shareId>|9/9|" 前缀空间。
+    const chunkSize = max - 12 - id.length;
+    if (chunkSize <= 0) return [];
     const raw: string[] = [];
     for (let start = 0; start < payload.length; start += chunkSize) {
       raw.push(payload.substring(start, start + chunkSize));
@@ -147,7 +158,7 @@ struct CourseSharePage {
     const total = raw.length;
     const parts: string[] = [];
     for (let i = 0; i < raw.length; i++) {
-      parts.push(`WUSTC2|${i + 1}/${total}|${raw[i]}`);
+      parts.push(`WUSTC2|${id}|${i + 1}/${total}|${raw[i]}`);
     }
     return parts;
   }

@@ -56,11 +56,12 @@ test('第二课堂页面本身也会把“无效查询请求”转为可读提�
   assert.match(page, /rawMessage\.indexOf\('无效'\)/, '没有识别后端的无效请求文案');
 });
 
-test('课程多时拆成多张二维码，且带上物理实验信息', async () => {
+test('课程多时拆成多张二维码，并带同一课表标识', async () => {
   const page = await source('pages/course/CourseSharePage.ets');
   assert.match(page, /QR_MAX_CHARS = 500;/, '缺少 512 字符上限保护');
-  assert.match(page, /static chunkify\(payload: string\): string\[\]/, '缺少拆分多张二维码逻辑');
-  assert.match(page, /WUSTC2\|/, '缺少多张二维码前缀');
+  assert.match(page, /static chunkify\(payload: string, shareId: string\): string\[\]/, '缺少拆分多张二维码逻辑');
+  assert.match(page, /static makeShareId\(\): string/, '缺少课表共享标识');
+  assert.match(page, /`WUSTC2\|\$\{id\}\|/, '多张二维码没有带共享标识');
   assert.match(page, /@State private qrParts: string\[\] = \[\];/, '缺少多张二维码状态');
   assert.match(page, /ForEach\(this\.qrParts/, '页面没有渲染多张二维码');
   assert.match(page, /course\.isPhysicalExperiment \? '1' : '0'/, '没有编码物理实验标记');
@@ -73,11 +74,21 @@ test('空课表不生成二维码', async () => {
   assert.match(page, /当前课表没有课程，暂无可分享内容/, '空课表缺少提示');
 });
 
-test('扫码导入支持多张二维码，并恢复物理实验信息', async () => {
+test('扫码导入支持多张二维码，检查同一课表并恢复物理实验信息', async () => {
   const page = await source('pages/course/CourseArchivePage.ets');
   assert.match(page, /private async collectQrContent\(context: common\.UIAbilityContext\)/, '缺少多张二维码收集');
-  assert.match(page, /WUSTC2\\\|\(\\d\+\)\\\/\(\\d\+\)/, '没有解析多张二维码前缀');
+  assert.match(page, /WUSTC2/, '没有解析多张二维码前缀');
+  assert.match(page, /scannedId !== shareId/, '没有检查二维码是否属于同一份课表');
+  assert.match(page, /这些二维码不属于同一份课表/, '混扫时缺少提示');
   assert.match(page, /course\.isPhysicalExperiment = true;/, '没有恢复物理实验标记');
   assert.match(page, /course\.physicalDate = fields\[8\];/, '没有恢复物理实验日期');
   assert.match(page, /JSON\.parse\(content\) as CourseArchive/, '没有兼容旧的 JSON 课表档案');
+});
+
+test('切换课表档案时同步替换实验课缓存，避免别人的实验课残留', async () => {
+  const store = await source('store/AppStorage.ts');
+  assert.match(store, /async setCurrentArchiveCourses\(archiveId: string, value: CourseData\[\]\)/, '缺少按档案切换课表的方法');
+  assert.match(store, /physicalExperimentCourses', JSON\.stringify\(experiments\)/, '切换档案时没有替换实验课缓存');
+  const page = await source('pages/course/CourseArchivePage.ets');
+  assert.match(page, /setCurrentArchiveCourses\(archive\.id, archive\.courses\)/, '切换档案没有走新的缓存替换逻辑');
 });

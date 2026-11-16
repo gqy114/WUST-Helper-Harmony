@@ -672,6 +672,28 @@ export class AppStorage {
   }
 
   /**
+   * 切换课表档案：实验课缓存必须一起替换成该档案自己的内容。
+   * 否则切到别人的档案再切回来时，别人的实验课会留在全局缓存里、混进自己的课表。
+   */
+  async setCurrentArchiveCourses(archiveId: string, value: CourseData[]): Promise<void> {
+    const epochAtStart = this.sessionEpoch;
+    return this.enqueueCourseWrite(async () => {
+      if (this.sessionEpoch !== epochAtStart) return;
+      const experiments: CourseData[] = [];
+      for (let i = 0; i < value.length; i++) {
+        if (this.isPhysicalExperimentCourse(value[i])) {
+          experiments.push(this.normalizePhysicalExperiment(value[i]));
+        }
+      }
+      await this.putStr('physicalExperimentCourses', JSON.stringify(experiments));
+      if (this.sessionEpoch !== epochAtStart) return;
+      const merged = this.mergePhysicalExperiments(value, experiments);
+      this.courseCacheMarker = `archive_${archiveId}_${Date.now()}`;
+      await this.putStr('currentCourses', JSON.stringify(merged));
+    });
+  }
+
+  /**
    * 一键移除课表里的实验课程。
    *
    * 必须在一个写任务里同时清空实验缓存并重写普通课表：之前分两步做，
