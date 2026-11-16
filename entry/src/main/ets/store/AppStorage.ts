@@ -612,6 +612,40 @@ export class AppStorage {
     return merged;
   }
 
+  /**
+   * 应用启动时调用：把旧版只存在当前课表里的实验课迁到档案缓存。
+   * 必须在课表网络刷新之前调用，否则刷新会用没有实验课的数据覆盖 currentCourses。
+   */
+  async migrateLegacyExperimentsIfNeeded(): Promise<void> {
+    const archiveId = await this.getCurrentArchiveId();
+    if (archiveId !== 'mine') return;
+    const sid = (await this.getStudentId()).trim();
+    const owner = await this.getStr('physicalExperimentMigratedOwner', '');
+    if (owner && owner !== sid) return;
+    const migrated = await this.getStr('physicalExperimentMigrated', '');
+    if (migrated) return;
+    if (!owner) await this.putStr('physicalExperimentMigratedOwner', sid);
+    const key = await this.physicalExperimentKey('mine');
+    let saved = await this.getStoredCourses(key);
+    if (saved.length === 0 && key !== 'physicalExperimentCourses') {
+      const plainLegacy = await this.getStoredCourses('physicalExperimentCourses');
+      if (plainLegacy.length > 0) saved = plainLegacy;
+    }
+    const current = await this.getStoredCourses('currentCourses');
+    const legacy: CourseData[] = [];
+    for (let i = 0; i < current.length; i++) {
+      if (this.isPhysicalExperimentCourse(current[i])) legacy.push(current[i]);
+    }
+    const merged = this.mergePhysicalExperiments(saved, legacy);
+    if (merged.length > 0) {
+      await this.putStr(key, JSON.stringify(merged));
+    }
+    if (key !== 'physicalExperimentCourses') {
+      await this.putStr('physicalExperimentCourses', '[]');
+    }
+    await this.putStr('physicalExperimentMigrated', '1');
+  }
+
   async setPhysicalExperimentCourses(value: CourseData[]): Promise<void> {
     return this.enqueueCourseWrite(async () => {
       const archiveId = await this.getCurrentArchiveId();
