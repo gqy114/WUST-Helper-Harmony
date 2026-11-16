@@ -127,7 +127,8 @@ struct ScheduleSetting {
       location: { location: course.location || '', longitude: 0, latitude: 0 },
       startTime: startTime.getTime(),
       endTime: endTime.getTime(),
-      description: `教师：${course.teacher || ''}`
+      description: `教师：${course.teacher || ''}`,
+      reminderTime: [15]
     };
   }
 

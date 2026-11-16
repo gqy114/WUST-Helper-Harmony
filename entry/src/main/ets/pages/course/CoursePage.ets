@@ -62,6 +62,7 @@ export struct CoursePage {
   @State private refreshRotate: number = 0;
   private refreshTimer: number = -1;
   private sessionRetryTimer: number = -1;
+  private weekSyncTimer: number = -1;
   @State private showMoreMenu: boolean = false;
   @State private menuAnim: boolean = false;
   @State private onlyThisWeek: boolean = false;
@@ -97,20 +98,13 @@ export struct CoursePage {
     this.loadCalendarOrderSetting();
     this.loadScheduleSettings();
     await this.verifyAndLoad();
-    this.resolveSemesterStartAndRefreshWeek();
+    await this.resolveSemesterStartAndRefreshWeek();
+    this.startWeekSyncTimer();
   }
 
   private async resolveSemesterStartAndRefreshWeek(): Promise<void> {
     await this.resolveSemesterStart();
-    const adjustedWeek = await this.getAdjustedWeek();
-    const resolvedWeek = adjustedWeek >= 1 && adjustedWeek <= 25
-      ? adjustedWeek
-      : this.calcCurrentWeek();
-    this.actualCurrentWeek = resolvedWeek;
-    this.currentWeek = resolvedWeek;
-    this.store.setCurrentWeek(resolvedWeek);
-    this.updateWeekDates();
-    this.applyOnlyThisWeekFilter();
+    await this.syncActualWeekWithClock(true);
   }
 
   /** 从缓存或 getData 接口解析学期起始日，覆盖 2025-09-01 的默认值。 */
@@ -173,16 +167,50 @@ export struct CoursePage {
   }
 
   private async getAdjustedWeek(): Promise<number> {
-    const memoryWeek = AppStorage.get<number>('adjustedCurrentWeek');
-    if (memoryWeek !== undefined && memoryWeek >= 1 && memoryWeek <= 25) {
-      return memoryWeek;
+    const autoWeek = this.calcCurrentWeek();
+    let offset = AppStorage.get<number>('adjustedWeekOffset');
+    if (offset === undefined || offset < -25 || offset > 25) {
+      const savedOffset = await PreferenceStorage.getInstance().getSettingNumber('adjustedWeekOffset', 1000);
+      if (savedOffset >= -25 && savedOffset <= 25) {
+        offset = savedOffset;
+        AppStorage.setOrCreate('adjustedWeekOffset', savedOffset);
+      } else {
+        offset = 0;
+      }
     }
-    const savedWeek = await PreferenceStorage.getInstance().getSettingNumber('adjustedCurrentWeek', 0);
-    if (savedWeek >= 1 && savedWeek <= 25) {
-      AppStorage.setOrCreate('adjustedCurrentWeek', savedWeek);
-      return savedWeek;
+    return Math.min(Math.max(autoWeek + offset, 1), this.store.totalWeeks || 25);
+  }
+
+  /**
+   * 同步真实当前周。只有用户仍停留在旧的“本周”时才自动跟随，
+   * 用户临时浏览其他周时不会被定时器强行拉回。
+   */
+  private async syncActualWeekWithClock(forceFollow: boolean = false): Promise<void> {
+    const previousActualWeek = this.actualCurrentWeek;
+    const nextActualWeek = await this.getAdjustedWeek();
+    const shouldFollow = forceFollow || this.currentWeek === previousActualWeek;
+    this.actualCurrentWeek = nextActualWeek;
+    if (!shouldFollow) {
+      return;
     }
-    return 0;
+    const weekChanged = this.currentWeek !== nextActualWeek;
+    this.currentWeek = nextActualWeek;
+    this.store.setCurrentWeek(nextActualWeek);
+    this.updateWeekDates();
+    if (weekChanged) {
+      this.refreshKey = this.refreshKey + 1;
+      this.applyOnlyThisWeekFilter();
+    }
+  }
+
+  /** 跨天、跨周时自动推进“本周”，无需用户重新进入或手动校准。 */
+  private startWeekSyncTimer(): void {
+    if (this.weekSyncTimer !== -1) {
+      clearInterval(this.weekSyncTimer);
+    }
+    this.weekSyncTimer = setInterval(() => {
+      this.syncActualWeekWithClock(false);
+    }, 60 * 1000);
   }
 
   private async loadScheduleSettings(): Promise<void> {
@@ -215,14 +243,8 @@ export struct CoursePage {
 
   onPageShow(): void {
     const store = CourseStore.getInstance();
-    const adjustedWeek = AppStorage.get<number>('adjustedCurrentWeek');
-    if (adjustedWeek !== undefined && adjustedWeek >= 1 && adjustedWeek <= 25) {
-      this.actualCurrentWeek = adjustedWeek;
-      this.currentWeek = adjustedWeek;
-      store.setCurrentWeek(adjustedWeek);
-      this.updateWeekDates();
-      this.applyOnlyThisWeekFilter();
-    }
+    this.syncActualWeekWithClock(false);
+    this.startWeekSyncTimer();
     this.loadCurrentArchiveCourses();
     // 从背景与字体设置页返回时立即重新读取最新值。
     this.loadScheduleSettings();
@@ -239,6 +261,10 @@ export struct CoursePage {
     if (this.sessionRetryTimer !== -1) {
       clearTimeout(this.sessionRetryTimer);
       this.sessionRetryTimer = -1;
+    }
+    if (this.weekSyncTimer !== -1) {
+      clearInterval(this.weekSyncTimer);
+      this.weekSyncTimer = -1;
     }
   }
 
@@ -284,14 +310,7 @@ export struct CoursePage {
       const hasArchive = await this.loadCurrentArchiveCourses();
       if (!hasArchive) this.showCachedCourses();
       this.currentSemester = this.store.semester || this.calcSemesterFallback();
-      const adjustedWeek = AppStorage.get<number>('adjustedCurrentWeek');
-      if (adjustedWeek !== undefined && adjustedWeek >= 1 && adjustedWeek <= 25) {
-        this.actualCurrentWeek = adjustedWeek;
-        this.currentWeek = adjustedWeek;
-        this.store.setCurrentWeek(adjustedWeek);
-      } else {
-        this.currentWeek = this.store.currentWeek;
-      }
+      await this.syncActualWeekWithClock(true);
       this.updateWeekDates();
       // 有缓存时立即展示，后台刷新不能再用全屏 LoadingProgress 遮住旧课表。
       this.loading = this.allCourseList.length === 0;
@@ -1061,10 +1080,11 @@ export struct CoursePage {
         visible: this.showWeekAdjust,
         currentWeek: this.currentWeek,
         onConfirm: (week: number) => {
+          const offset = week - this.calcCurrentWeek();
           this.actualCurrentWeek = week;
           this.currentWeek = week;
-          AppStorage.setOrCreate('adjustedCurrentWeek', week);
-          PreferenceStorage.getInstance().setSettingNumber('adjustedCurrentWeek', week);
+          AppStorage.setOrCreate('adjustedWeekOffset', offset);
+          PreferenceStorage.getInstance().setSettingNumber('adjustedWeekOffset', offset);
           this.store.setCurrentWeek(week);
           this.updateWeekDates();
           this.refreshKey = this.refreshKey + 1;
