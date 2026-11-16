@@ -116,6 +116,9 @@ test('移除在同一个写入任务里完成，避免实验课被迁移回课�
   // 写入队列是同步执行的：不存在「清空实验缓存 → 读旧课表迁移 → 合并回课表」的中间态。
   store.getCurrentArchiveId = async () => 'mine';
   store.physicalExperimentKey = async () => 'physicalExperimentCourses';
+  store.archiveKey = async (base) => base;
+  store.getStr = async (key, def = '') => (key === 'courseArchives' ? '' : def);
+  store.parseArchives = () => [];
   store.enqueueCourseWrite = async (task) => task();
 
   const removed = await store.removePhysicalExperimentCourses();
@@ -141,6 +144,9 @@ test('没有实验课时原子方法不写存储', async () => {
   store.putStr = async (key, value) => { writes.push([key, value]); };
   store.getCurrentArchiveId = async () => 'mine';
   store.physicalExperimentKey = async () => 'physicalExperimentCourses';
+  store.archiveKey = async (base) => base;
+  store.getStr = async (key, def = '') => (key === 'courseArchives' ? '' : def);
+  store.parseArchives = () => [];
   store.enqueueCourseWrite = async (task) => task();
 
   assert.equal(await store.removePhysicalExperimentCourses(), 0);
@@ -311,6 +317,9 @@ async function makeConcurrentStore(initialCourses, options = {}) {
   store.courseCacheMarker = '';
   store.getCurrentArchiveId = async () => 'mine';
   store.physicalExperimentKey = async () => 'physicalExperimentCourses';
+  store.archiveKey = async (base) => base;
+  store.getStr = async (key, def = '') => (key === 'courseArchives' ? '' : def);
+  store.parseArchives = () => [];
   store.enqueueCourseWrite = function (task) {
     const run = this.courseWriteChain.then(task, task);
     this.courseWriteChain = run.then(() => {}, () => {});

@@ -576,9 +576,25 @@ export class AppStorage {
     const key = await this.physicalExperimentKey(archiveId);
     let saved = await this.getStoredCourses(key);
     if (archiveId === 'mine' && saved.length === 0) {
-      // 旧版本只有一个全局实验课缓存：迁移给「我的课表」。
-      const legacySaved = await this.getStoredCourses(await this.physicalExperimentKey('mine'));
-      if (legacySaved.length > 0) saved = legacySaved;
+      // 更早版本把实验课存在不带学号前缀的全局 key 里。
+      const plainLegacy = await this.getStoredCourses('physicalExperimentCourses');
+      if (plainLegacy.length > 0) {
+        saved = plainLegacy;
+      }
+    }
+    if (archiveId === 'mine' && saved.length === 0) {
+      // 再兜底：旧版可能只把实验课混在「我的课表」档案数据里。
+      const archivesRaw = await this.getStr(await this.archiveKey('courseArchives'), '');
+      const archives = this.parseArchives(archivesRaw);
+      for (let i = 0; i < archives.length; i++) {
+        if (archives[i].id !== 'mine') continue;
+        const courses = archives[i].courses || [];
+        for (let j = 0; j < courses.length; j++) {
+          if (this.isPhysicalExperimentCourse(courses[j])) {
+            saved.push(this.normalizePhysicalExperiment(courses[j]));
+          }
+        }
+      }
     }
     const current = await this.getStoredCourses('currentCourses');
     const legacy: CourseData[] = [];
@@ -655,6 +671,10 @@ export class AppStorage {
 
   private async readCurrentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {
     const current = await this.getStoredCourses('currentCourses');
+    // 别人的课表只用自己的数据：绝不把自己的实验课合进去。
+    if (archiveId !== 'mine') {
+      return current;
+    }
     const experiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
     const merged = this.mergePhysicalExperiments(current, experiments);
     if (merged.length !== current.length) {
@@ -745,10 +765,8 @@ export class AppStorage {
       if (removed === 0) return 0;
       this.courseCacheMarker = `remove_experiments_${Date.now()}`;
       const archiveId = await this.getCurrentArchiveId();
+      // 只清当前档案的实验课缓存；在别人的课表里删除，不能动「我的课表」。
       await this.putStr(await this.physicalExperimentKey(archiveId), '[]');
-      if (archiveId !== 'mine') {
-        await this.putStr(await this.physicalExperimentKey('mine'), '[]');
-      }
       await this.putStr('currentCourses', JSON.stringify(remaining));
       return removed;
     });
