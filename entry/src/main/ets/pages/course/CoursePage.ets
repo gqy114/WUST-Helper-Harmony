@@ -174,7 +174,15 @@ export struct CoursePage {
     const anchorTs = await storage.getSettingNumber('weekAnchorTimestamp', 0);
     const anchorWeek = await storage.getSettingNumber('weekAnchorWeek', 0);
     if (anchorTs > 0 && anchorWeek >= 1) {
-      const elapsedWeeks = Math.floor((Date.now() - anchorTs) / (7 * 24 * 60 * 60 * 1000));
+      // 按自然周推进：校准当周保持，跨过下一个周一就 +1，而不是“满 7 天”才动。
+      const anchorDate = new Date(anchorTs);
+      const today = new Date();
+      const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+      const startOfAnchor = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate()).getTime();
+      const passedDays = Math.floor((startOfToday - startOfAnchor) / (24 * 60 * 60 * 1000));
+      // Mon=0 … Sun=6
+      const anchorWeekday = (anchorDate.getDay() + 6) % 7;
+      const elapsedWeeks = Math.floor((passedDays + anchorWeekday) / 7);
       return Math.min(Math.max(anchorWeek + elapsedWeeks, 1), maxWeek);
     }
     // 旧版只存了「手动校准的绝对周次」：迁移成锚点，之后继续自动推进。
