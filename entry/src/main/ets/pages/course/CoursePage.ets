@@ -167,10 +167,30 @@ export struct CoursePage {
   }
 
   private async getAdjustedWeek(): Promise<number> {
+    const storage = PreferenceStorage.getInstance();
+    const maxWeek = this.store.totalWeeks || 25;
+    // 手动校准以「校准时刻 + 校准周次」为锚点推进：
+    // 即使设备缓存的学期开始日期很旧，过了 7 天也会自动 +1 周。
+    const anchorTs = await storage.getSettingNumber('weekAnchorTimestamp', 0);
+    const anchorWeek = await storage.getSettingNumber('weekAnchorWeek', 0);
+    if (anchorTs > 0 && anchorWeek >= 1) {
+      const elapsedWeeks = Math.floor((Date.now() - anchorTs) / (7 * 24 * 60 * 60 * 1000));
+      return Math.min(Math.max(anchorWeek + elapsedWeeks, 1), maxWeek);
+    }
+    // 旧版只存了「手动校准的绝对周次」：迁移成锚点，之后继续自动推进。
+    const legacyWeek = await storage.getSettingNumber('adjustedCurrentWeek', 0);
+    if (legacyWeek >= 1) {
+      const now = Date.now();
+      AppStorage.setOrCreate('weekAnchorTimestamp', now);
+      AppStorage.setOrCreate('weekAnchorWeek', legacyWeek);
+      await storage.setSettingNumber('weekAnchorTimestamp', now);
+      await storage.setSettingNumber('weekAnchorWeek', legacyWeek);
+      return Math.min(Math.max(legacyWeek, 1), maxWeek);
+    }
     const autoWeek = this.calcCurrentWeek();
     let offset = AppStorage.get<number>('adjustedWeekOffset');
     if (offset === undefined || offset < -25 || offset > 25) {
-      const savedOffset = await PreferenceStorage.getInstance().getSettingNumber('adjustedWeekOffset', 1000);
+      const savedOffset = await storage.getSettingNumber('adjustedWeekOffset', 1000);
       if (savedOffset >= -25 && savedOffset <= 25) {
         offset = savedOffset;
         AppStorage.setOrCreate('adjustedWeekOffset', savedOffset);
@@ -178,7 +198,7 @@ export struct CoursePage {
         offset = 0;
       }
     }
-    return Math.min(Math.max(autoWeek + offset, 1), this.store.totalWeeks || 25);
+    return Math.min(Math.max(autoWeek + offset, 1), maxWeek);
   }
 
   /**
@@ -1080,11 +1100,17 @@ export struct CoursePage {
         visible: this.showWeekAdjust,
         currentWeek: this.currentWeek,
         onConfirm: (week: number) => {
-          const offset = week - this.calcCurrentWeek();
+          const now = Date.now();
           this.actualCurrentWeek = week;
           this.currentWeek = week;
-          AppStorage.setOrCreate('adjustedWeekOffset', offset);
-          PreferenceStorage.getInstance().setSettingNumber('adjustedWeekOffset', offset);
+          // 用「校准时刻 + 校准周次」记录，过一周自动推进；同时清掉旧的 offset 方案。
+          AppStorage.setOrCreate('weekAnchorTimestamp', now);
+          AppStorage.setOrCreate('weekAnchorWeek', week);
+          AppStorage.setOrCreate('adjustedWeekOffset', 0);
+          const storage = PreferenceStorage.getInstance();
+          storage.setSettingNumber('weekAnchorTimestamp', now);
+          storage.setSettingNumber('weekAnchorWeek', week);
+          storage.setSettingNumber('adjustedWeekOffset', 0);
           this.store.setCurrentWeek(week);
           this.updateWeekDates();
           this.refreshKey = this.refreshKey + 1;
