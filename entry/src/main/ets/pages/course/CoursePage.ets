@@ -166,14 +166,23 @@ export struct CoursePage {
     return true;
   }
 
+  private async semesterForWeek(): Promise<string> {
+    const storage = PreferenceStorage.getInstance();
+    let term = (await storage.getSemester()).trim();
+    if (!term) term = (await storage.getSelectSemester()).trim();
+    return term;
+  }
+
   private async getAdjustedWeek(): Promise<number> {
     const storage = PreferenceStorage.getInstance();
     const maxWeek = this.store.totalWeeks || 25;
-    // 手动校准以「校准时刻 + 校准周次」为锚点推进：
-    // 即使设备缓存的学期开始日期很旧，过了 7 天也会自动 +1 周。
+    const term = await this.semesterForWeek();
+    // 手动校准以「校准时刻 + 校准周次 + 学期」为锚点：
+    // 切到新学期后旧锚点自动失效，不会把上学期的手动周次带过来。
     const anchorTs = await storage.getSettingNumber('weekAnchorTimestamp', 0);
     const anchorWeek = await storage.getSettingNumber('weekAnchorWeek', 0);
-    if (anchorTs > 0 && anchorWeek >= 1) {
+    const anchorTerm = (await storage.getSettingString('weekAnchorTerm', '')).trim();
+    if (anchorTs > 0 && anchorWeek >= 1 && anchorTerm === term) {
       // 按自然周推进：校准当周保持，跨过下一个周一就 +1，而不是“满 7 天”才动。
       const anchorDate = new Date(anchorTs);
       const today = new Date();
@@ -185,7 +194,7 @@ export struct CoursePage {
       const elapsedWeeks = Math.floor((passedDays + anchorWeekday) / 7);
       return Math.min(Math.max(anchorWeek + elapsedWeeks, 1), maxWeek);
     }
-    // 旧版只存了「手动校准的绝对周次」：迁移成锚点，之后继续自动推进。
+    // 旧版只存了「手动校准的绝对周次」：迁移成锚点（带上当前学期），之后继续自动推进。
     const legacyWeek = await storage.getSettingNumber('adjustedCurrentWeek', 0);
     if (legacyWeek >= 1) {
       const now = Date.now();
@@ -193,20 +202,23 @@ export struct CoursePage {
       AppStorage.setOrCreate('weekAnchorWeek', legacyWeek);
       await storage.setSettingNumber('weekAnchorTimestamp', now);
       await storage.setSettingNumber('weekAnchorWeek', legacyWeek);
+      await storage.setSettingString('weekAnchorTerm', term);
       return Math.min(Math.max(legacyWeek, 1), maxWeek);
     }
-    const autoWeek = this.calcCurrentWeek();
-    let offset = AppStorage.get<number>('adjustedWeekOffset');
-    if (offset === undefined || offset < -25 || offset > 25) {
-      const savedOffset = await storage.getSettingNumber('adjustedWeekOffset', 1000);
-      if (savedOffset >= -25 && savedOffset <= 25) {
-        offset = savedOffset;
-        AppStorage.setOrCreate('adjustedWeekOffset', savedOffset);
-      } else {
-        offset = 0;
-      }
-    }
-    return Math.min(Math.max(autoWeek + offset, 1), maxWeek);
+    return Math.min(Math.max(this.calcCurrentWeek(), 1), maxWeek);
+  }
+
+  private async persistWeekAnchor(week: number): Promise<void> {
+    const storage = PreferenceStorage.getInstance();
+    const term = await this.semesterForWeek();
+    const now = Date.now();
+    AppStorage.setOrCreate('weekAnchorTimestamp', now);
+    AppStorage.setOrCreate('weekAnchorWeek', week);
+    AppStorage.setOrCreate('adjustedWeekOffset', 0);
+    await storage.setSettingNumber('weekAnchorTimestamp', now);
+    await storage.setSettingNumber('weekAnchorWeek', week);
+    await storage.setSettingString('weekAnchorTerm', term);
+    await storage.setSettingNumber('adjustedWeekOffset', 0);
   }
 
   /**
@@ -1108,17 +1120,10 @@ export struct CoursePage {
         visible: this.showWeekAdjust,
         currentWeek: this.currentWeek,
         onConfirm: (week: number) => {
-          const now = Date.now();
           this.actualCurrentWeek = week;
           this.currentWeek = week;
-          // 用「校准时刻 + 校准周次」记录，过一周自动推进；同时清掉旧的 offset 方案。
-          AppStorage.setOrCreate('weekAnchorTimestamp', now);
-          AppStorage.setOrCreate('weekAnchorWeek', week);
-          AppStorage.setOrCreate('adjustedWeekOffset', 0);
-          const storage = PreferenceStorage.getInstance();
-          storage.setSettingNumber('weekAnchorTimestamp', now);
-          storage.setSettingNumber('weekAnchorWeek', week);
-          storage.setSettingNumber('adjustedWeekOffset', 0);
+          // 用「校准时刻 + 校准周次 + 学期」记录，跨学期自动失效。
+          this.persistWeekAnchor(week);
           this.store.setCurrentWeek(week);
           this.updateWeekDates();
           this.refreshKey = this.refreshKey + 1;

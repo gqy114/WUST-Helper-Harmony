@@ -117,7 +117,12 @@ test('移除在同一个写入任务里完成，避免实验课被迁移回课�
   store.getCurrentArchiveId = async () => 'mine';
   store.physicalExperimentKey = async () => 'physicalExperimentCourses';
   store.archiveKey = async (base) => base;
-  store.getStr = async (key, def = '') => (key === 'courseArchives' ? '' : def);
+  let migratedFlag = '';
+  store.getStr = async (key, def = '') => {
+    if (key === 'physicalExperimentMigrated') return migratedFlag;
+    if (key === 'courseArchives') return '';
+    return def;
+  };
   store.parseArchives = () => [];
   store.enqueueCourseWrite = async (task) => task();
 
@@ -145,7 +150,12 @@ test('没有实验课时原子方法不写存储', async () => {
   store.getCurrentArchiveId = async () => 'mine';
   store.physicalExperimentKey = async () => 'physicalExperimentCourses';
   store.archiveKey = async (base) => base;
-  store.getStr = async (key, def = '') => (key === 'courseArchives' ? '' : def);
+  let migratedFlag = '';
+  store.getStr = async (key, def = '') => {
+    if (key === 'physicalExperimentMigrated') return migratedFlag;
+    if (key === 'courseArchives') return '';
+    return def;
+  };
   store.parseArchives = () => [];
   store.enqueueCourseWrite = async (task) => task();
 
@@ -318,7 +328,12 @@ async function makeConcurrentStore(initialCourses, options = {}) {
   store.getCurrentArchiveId = async () => 'mine';
   store.physicalExperimentKey = async () => 'physicalExperimentCourses';
   store.archiveKey = async (base) => base;
-  store.getStr = async (key, def = '') => (key === 'courseArchives' ? '' : def);
+  let migratedFlag = '';
+  store.getStr = async (key, def = '') => {
+    if (key === 'physicalExperimentMigrated') return migratedFlag;
+    if (key === 'courseArchives') return '';
+    return def;
+  };
   store.parseArchives = () => [];
   store.enqueueCourseWrite = function (task) {
     const run = this.courseWriteChain.then(task, task);
@@ -327,6 +342,7 @@ async function makeConcurrentStore(initialCourses, options = {}) {
   };
   store.getStoredCourses = async (key) => (key === 'currentCourses' ? current.slice() : experiments.slice());
   store.putStr = async (key, value) => {
+    if (key === 'physicalExperimentMigrated') { migratedFlag = value; return; }
     if (key === 'physicalExperimentCourses') {
       experiments = JSON.parse(value);
       // 复现评审步骤：清空实验缓存后暂停，给并发读取留出插入窗口。
@@ -400,4 +416,11 @@ test('删除实验课后清理旧全局缓存与档案残留，避免复活', as
   assert.match(store, /putStr\('physicalExperimentCourses', '\[\]'\)/, '没有清理旧全局缓存');
   assert.match(store, /physicalExperimentMigrated/, '没有记录迁移已完成');
   assert.match(store, /archives\[i\]\.courses = kept/, '没有从档案数据里剔除实验课');
+});
+
+test('旧实验课只迁移一次，切回自己档案不会吸收别人的实验课', async () => {
+  const store = await source('../entry/src/main/ets/store/AppStorage.ts');
+  assert.match(store, /const migrated = await this\.getStr\('physicalExperimentMigrated', ''\);/,
+    '缺少一次性迁移标记');
+  assert.match(store, /if \(migrated\) \{\s*return saved;\s*\}/, '迁移完成后仍在从 currentCourses 提取');
 });

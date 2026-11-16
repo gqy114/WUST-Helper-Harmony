@@ -9,6 +9,8 @@ test('校准后的周次按周自动推进，不受旧学期开始日期影响',
   const page = await source('entry/src/main/ets/pages/course/CoursePage.ets');
   assert.match(page, /weekAnchorTimestamp/, '缺少校准锚点时间');
   assert.match(page, /weekAnchorWeek/, '缺少校准锚点周次');
+  assert.match(page, /weekAnchorTerm/, '缺少校准锚点学期');
+  assert.match(page, /anchorTerm === term/, '没有校验锚点是否属于当前学期');
   assert.match(page, /const anchorWeekday = \(anchorDate\.getDay\(\) \+ 6\) % 7;/, '没有按周一作为自然周边界');
   assert.match(page, /Math\.floor\(\(passedDays \+ anchorWeekday\) \/ 7\)/, '没有按跨过的周一数推进');
   assert.match(page, /anchorWeek \+ elapsedWeeks/, '没有在锚点周次上加经过周数');
