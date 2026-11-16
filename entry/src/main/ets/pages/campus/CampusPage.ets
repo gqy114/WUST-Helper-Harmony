@@ -95,6 +95,14 @@ export struct CampusPage {
           Text('校园资讯暂不可用').fontSize(14).fontWeight(FontWeight.Medium).fontColor('#555555').width('100%')
           Text(this.errorText).fontSize(11).fontColor('#999999').margin({ top: 2 }).width('100%')
         }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 10 })
+        Text('旧版入口').fontSize(12).fontColor('#888888').margin({ right: 10 })
+          .onClick(() => {
+            // 新接口尚未部署时保留可用的旧入口。
+            router.pushUrl({
+              url: 'pages/common/WebPage',
+              params: { title: '校园资讯', url: 'https://news.wustlinghang.cn' }
+            });
+          })
         Text('重试').fontSize(13).fontColor('#20C997').onClick(() => this.load(true))
       }.width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 })
       .backgroundColor(Color.White).borderRadius(12).margin({ bottom: 16 })

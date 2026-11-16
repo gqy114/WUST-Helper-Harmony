@@ -9,7 +9,8 @@ const source = (path) => readFile(new URL(`${root}/ets/${path}`, import.meta.url
 test('校园页通过后端校园资讯接口拉取列表', async () => {
   const code = await source('pages/campus/CampusPage.ets');
   assert.match(code, /CampusNewsApi\.articles\(/, '没有调用校园资讯列表接口');
-  assert.doesNotMatch(code, /news\.wustlinghang\.cn/, '仍在加载旧的校园资讯网页');
+  assert.doesNotMatch(code, /Web\(\{ src: 'https:\/\/news\.wustlinghang\.cn'/, '仍在直接加载旧网页');
+  assert.match(code, /Text\('旧版入口'\)/, '接口不可用时没有保留旧入口');
   assert.match(code, /Text\('重试'\)/, '加载失败缺少重试入口');
 });
 
