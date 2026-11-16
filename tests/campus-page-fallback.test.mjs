@@ -1,77 +1,49 @@
-// 校园页远端资讯不可用时必须退出白屏并提供本地校园服务。
+// 校园资讯改用后端 /News/Support 原生列表，不再加载 wustlinghang 网页。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const pageUrl = new URL('../entry/src/main/ets/pages/campus/CampusPage.ets', import.meta.url);
-const source = () => readFile(pageUrl, 'utf8');
+const root = '../entry/src/main';
+const source = (path) => readFile(new URL(`${root}/ets/${path}`, import.meta.url), 'utf8');
 
-test('校园资讯加载失败、HTTP 错误和超时都有可见兜底', async () => {
-  const code = await source();
-
-  assert.match(code, /\.onErrorReceive\(/, '缺少 WebView 主文档错误处理');
-  assert.match(code, /\.onHttpErrorReceive\(/, '缺少 HTTP 错误处理');
-  assert.match(code, /const LOAD_TIMEOUT_MS = 12_000;/, '缺少无回调时的超时保护');
-  assert.match(code, /if \(this\.loadError\) \{\s*this\.fallbackContent\(\)/,
-    '加载失败后没有切换到本地兜底页');
-  assert.match(code, /Text\('重试'\)/, '兜底页缺少重试入口');
+test('校园页通过后端校园资讯接口拉取列表', async () => {
+  const code = await source('pages/campus/CampusPage.ets');
+  assert.match(code, /CampusNewsApi\.articles\(/, '没有调用校园资讯列表接口');
+  assert.doesNotMatch(code, /news\.wustlinghang\.cn/, '仍在加载旧的校园资讯网页');
+  assert.match(code, /Text\('重试'\)/, '加载失败缺少重试入口');
 });
 
-test('加载结束后校验实际页面内容，不能把空白页当作成功', async () => {
-  const code = await source();
-
-  assert.match(code, /\.onPageEnd\(\(\) => \{\s*this\.scheduleContentCheck\(\);\s*\}\)/,
-    'onPageEnd 没有触发页面内容校验');
-  assert.match(code, /this\.controller\.runJavaScript\(script\)/,
-    '缺少 WebView DOM 内容检查');
-  assert.match(code, /contentScore < MIN_CONTENT_SCORE/,
-    '空页面没有切换到失败兜底');
-  assert.doesNotMatch(code, /\.onPageEnd\(\(\) => \{\s*this\.clearLoadTimer\(\);\s*this\.loading = false;/,
-    'onPageEnd 仍在未校验内容时直接标记成功');
-});
-
-test('兜底页保留常用校园服务入口', async () => {
-  const code = await source();
+test('校园页加载失败时仍保留本地校园服务入口', async () => {
+  const code = await source('pages/campus/CampusPage.ets');
   const routes = [
     'pages/campus/SchoolCalendarPage',
     'pages/campus/SchoolBusPage',
     'pages/campus/YellowPagesPage',
-    'pages/course/PhysicalExperimentPage',
+    'pages/course/PhysicalExperimentPage'
   ];
-
   for (const route of routes) {
     assert.match(code, new RegExp(route.replaceAll('/', '\\/')), `缺少本地入口：${route}`);
   }
 });
 
-test('校园页不绕过 HTTPS 证书校验', async () => {
-  const code = await source();
-  assert.doesNotMatch(code, /onSslErrorEventReceive|handleConfirm\s*\(/,
-    '不应通过忽略证书错误加载校园资讯');
+test('点资讯进入详情页，详情页注册到 main_pages', async () => {
+  const page = await source('pages/campus/CampusPage.ets');
+  assert.match(page, /pages\/campus\/CampusNewsDetailPage/, '没有跳转资讯详情页');
+  const pages = await source('../resources/base/profile/main_pages.json');
+  assert.match(pages, /pages\/campus\/CampusNewsDetailPage/, '详情页没有注册');
 });
 
-test('已经报错的导航，错误页有文字也不算加载成功', async () => {
-  const code = await source();
-
-  assert.match(code, /private navigationError: boolean = false;/, '缺少本次导航空错误标记');
-  assert.match(code, /if \(this\.navigationError\) \{[\s\S]*?navigation failed[\s\S]*?return;/,
-    '内容校验没有先判断本次导航是否报错');
-  assert.match(code, /this\.navigationError = true;/,
-    '收到主文档错误时没有记录');
-  assert.match(code, /\.onPageBegin\(\(\) => \{[\s\S]*?this\.beginNavigation\(\);/,
-    '新导航开始时没有重置错误标记');
+test('资讯详情从后端接口读取，并编码后再 loadData', async () => {
+  const page = await source('pages/campus/CampusNewsDetailPage.ets');
+  assert.match(page, /CampusNewsApi\.detail\(/, '详情没有调用后端接口');
+  assert.match(page, /encodeURIComponent\(document\)/, 'loadData 前没有编码 # 号');
+  assert.doesNotMatch(page, /news\.wustlinghang\.cn/, '详情仍在加载旧网页');
 });
 
-test('重试后旧页面的异步检查结果不再生效', async () => {
-  const code = await source();
-
-  assert.match(code, /private navigationToken: number = 0;/, '缺少导航标识');
-  assert.match(code, /private beginNavigation\(\): void \{[\s\S]*?this\.navigationToken = this\.navigationToken \+ 1;/,
-    '开始新导航时没有递增标识');
-  assert.match(code, /if \(token !== this\.navigationToken\) return;/,
-    '异步回调没有校验导航标识');
-  assert.match(code, /private retry\(\): void \{[\s\S]*?this\.beginNavigation\(\);/,
-    '重试没有开启新的导航标识');
-  assert.match(code, /aboutToDisappear\(\): void \{[\s\S]*?this\.navigationToken = this\.navigationToken \+ 1;/,
-    '页面销毁后旧回调仍可能改状态');
+test('校园资讯接口走 /News/Support，包含列表、详情、搜索', async () => {
+  const api = await source('net/CampusNewsApi.ets');
+  assert.match(api, /\/News\/Support/, '接口前缀不是 /News\/Support');
+  assert.match(api, /\/articles/, '缺少资讯列表/详情接口');
+  assert.match(api, /\/search/, '缺少搜索接口');
+  assert.match(api, /page_size/, '缺少分页参数');
 });

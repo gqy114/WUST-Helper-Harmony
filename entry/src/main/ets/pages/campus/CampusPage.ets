@@ -1,11 +1,7 @@
 import { router } from '@kit.ArkUI';
-import webview from '@ohos.web.webview';
+import { CampusNewsApi, NewsArticle } from '../../net/CampusNewsApi';
 
 const TAG = 'CampusPage';
-const CAMPUS_NEWS_URL = 'https://news.wustlinghang.cn';
-const LOAD_TIMEOUT_MS = 12_000;
-const CONTENT_CHECK_DELAY_MS = 1_000;
-const MIN_CONTENT_SCORE = 20;
 
 interface CampusShortcut {
   title: string;
@@ -15,346 +11,160 @@ interface CampusShortcut {
 }
 
 const CAMPUS_SHORTCUTS: CampusShortcut[] = [
-  {
-    title: '学校校历',
-    description: '了解校历与假期安排',
-    icon: $r('app.media.ic_schoolcalendar'),
-    route: 'pages/campus/SchoolCalendarPage'
-  },
-  {
-    title: '校车时刻',
-    description: '查询各校区发车时间',
-    icon: $r('app.media.ic_school_bus'),
-    route: 'pages/campus/SchoolBusPage'
-  },
-  {
-    title: '校园黄页',
-    description: '查询校园常用号码',
-    icon: $r('app.media.ic_yellow_page'),
-    route: 'pages/campus/YellowPagesPage'
-  },
-  {
-    title: '物理实验',
-    description: '查询并导入实验课表',
-    icon: $r('app.media.ic_physical'),
-    route: 'pages/course/PhysicalExperimentPage'
-  }
+  { title: '学校校历', description: '了解校历与假期安排', icon: $r('app.media.ic_schoolcalendar'), route: 'pages/campus/SchoolCalendarPage' },
+  { title: '校车时刻', description: '查询各校区发车时间', icon: $r('app.media.ic_school_bus'), route: 'pages/campus/SchoolBusPage' },
+  { title: '校园黄页', description: '查询校园常用号码', icon: $r('app.media.ic_yellow_page'), route: 'pages/campus/YellowPagesPage' },
+  { title: '物理实验', description: '查询并导入实验课表', icon: $r('app.media.ic_physical'), route: 'pages/course/PhysicalExperimentPage' }
 ];
 
 @Component
 export struct CampusPage {
+  @State private articles: NewsArticle[] = [];
   @State private loading: boolean = true;
-  @State private loadError: boolean = false;
+  @State private loadingMore: boolean = false;
   @State private errorText: string = '';
-  private controller: webview.WebviewController = new webview.WebviewController();
-  private loadTimer: number = -1;
-  private contentCheckTimer: number = -1;
-  // 本次导航是否报过错：错误页也可能有文字，不能据此判定加载成功。
-  private navigationError: boolean = false;
-  // 每次导航/重试递增；异步回调只在标识仍属于当前导航时才允许改状态。
-  private navigationToken: number = 0;
-
-  private beginNavigation(): void {
-    this.navigationToken = this.navigationToken + 1;
-    this.navigationError = false;
-    this.clearContentCheckTimer();
-    this.clearLoadTimer();
-  }
+  @State private page: number = 1;
+  @State private hasMore: boolean = true;
+  private requestGeneration: number = 0;
 
   aboutToAppear(): void {
-    // Some WebView failures do not deliver an error callback on every device.
-    // Start a component-level timeout as a final guard against a permanent blank page.
-    this.startLoadTimer();
+    this.load(true);
   }
 
-  aboutToDisappear(): void {
-    // 页面销毁后，旧导航的异步回调不允许再改状态。
-    this.navigationToken = this.navigationToken + 1;
-    this.clearLoadTimer();
-    this.clearContentCheckTimer();
-  }
-
-  private clearLoadTimer(): void {
-    if (this.loadTimer !== -1) {
-      clearTimeout(this.loadTimer);
-      this.loadTimer = -1;
+  private async load(reset: boolean): Promise<void> {
+    const generation = ++this.requestGeneration;
+    if (reset) {
+      this.page = 1;
+      this.hasMore = true;
+      this.loading = true;
+      this.errorText = '';
+      this.articles = [];
+    } else {
+      if (this.loadingMore || !this.hasMore) return;
+      this.loadingMore = true;
     }
-  }
-
-  private startLoadTimer(): void {
-    this.clearLoadTimer();
-    const token = this.navigationToken;
-    this.loadTimer = setTimeout(() => {
-      this.loadTimer = -1;
-      // 旧导航的超时不能关掉新导航的加载状态。
-      if (token !== this.navigationToken) return;
-      if (this.loading) {
-        console.warn(TAG, 'campus news load timed out');
+    try {
+      const result = await CampusNewsApi.articles(this.page, 20);
+      if (generation !== this.requestGeneration) return;
+      const items = result.items || [];
+      this.articles = reset ? items : this.articles.concat(items);
+      const total = result.total || 0;
+      this.hasMore = items.length > 0 && this.articles.length < total;
+      this.page = this.page + 1;
+      this.errorText = '';
+    } catch (error) {
+      if (generation !== this.requestGeneration) return;
+      const message = error instanceof Error ? error.message : '校园资讯加载失败';
+      console.warn(TAG, `load news failed: ${message}`);
+      this.errorText = message;
+    } finally {
+      if (generation === this.requestGeneration) {
         this.loading = false;
-        this.errorText = '校园资讯服务响应超时';
-        this.loadError = true;
+        this.loadingMore = false;
       }
-    }, LOAD_TIMEOUT_MS);
-  }
-
-  private clearContentCheckTimer(): void {
-    if (this.contentCheckTimer !== -1) {
-      clearTimeout(this.contentCheckTimer);
-      this.contentCheckTimer = -1;
     }
   }
 
-  /**
-   * onPageEnd 只表示导航结束，证书错误页、HTTP 空响应和 about:blank 也可能触发。
-   * 延迟检查实际 DOM 内容，避免把空页面误判为加载成功。
-   */
-  private scheduleContentCheck(): void {
-    this.clearContentCheckTimer();
-    const token = this.navigationToken;
-    this.contentCheckTimer = setTimeout(() => {
-      this.contentCheckTimer = -1;
-      if (token !== this.navigationToken) return;
-      this.verifyCampusContent(token);
-    }, CONTENT_CHECK_DELAY_MS);
-  }
-
-  private verifyCampusContent(token: number): void {
-    try {
-      const script = `document.body ?
-        (document.body.innerText.trim().length +
-        document.body.getElementsByTagName('img').length * 20 +
-        document.body.getElementsByTagName('a').length * 10) : 0`;
-      this.controller.runJavaScript(script)
-        .then((result: string) => {
-          // 旧导航的检查结果不能覆盖重试后的新页面状态。
-          if (token !== this.navigationToken) return;
-          const contentScore = parseInt(result, 10);
-          if (isNaN(contentScore) || contentScore < MIN_CONTENT_SCORE) {
-            console.warn(TAG, `campus news page is empty, score=${result}`);
-            this.showLoadError('校园资讯服务返回了空白页面');
-            return;
-          }
-          if (this.navigationError) {
-            // 本次导航已经报错（证书错误/HTTP 错误）：错误页本身也可能有文字，
-            // 不能因为“页面有内容”就把错误提示清掉。
-            console.warn(TAG, 'campus news page has content but navigation failed');
-            return;
-          }
-          this.clearLoadTimer();
-          this.loading = false;
-          this.loadError = false;
-          this.errorText = '';
-        })
-        .catch((error: Error) => {
-          if (token !== this.navigationToken) return;
-          console.warn(TAG, `verify campus content failed: ${error.message}`);
-          this.showLoadError('校园资讯页面校验失败');
-        });
-    } catch (error) {
-      console.warn(TAG, `run campus content check failed: ${JSON.stringify(error)}`);
-      this.showLoadError('校园资讯页面校验失败');
+  private openArticle(item: NewsArticle): void {
+    const id = (item.id || '').trim();
+    if (!id) {
+      this.errorText = '这篇资讯缺少详情编号，无法打开';
+      return;
     }
-  }
-
-  private retry(): void {
-    // 新导航：旧页面检查/超时回调一律作废。
-    this.beginNavigation();
-    this.loading = true;
-    this.loadError = false;
-    this.errorText = '';
-    this.startLoadTimer();
-    try {
-      this.controller.loadUrl(CAMPUS_NEWS_URL);
-    } catch (error) {
-      console.warn(TAG, `retry loadUrl failed: ${JSON.stringify(error)}`);
-      this.showLoadError('校园资讯暂时无法连接');
-    }
-  }
-
-  private showLoadError(message: string): void {
-    this.clearLoadTimer();
-    this.clearContentCheckTimer();
-    this.loading = false;
-    this.errorText = message;
-    this.loadError = true;
-  }
-
-  private openShortcut(target: string): void {
-    router.pushUrl({ url: target }).catch((error: Error) => {
-      console.warn(TAG, `open shortcut failed: ${target}, ${error.message}`);
+    router.pushUrl({
+      url: 'pages/campus/CampusNewsDetailPage',
+      params: { id: id, title: item.title || '资讯详情' }
     });
   }
 
-  @Builder
-  private shortcutCard(item: CampusShortcut) {
-    Row() {
-      Image(item.icon)
-        .width(44)
-        .height(44)
-        .objectFit(ImageFit.Contain)
-
-      Column() {
-        Text(item.title)
-          .fontSize(17)
-          .fontWeight(FontWeight.Medium)
-          .fontColor('#333333')
-        Text(item.description)
-          .fontSize(13)
-          .fontColor('#999999')
-          .margin({ top: 4 })
-      }
-      .layoutWeight(1)
-      .margin({ left: 14 })
-      .alignItems(HorizontalAlign.Start)
-
-      Text('›')
-        .fontSize(28)
-        .fontColor('#BBBBBB')
-    }
-    .width('100%')
-    .height(76)
-    .padding({ left: 16, right: 16 })
-    .backgroundColor(Color.White)
-    .borderRadius(14)
-    .onClick(() => this.openShortcut(item.route))
+  private openShortcut(route: string): void {
+    router.pushUrl({ url: route });
   }
 
   @Builder
-  private fallbackContent() {
-    Scroll() {
+  private newsSection() {
+    if (this.loading) {
       Column() {
-        // 资讯源不可用时只给一条紧凑提示，不遮挡下方校园服务（与安卓端一致）。
-        Row() {
-          Image($r('app.media.empty'))
-            .width(30)
-            .height(30)
-            .objectFit(ImageFit.Contain)
+        LoadingProgress().width(36).height(36).color('#20C997')
+        Text('校园资讯加载中…').fontSize(13).fontColor('#999999').margin({ top: 10 })
+      }.width('100%').padding({ top: 40, bottom: 40 }).justifyContent(FlexAlign.Center)
+    } else if (this.errorText.length > 0 && this.articles.length === 0) {
+      Row() {
+        Image($r('app.media.empty')).width(30).height(30).objectFit(ImageFit.Contain)
+        Column() {
+          Text('校园资讯暂不可用').fontSize(14).fontWeight(FontWeight.Medium).fontColor('#555555').width('100%')
+          Text(this.errorText).fontSize(11).fontColor('#999999').margin({ top: 2 }).width('100%')
+        }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 10 })
+        Text('重试').fontSize(13).fontColor('#20C997').onClick(() => this.load(true))
+      }.width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 })
+      .backgroundColor(Color.White).borderRadius(12).margin({ bottom: 16 })
+    } else {
+      Column() {
+        ForEach(this.articles, (item: NewsArticle) => {
           Column() {
-            Text('校园资讯暂不可用')
-              .fontSize(14)
-              .fontWeight(FontWeight.Medium)
-              .fontColor('#555555')
-              .width('100%')
-            Text('不影响下方校园服务使用')
-              .fontSize(11)
-              .fontColor('#999999')
-              .margin({ top: 2 })
-              .width('100%')
+            Text(item.title || '未命名资讯').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#333333')
+              .width('100%').maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+            if (item.summary) {
+              Text(item.summary).fontSize(12).fontColor('#888888').width('100%').maxLines(2)
+                .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6 })
+            }
+            Row() {
+              Text(item.category_name || '校园资讯').fontSize(11).fontColor('#20C997')
+              Blank()
+              Text((item.published_at || '').substring(0, 10)).fontSize(11).fontColor('#AAAAAA')
+            }.width('100%').margin({ top: 8 })
           }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-          .margin({ left: 10 })
-          Text('重试')
-            .fontSize(13)
-            .fontColor('#20C997')
-            .onClick(() => this.retry())
+          .width('100%').padding(14).backgroundColor(Color.White).borderRadius(12).margin({ bottom: 10 })
+          .onClick(() => this.openArticle(item))
+        }, (item: NewsArticle) => item.id || item.title || '')
+
+        if (this.errorText.length > 0) {
+          Text(this.errorText).fontSize(12).fontColor('#C0392B').margin({ top: 4, bottom: 8 })
         }
-        .width('100%')
-        .padding({ left: 14, right: 14, top: 10, bottom: 10 })
-        .backgroundColor(Color.White)
-        .borderRadius(12)
-
-        Text('校园服务')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#444444')
-          .width('100%')
-          .margin({ top: 24, bottom: 12 })
-
-        ForEach(CAMPUS_SHORTCUTS, (item: CampusShortcut) => {
-          this.shortcutCard(item)
-          Blank().height(12)
-        }, (item: CampusShortcut) => item.route)
-      }
-      .width('100%')
-      .padding({ left: 18, right: 18, bottom: 24 })
+        if (this.hasMore) {
+          Text(this.loadingMore ? '加载中…' : '加载更多')
+            .fontSize(13).fontColor('#20C997').padding(10)
+            .onClick(() => this.load(false))
+        }
+      }.width('100%').margin({ bottom: 8 })
     }
-    .width('100%')
-    .height('100%')
-    .scrollBar(BarState.Off)
   }
 
   build() {
     Column() {
       Row() {
-        Text('校园')
-          .fontSize(28)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#555555')
-        Text('SCHOOL')
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#777777')
-          .margin({ left: 12 })
-      }
-      .width('100%')
-      .padding({ left: 28, top: 32, bottom: 26 })
+        Text('校园').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#555555')
+        Text('SCHOOL').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#777777').margin({ left: 12 })
+        Blank()
+        Image($r('app.media.refresh')).width(22).height(22)
+          .onClick(() => this.load(true))
+      }.width('100%').padding({ left: 28, right: 24, top: 32, bottom: 18 })
 
-      Stack() {
-        Web({ src: CAMPUS_NEWS_URL, controller: this.controller })
-          .width('100%')
-          .height('100%')
-          .javaScriptAccess(true)
-          .domStorageAccess(true)
-          .cacheMode(CacheMode.Default)
-          .onPageBegin(() => {
-            this.beginNavigation();
-            this.loading = true;
-            this.loadError = false;
-            this.errorText = '';
-            this.startLoadTimer();
-          })
-          .onPageEnd(() => {
-            this.scheduleContentCheck();
-          })
-          .onErrorReceive((event) => {
-            const mainFrame = event?.request?.isMainFrame();
-            if (mainFrame === false) {
-              return;
-            }
-            const code = event?.error?.getErrorCode() ?? '未知';
-            console.warn(TAG, `campus news web error: ${code} ${event?.error?.getErrorInfo() ?? ''}`);
-            this.navigationError = true;
-            this.showLoadError(`校园资讯加载失败（错误码 ${code}）`);
-          })
-          .onHttpErrorReceive((event) => {
-            const mainFrame = event?.request?.isMainFrame();
-            if (mainFrame === false) {
-              return;
-            }
-            const code = event?.response?.getResponseCode() ?? 0;
-            if (code >= 400) {
-              console.warn(TAG, `campus news http error: ${code}`);
-              this.navigationError = true;
-              this.showLoadError(`校园资讯服务器返回 ${code}`);
-            }
-          })
+      Scroll() {
+        Column() {
+          this.newsSection()
 
-        if (this.loadError) {
-          this.fallbackContent()
-        } else if (this.loading) {
-          Column() {
-            LoadingProgress()
-              .width(38)
-              .height(38)
-              .color('#20C997')
-            Text('校园资讯加载中…')
-              .fontSize(13)
-              .fontColor('#999999')
-              .margin({ top: 10 })
-          }
-          .width('100%')
-          .height('100%')
-          .backgroundColor(Color.White)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(HorizontalAlign.Center)
+          Text('校园服务').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#444444')
+            .width('100%').margin({ top: 14, bottom: 12 })
+
+          ForEach(CAMPUS_SHORTCUTS, (item: CampusShortcut) => {
+            Row() {
+              Image(item.icon).width(44).height(44).borderRadius(12)
+              Column() {
+                Text(item.title).fontSize(17).fontWeight(FontWeight.Medium).fontColor('#333333').width('100%')
+                Text(item.description).fontSize(12).fontColor('#999999').margin({ top: 4 }).width('100%')
+              }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 14 })
+              Text('›').fontSize(22).fontColor('#BBBBBB')
+            }
+            .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
+            .backgroundColor(Color.White).borderRadius(12).margin({ bottom: 10 })
+            .onClick(() => this.openShortcut(item.route))
+          }, (item: CampusShortcut) => item.route)
         }
+        .width('100%').padding({ left: 18, right: 18, bottom: 24 })
       }
-      .width('100%')
-      .layoutWeight(1)
+      .layoutWeight(1).width('100%').scrollBar(BarState.Off)
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor('#F5F6F7')
+    .width('100%').height('100%').backgroundColor('#F5F6F7')
   }
 }

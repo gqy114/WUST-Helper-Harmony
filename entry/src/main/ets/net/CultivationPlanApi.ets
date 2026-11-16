@@ -97,4 +97,91 @@ export class CultivationPlanApi {
     if (await storage.getIsGraduate()) return CultivationPlanApi.fetchGraduate();
     return CultivationPlanApi.fetchUndergraduate();
   }
+
+  /**
+   * 新版结构化培养方案：直接返回 title + blocks，客户端原生渲染，不再解析 HTML。
+   */
+  static async fetchStructured(): Promise<TrainingPlan> {
+    const graduate = await AppStorage.getInstance().getIsGraduate();
+    const urls: string[] = graduate
+      ? ['https://lyzyy.love/Graduate/Support/getTrainingPlan',
+         'http://port.happylandmc.cc:52144/Graduate/Support/getTrainingPlan']
+      : ['https://lyzyy.love/UnderGraduate/Support/getTrainingPlan',
+         'http://port.happylandmc.cc:52144/UnderGraduate/Support/getTrainingPlan'];
+    let lastMessage: string = '';
+    let unauthorized: boolean = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const cookie = await CultivationPlanApi.teachingCookie(attempt > 0);
+      const headers: CultivationPlanHeaders = {
+        Accept: 'application/json',
+        Cookie: cookie,
+        Authorization: `Bearer ${cookie}`,
+        Token: cookie
+      };
+      for (let i = 0; i < urls.length; i++) {
+        try {
+          const result = await HttpRequest.request<StructuredPlanResponse>(urls[i], 'GET',
+            { headers, pinBackend: true });
+          const response = result.data;
+          const message = response?.message || response?.msg || '';
+          if (result.response.responseCode === 401 || result.response.responseCode === 403 ||
+            response?.code === 401 || response?.code === 403) {
+            unauthorized = true;
+            lastMessage = message || '教务登录已失效';
+            continue;
+          }
+          if (response && CultivationPlanApi.successful(response.code) && response.data &&
+            Array.isArray(response.data.blocks)) {
+            return response.data;
+          }
+          if (message.trim().length > 0) lastMessage = message;
+        } catch (error) {
+          if (error instanceof Error && error.message.trim().length > 0) lastMessage = error.message;
+        }
+      }
+      if (!unauthorized) break;
+    }
+    if (unauthorized) throw new Error('教务登录已失效，请重新登录后重试');
+    throw new Error(lastMessage || '培养方案加载失败');
+  }
+}
+
+export interface TrainingPlanLink {
+  text: string;
+  url: string;
+}
+
+export interface TrainingPlanCell {
+  text?: string;
+  rowSpan?: number;
+  colSpan?: number;
+  header?: boolean;
+  blocks?: TrainingPlanBlock[];
+  links?: TrainingPlanLink[];
+}
+
+export interface TrainingPlanRow {
+  sourceRow?: number;
+  cells?: TrainingPlanCell[];
+}
+
+export interface TrainingPlanBlock {
+  type?: string;
+  text?: string;
+  url?: string;
+  rows?: TrainingPlanRow[];
+  links?: TrainingPlanLink[];
+  blocks?: TrainingPlanBlock[];
+}
+
+export interface TrainingPlan {
+  title: string;
+  blocks: TrainingPlanBlock[];
+}
+
+interface StructuredPlanResponse {
+  code?: number;
+  message?: string;
+  msg?: string;
+  data?: TrainingPlan;
 }

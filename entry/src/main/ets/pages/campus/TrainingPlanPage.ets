@@ -1,31 +1,27 @@
 /**
- * 培养方案页面。
+ * 培养方案（新版结构化接口）。
  *
- * 关键点：ArkWeb 的 loadData 会把内容里的第一个 `#` 当成文档片段分隔符，
- * 之后的正文全部被丢弃。培养方案的 HTML 里大量出现 `#`（CSS 颜色、锚点），
- * 直接传入会让 Web 显示成白屏。官方要求先 encodeURIComponent（把 # 转成 %23），
- * 或者在调用前做 base64 编码。这里统一在调用处编码。
+ * 后端 /UnderGraduate|Graduate/Support/getTrainingPlan 直接返回
+ * { title, blocks:[{type,text,rows,links,...}] }，页面原生渲染，不再加载 HTML。
  */
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
-import webview from '@ohos.web.webview';
-import { CultivationPlanApi } from '../../net/CultivationPlanApi';
+import { common, Want } from '@kit.AbilityKit';
+import {
+  CultivationPlanApi, TrainingPlan, TrainingPlanBlock, TrainingPlanCell,
+  TrainingPlanLink, TrainingPlanRow
+} from '../../net/CultivationPlanApi';
 
 const TAG = 'TrainingPlanPage';
-const BASE_URL = 'https://www.lyzyy.love/';
-const HISTORY_URL = 'https://www.lyzyy.love/UnderGraduate/Support/getTrainingPlanPage';
-const MAX_RENDER_ATTEMPTS = 2;
 
 @Entry
 @Component
 struct TrainingPlanPage {
   @State private loading: boolean = true;
-  @State private loadFailed: boolean = false;
+  @State private failed: boolean = false;
   @State private errorText: string = '';
-  @State private html: string = '';
-  private webController: webview.WebviewController = new webview.WebviewController();
-  private controllerAttached: boolean = false;
-  private renderAttempts: number = 0;
+  @State private titleText: string = '培养方案';
+  @State private blocks: TrainingPlanBlock[] = [];
 
   aboutToAppear(): void {
     this.load();
@@ -33,153 +29,139 @@ struct TrainingPlanPage {
 
   private async load(): Promise<void> {
     this.loading = true;
-    this.loadFailed = false;
+    this.failed = false;
     this.errorText = '';
-    this.html = '';
-    this.renderAttempts = 0;
-    // loading 会把 Web 组件从树下移除，controller 随之解绑；
-    // 这里同步复位，等新组件 onControllerAttached 后再 loadData，
-    // 避免在旧 controller 已经解绑的情况下渲染。
-    this.controllerAttached = false;
     try {
-      this.html = await CultivationPlanApi.fetchHtml();
+      const plan: TrainingPlan = await CultivationPlanApi.fetchStructured();
+      this.titleText = (plan.title || '培养方案').trim();
+      this.blocks = Array.isArray(plan.blocks) ? plan.blocks : [];
+      if (this.blocks.length === 0) {
+        this.failed = true;
+        this.errorText = '培养方案暂无内容';
+      }
     } catch (error) {
-      this.loadFailed = true;
+      this.failed = true;
       this.errorText = error instanceof Error ? error.message : '培养方案加载失败';
       promptAction.showToast({ message: this.errorText, duration: 1800 });
     }
     this.loading = false;
-    if (!this.loadFailed) this.renderHtml();
   }
 
-  private documentHtml(source: string): string {
-    const additions = `<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
-<style>
-  html, body { max-width: 100%; min-height: 100%; box-sizing: border-box; }
-  body { margin: 0; padding: 14px; overflow-x: auto; font-size: 16px; line-height: 1.65; color: #333; background: #fff; }
-  img { max-width: 100%; height: auto; }
-  table { max-width: 100%; border-collapse: collapse; }
-  pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-</style>`;
-    if (/<head(?:\s[^>]*)?>/i.test(source)) {
-      return source.replace(/<head(?:\s[^>]*)?>/i, (head: string) => `${head}${additions}`);
+  private blockText(block: TrainingPlanBlock): string {
+    if (block.text && block.text.trim().length > 0) return block.text.trim();
+    const nested = block.blocks || [];
+    const parts: string[] = [];
+    for (let i = 0; i < nested.length; i++) {
+      const text = this.blockText(nested[i]);
+      if (text.length > 0) parts.push(text);
     }
-    if (/<html(?:\s[^>]*)?>/i.test(source)) {
-      return source.replace(/<html(?:\s[^>]*)?>/i, (htmlTag: string) => `${htmlTag}<head>${additions}</head>`);
-    }
-    return `<!DOCTYPE html><html><head>${additions}</head><body>${source}</body></html>`;
+    return parts.join(' ');
   }
 
-  /**
-   * 渲染正文。Web 组件可能比正文晚就绪，所以由 load() 与 onControllerAttached 共同触发，
-   * 并用 renderAttempts 限制重复渲染。
-   */
-  private renderHtml(): void {
-    if (!this.controllerAttached || this.html.trim().length === 0) return;
-    if (this.renderAttempts >= MAX_RENDER_ATTEMPTS) return;
-    this.renderAttempts++;
+  private cellText(cell: TrainingPlanCell): string {
+    if (cell.text && cell.text.trim().length > 0) return cell.text.trim();
+    const nested = cell.blocks || [];
+    const parts: string[] = [];
+    for (let i = 0; i < nested.length; i++) {
+      const text = this.blockText(nested[i]);
+      if (text.length > 0) parts.push(text);
+    }
+    return parts.join(' ');
+  }
+
+  private async openLink(url: string): Promise<void> {
+    if (!url) return;
     try {
-      // encodeURIComponent 会把 # 编码为 %23，避免 loadData 截断后面的正文。
-      const encoded = encodeURIComponent(this.documentHtml(this.html));
-      this.webController.loadData(encoded, 'text/html', 'UTF-8', BASE_URL, HISTORY_URL);
-      console.info(TAG, `loadData attempt=${this.renderAttempts} size=${encoded.length}`);
+      const context = getContext(this) as common.UIAbilityContext;
+      const want: Want = { action: 'ohos.want.action.viewData', uri: url };
+      await context.startAbility(want);
     } catch (error) {
-      console.error(TAG, `render html failed: ${JSON.stringify(error)}`);
-      this.loadFailed = true;
-      this.errorText = '培养方案渲染失败，请重试';
+      console.warn(TAG, `open link failed: ${JSON.stringify(error)}`);
+      promptAction.showToast({ message: '无法打开该链接', duration: 1500 });
     }
   }
 
-  /** 页面渲染完成后检查是否仍然是空白页（旧内核上 about:blank 会覆盖 loadData 的结果）。 */
-  private verifyRendered(): void {
-    if (this.renderAttempts === 0 || this.html.trim().length === 0) return;
-    try {
-      this.webController.runJavaScript('document.body ? document.body.innerText.length : 0')
-        .then((result: string) => {
-          const length = parseInt(result, 10);
-          if (!isNaN(length) && length === 0 && this.renderAttempts < MAX_RENDER_ATTEMPTS) {
-            console.warn(TAG, 'rendered page is empty, retry loadData');
-            this.renderHtml();
-          }
-        })
-        .catch(() => {
-          // runJavaScript 失败不影响页面本身，忽略。
-        });
-    } catch (error) {
-      console.warn(TAG, `verify rendered failed: ${JSON.stringify(error)}`);
+  @Builder
+  private tableBlock(rows: TrainingPlanRow[]) {
+    Column() {
+      ForEach(rows, (row: TrainingPlanRow) => {
+        Row() {
+          ForEach(row.cells || [], (cell: TrainingPlanCell) => {
+            Text(this.cellText(cell))
+              .fontSize(cell.header ? 13 : 13)
+              .fontWeight(cell.header ? FontWeight.Bold : FontWeight.Normal)
+              .fontColor(cell.header ? '#333333' : '#555555')
+              .layoutWeight(1)
+              .padding(8)
+              .border({ width: 0.5, color: '#DDDDDD' })
+          }, (cell: TrainingPlanCell, index: number) => `${index}-${this.cellText(cell)}`)
+        }
+        .alignItems(VerticalAlign.Top)
+        .width('100%')
+      }, (row: TrainingPlanRow, index: number) => `${row.sourceRow || index}`)
+    }
+    .width('100%')
+    .border({ width: 0.5, color: '#DDDDDD' })
+    .margin({ top: 8, bottom: 8 })
+  }
+
+  @Builder
+  private blockView(block: TrainingPlanBlock) {
+    if (block.type === 'heading') {
+      Text(this.blockText(block))
+        .fontSize(17).fontWeight(FontWeight.Bold).fontColor('#333333')
+        .width('100%').margin({ top: 16, bottom: 6 })
+    } else if (block.type === 'table') {
+      this.tableBlock(block.rows || [])
+    } else if (block.type === 'links') {
+      Column() {
+        ForEach(block.links || [], (link: TrainingPlanLink) => {
+          Text(link.text || link.url).fontSize(14).fontColor('#20C997')
+            .width('100%').padding({ top: 4, bottom: 4 })
+            .onClick(() => this.openLink(link.url))
+        }, (link: TrainingPlanLink, index: number) => `${index}-${link.url}`)
+      }.width('100%').alignItems(HorizontalAlign.Start)
+    } else if (block.type === 'image') {
+      Text(this.blockText(block)).fontSize(12).fontColor('#999999').width('100%').margin({ top: 4 })
+    } else {
+      Text(this.blockText(block))
+        .fontSize(15).fontColor('#555555').lineHeight(24)
+        .width('100%').margin({ top: 4, bottom: 4 })
     }
   }
 
   build() {
     Column() {
       Row() {
-        Text('‹')
-          .fontSize(42)
-          .width(48)
-          .textAlign(TextAlign.Center)
-          .onClick(() => router.back())
-        Text('培养方案')
-          .fontSize(26)
-          .fontWeight(FontWeight.Bold)
-          .margin({ left: 12 })
-        Blank().layoutWeight(1)
-        Text('刷新')
-          .fontSize(17)
-          .fontColor('#20B984')
-          .onClick(() => this.load())
-      }
-      .width('100%')
-      .height(76)
-      .padding({ left: 14, right: 20 })
-      .backgroundColor(Color.White)
+        Text('←').fontSize(26).fontColor('#333333').onClick(() => router.back())
+        Text(this.titleText).fontSize(19).fontWeight(FontWeight.Bold).fontColor('#333333')
+          .margin({ left: 14 }).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
+        Text('刷新').fontSize(14).fontColor('#20C997').onClick(() => this.load())
+      }.width('100%').padding({ left: 18, right: 18, top: 14, bottom: 10 }).backgroundColor(Color.White)
 
       if (this.loading) {
         Column() {
-          LoadingProgress().width(48).height(48).color('#20B984')
-          Text('正在获取培养方案…').fontSize(18).fontColor('#777777').margin({ top: 18 })
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-      } else if (this.loadFailed) {
+          LoadingProgress().width(40).height(40).color('#20C997')
+          Text('培养方案加载中…').fontSize(13).fontColor('#999999').margin({ top: 10 })
+        }.width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
+      } else if (this.failed) {
         Column() {
-          Text('培养方案获取失败').fontSize(24).fontWeight(FontWeight.Bold).fontColor('#444444')
-          Text(this.errorText || '请检查网络或登录状态')
-            .fontSize(17)
-            .fontColor('#888888')
-            .textAlign(TextAlign.Center)
-            .margin({ top: 14 })
-          Button('重新加载')
-            .width(150)
-            .height(50)
-            .fontSize(18)
-            .fontColor(Color.White)
-            .backgroundColor('#20B984')
-            .margin({ top: 26 })
+          Image($r('app.media.empty')).width(80).height(80).objectFit(ImageFit.Contain)
+          Text(this.errorText).fontSize(14).fontColor('#999999').textAlign(TextAlign.Center).margin({ top: 12 })
+          Button('重试').fontSize(14).height(36).margin({ top: 16 }).backgroundColor('#20C997')
             .onClick(() => this.load())
-        }
-        .width('88%')
-        .padding(28)
-        .backgroundColor(Color.White)
-        .borderRadius(22)
-        .margin({ top: 26 })
+        }.width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
       } else {
-        Web({ src: 'about:blank', controller: this.webController })
-          .width('100%')
-          .layoutWeight(1)
-          .javaScriptAccess(true)
-          .domStorageAccess(false)
-          .onControllerAttached(() => {
-            this.controllerAttached = true;
-            this.renderHtml();
-          })
-          .onPageEnd(() => {
-            this.verifyRendered();
-          })
+        Scroll() {
+          Column() {
+            ForEach(this.blocks, (block: TrainingPlanBlock, index: number) => {
+              this.blockView(block)
+            }, (block: TrainingPlanBlock, index: number) => `${index}-${block.type || ''}-${(block.text || '').length}`)
+          }.width('100%').padding({ left: 16, right: 16, top: 8, bottom: 24 })
+        }
+        .layoutWeight(1).width('100%').scrollBar(BarState.Off)
       }
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor('#F5F6F7')
+    .width('100%').height('100%').backgroundColor(Color.White)
   }
 }
