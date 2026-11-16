@@ -203,6 +203,8 @@ export struct CoursePage {
       await storage.setSettingNumber('weekAnchorTimestamp', now);
       await storage.setSettingNumber('weekAnchorWeek', legacyWeek);
       await storage.setSettingString('weekAnchorTerm', term);
+      // 旧 key 迁移后清零：否则新学期会再次走迁移分支，把旧周次套到新学期。
+      await storage.setSettingNumber('adjustedCurrentWeek', 0);
       return Math.min(Math.max(legacyWeek, 1), maxWeek);
     }
     return Math.min(Math.max(this.calcCurrentWeek(), 1), maxWeek);
