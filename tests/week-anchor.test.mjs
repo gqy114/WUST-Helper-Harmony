@@ -28,4 +28,5 @@ test('旧版保存的手动周次会迁移成锚点', async () => {
   assert.match(page, /getSettingNumber\('adjustedCurrentWeek', 0\)/, '没有读取旧版绝对周次');
   assert.match(page, /if \(legacyWeek >= 1\)/, '没有迁移旧版周次');
   assert.match(page, /setSettingNumber\('weekAnchorWeek', legacyWeek\)/, '旧数据没有写入锚点');
+  assert.match(page, /setSettingNumber\('adjustedCurrentWeek', 0\)/, '旧周次迁移后没有清零，新学期会被再次套用');
 });

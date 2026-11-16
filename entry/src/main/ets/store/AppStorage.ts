@@ -591,12 +591,9 @@ export class AppStorage {
         saved = plainLegacy;
       }
     }
-    const current = await this.getStoredCourses('currentCourses');
-    const legacy: CourseData[] = [];
-    for (let i = 0; i < current.length; i++) {
-      if (this.isPhysicalExperimentCourse(current[i])) legacy.push(current[i]);
-    }
-    const merged = this.mergePhysicalExperiments(saved, legacy);
+    // 不再从 currentCourses 提取实验课：切换档案时 currentCourses 可能是别人的课表，
+    // 升级后第一次读取时会把别人的实验课迁进「我的课表」。
+    const merged = saved;
     if (merged.length > 0) {
       await this.putStr(key, JSON.stringify(merged));
     }
