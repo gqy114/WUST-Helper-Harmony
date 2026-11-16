@@ -389,3 +389,15 @@ test('先发起课表读取再移除，最终结果也不含实验课', async ()
   const list = await env.store.getCurrentCourses();
   assert.deepEqual(list.map((course) => course.courseName), ['高等数学']);
 });
+test('别人的课表档案不会吸收「我的课表」的实验课', async () => {
+  const store = await source('../entry/src/main/ets/store/AppStorage.ts');
+  assert.match(store, /if \(archiveId !== 'mine'\) \{\s*return saved;\s*\}/,
+    '读取别人的档案时仍在合并我的实验课');
+});
+
+test('删除实验课后清理旧全局缓存与档案残留，避免复活', async () => {
+  const store = await source('../entry/src/main/ets/store/AppStorage.ts');
+  assert.match(store, /putStr\('physicalExperimentCourses', '\[\]'\)/, '没有清理旧全局缓存');
+  assert.match(store, /physicalExperimentMigrated/, '没有记录迁移已完成');
+  assert.match(store, /archives\[i\]\.courses = kept/, '没有从档案数据里剔除实验课');
+});

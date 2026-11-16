@@ -576,25 +576,23 @@ export class AppStorage {
     const key = await this.physicalExperimentKey(archiveId);
     let saved = await this.getStoredCourses(key);
     if (archiveId === 'mine' && saved.length === 0) {
-      // 更早版本把实验课存在不带学号前缀的全局 key 里。
-      const plainLegacy = await this.getStoredCourses('physicalExperimentCourses');
-      if (plainLegacy.length > 0) {
-        saved = plainLegacy;
+      // 更早版本把实验课存在不带学号前缀的全局 key 里：只迁移一次并清掉旧 key，
+      // 否则删除实验课后旧的全局数据会把它“复活”。
+      const migrated = await this.getStr('physicalExperimentMigrated', '');
+      if (!migrated && key !== 'physicalExperimentCourses') {
+        const plainLegacy = await this.getStoredCourses('physicalExperimentCourses');
+        if (plainLegacy.length > 0) {
+          saved = plainLegacy;
+          await this.putStr(key, JSON.stringify(plainLegacy));
+        }
+        await this.putStr('physicalExperimentCourses', '[]');
+        await this.putStr('physicalExperimentMigrated', '1');
       }
     }
-    if (archiveId === 'mine' && saved.length === 0) {
-      // 再兜底：旧版可能只把实验课混在「我的课表」档案数据里。
-      const archivesRaw = await this.getStr(await this.archiveKey('courseArchives'), '');
-      const archives = this.parseArchives(archivesRaw);
-      for (let i = 0; i < archives.length; i++) {
-        if (archives[i].id !== 'mine') continue;
-        const courses = archives[i].courses || [];
-        for (let j = 0; j < courses.length; j++) {
-          if (this.isPhysicalExperimentCourse(courses[j])) {
-            saved.push(this.normalizePhysicalExperiment(courses[j]));
-          }
-        }
-      }
+    // 旧版实验课混在 currentCourses 里的情况只属于「我的课表」；
+    // 别人的档案绝不能从这里吸收实验课，否则自己的实验课会被带到别人课表里。
+    if (archiveId !== 'mine') {
+      return saved;
     }
     const current = await this.getStoredCourses('currentCourses');
     const legacy: CourseData[] = [];
@@ -767,6 +765,31 @@ export class AppStorage {
       const archiveId = await this.getCurrentArchiveId();
       // 只清当前档案的实验课缓存；在别人的课表里删除，不能动「我的课表」。
       await this.putStr(await this.physicalExperimentKey(archiveId), '[]');
+      // 同时清掉旧版全局缓存，避免下次读取把已删除的实验课重新迁移回来。
+      const archiveKey = await this.physicalExperimentKey(archiveId);
+      if (archiveKey !== 'physicalExperimentCourses') {
+        await this.putStr('physicalExperimentCourses', '[]');
+        await this.putStr('physicalExperimentMigrated', '1');
+      }
+      // 档案数据里如果还混着实验课，一并剔除，切回该档案时不会再出现。
+      const archivesRaw = await this.getStr(await this.archiveKey('courseArchives'), '');
+      const archives = this.parseArchives(archivesRaw);
+      let archivesChanged = false;
+      for (let i = 0; i < archives.length; i++) {
+        if (archives[i].id !== archiveId) continue;
+        const kept: CourseData[] = [];
+        const courses = archives[i].courses || [];
+        for (let j = 0; j < courses.length; j++) {
+          if (!this.isPhysicalExperimentCourse(courses[j])) kept.push(courses[j]);
+        }
+        if (kept.length !== courses.length) {
+          archives[i].courses = kept;
+          archivesChanged = true;
+        }
+      }
+      if (archivesChanged) {
+        await this.putStr(await this.archiveKey('courseArchives'), JSON.stringify(archives));
+      }
       await this.putStr('currentCourses', JSON.stringify(remaining));
       return removed;
     });
