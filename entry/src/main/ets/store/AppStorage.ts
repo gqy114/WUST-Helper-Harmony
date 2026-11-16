@@ -575,24 +575,21 @@ export class AppStorage {
   private async readPhysicalExperimentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {
     const key = await this.physicalExperimentKey(archiveId);
     let saved = await this.getStoredCourses(key);
-    if (archiveId === 'mine' && saved.length === 0) {
-      // 更早版本把实验课存在不带学号前缀的全局 key 里：只迁移一次并清掉旧 key，
-      // 否则删除实验课后旧的全局数据会把它“复活”。
-      const migrated = await this.getStr('physicalExperimentMigrated', '');
-      if (!migrated && key !== 'physicalExperimentCourses') {
-        const plainLegacy = await this.getStoredCourses('physicalExperimentCourses');
-        if (plainLegacy.length > 0) {
-          saved = plainLegacy;
-          await this.putStr(key, JSON.stringify(plainLegacy));
-        }
-        await this.putStr('physicalExperimentCourses', '[]');
-        await this.putStr('physicalExperimentMigrated', '1');
-      }
-    }
-    // 旧版实验课混在 currentCourses 里的情况只属于「我的课表」；
-    // 别人的档案绝不能从这里吸收实验课，否则自己的实验课会被带到别人课表里。
+    // 别人的档案只读自己的缓存，绝不吸收「我的课表」数据。
     if (archiveId !== 'mine') {
       return saved;
+    }
+    // 旧版数据（全局 key / 混在 currentCourses 里）只迁移一次：
+    // 迁移完成后不再从 currentCourses 提取，否则切到别人档案再切回来会把别人的实验课带过来。
+    const migrated = await this.getStr('physicalExperimentMigrated', '');
+    if (migrated) {
+      return saved;
+    }
+    if (saved.length === 0 && key !== 'physicalExperimentCourses') {
+      const plainLegacy = await this.getStoredCourses('physicalExperimentCourses');
+      if (plainLegacy.length > 0) {
+        saved = plainLegacy;
+      }
     }
     const current = await this.getStoredCourses('currentCourses');
     const legacy: CourseData[] = [];
@@ -600,9 +597,13 @@ export class AppStorage {
       if (this.isPhysicalExperimentCourse(current[i])) legacy.push(current[i]);
     }
     const merged = this.mergePhysicalExperiments(saved, legacy);
-    if (merged.length !== saved.length) {
+    if (merged.length > 0) {
       await this.putStr(key, JSON.stringify(merged));
     }
+    if (key !== 'physicalExperimentCourses') {
+      await this.putStr('physicalExperimentCourses', '[]');
+    }
+    await this.putStr('physicalExperimentMigrated', '1');
     return merged;
   }
 
