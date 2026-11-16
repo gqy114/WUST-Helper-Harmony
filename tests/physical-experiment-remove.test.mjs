@@ -114,6 +114,8 @@ test('移除在同一个写入任务里完成，避免实验课被迁移回课�
   store.getStoredCourses = async () => [regular('高等数学'), experiment('实验4-18'), regular('大学物理')];
   store.putStr = async (key, value) => { writes.push([key, value]); };
   // 写入队列是同步执行的：不存在「清空实验缓存 → 读旧课表迁移 → 合并回课表」的中间态。
+  store.getCurrentArchiveId = async () => 'mine';
+  store.physicalExperimentKey = async () => 'physicalExperimentCourses';
   store.enqueueCourseWrite = async (task) => task();
 
   const removed = await store.removePhysicalExperimentCourses();
@@ -137,6 +139,8 @@ test('没有实验课时原子方法不写存储', async () => {
   store.isPhysicalExperimentCourse = (course) => course.isPhysicalExperiment === true;
   store.getStoredCourses = async () => [regular('高等数学')];
   store.putStr = async (key, value) => { writes.push([key, value]); };
+  store.getCurrentArchiveId = async () => 'mine';
+  store.physicalExperimentKey = async () => 'physicalExperimentCourses';
   store.enqueueCourseWrite = async (task) => task();
 
   assert.equal(await store.removePhysicalExperimentCourses(), 0);
@@ -284,9 +288,9 @@ async function makeConcurrentStore(initialCourses, options = {}) {
   const methods = [
     extractMethod(storeSource, '  async removePhysicalExperimentCourses(): Promise<number> {'),
     extractMethod(storeSource, '  async getPhysicalExperimentCourses(): Promise<CourseData[]> {'),
-    extractMethod(storeSource, '  private async readPhysicalExperimentCoursesUnlocked(): Promise<CourseData[]> {'),
+    extractMethod(storeSource, "  private async readPhysicalExperimentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {"),
     extractMethod(storeSource, '  async getCurrentCourses(): Promise<CourseData[]> {'),
-    extractMethod(storeSource, '  private async readCurrentCoursesUnlocked(): Promise<CourseData[]> {'),
+    extractMethod(storeSource, "  private async readCurrentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {"),
   ].join('\n');
 
   const pauseOnClear = options.pauseOnClear === true;
@@ -305,6 +309,8 @@ async function makeConcurrentStore(initialCourses, options = {}) {
   const store = new mod.namespace.TestStore();
   store.courseWriteChain = Promise.resolve();
   store.courseCacheMarker = '';
+  store.getCurrentArchiveId = async () => 'mine';
+  store.physicalExperimentKey = async () => 'physicalExperimentCourses';
   store.enqueueCourseWrite = function (task) {
     const run = this.courseWriteChain.then(task, task);
     this.courseWriteChain = run.then(() => {}, () => {});

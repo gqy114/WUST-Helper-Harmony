@@ -85,10 +85,18 @@ test('扫码导入支持多张二维码，检查同一课表并恢复物理实�
   assert.match(page, /JSON\.parse\(content\) as CourseArchive/, '没有兼容旧的 JSON 课表档案');
 });
 
-test('切换课表档案时同步替换实验课缓存，避免别人的实验课残留', async () => {
+test('实验课缓存按档案隔离，打开档案页不会清掉已有实验课', async () => {
   const store = await source('store/AppStorage.ts');
   assert.match(store, /async setCurrentArchiveCourses\(archiveId: string, value: CourseData\[\]\)/, '缺少按档案切换课表的方法');
-  assert.match(store, /physicalExperimentCourses', JSON\.stringify\(experiments\)/, '切换档案时没有替换实验课缓存');
+  assert.match(store, /private async physicalExperimentKey\(archiveId: string\): Promise<string>/, '实验课缓存没有按档案分 key');
+  assert.match(store, /readPhysicalExperimentCoursesUnlocked\(archiveId: string = 'mine'\)/, '读取实验课没有按档案区分');
+  assert.match(store, /mergePhysicalExperiments\(savedExperiments, incomingExperiments\)/, '切换档案时应保留该档案自己的实验课');
   const page = await source('pages/course/CourseArchivePage.ets');
-  assert.match(page, /setCurrentArchiveCourses\(archive\.id, archive\.courses\)/, '切换档案没有走新的缓存替换逻辑');
+  assert.match(page, /setCurrentArchiveCourses\(archive\.id, archive\.courses\)/, '切换档案没有走按档案缓存逻辑');
+});
+
+test('多张二维码按码点拆分，不会把表情/生僻字截断', async () => {
+  const page = await source('pages/course/CourseSharePage.ets');
+  assert.match(page, /for \(const ch of payload\)/, '没有按 Unicode 码点拆分');
+  assert.match(page, /chars\.slice\(start, start \+ chunkSize\)\.join\(''\)/, '仍按 UTF-16 下标截断');
 });

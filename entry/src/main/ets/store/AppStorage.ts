@@ -501,6 +501,12 @@ export class AppStorage {
     }
   }
 
+  /** 实验课缓存按档案分开存，避免别人的实验课混进自己的课表。 */
+  private async physicalExperimentKey(archiveId: string): Promise<string> {
+    return this.archiveKey(archiveId && archiveId !== 'mine'
+      ? `physicalExperimentCourses_${archiveId}` : 'physicalExperimentCourses');
+  }
+
   private isPhysicalExperimentCourse(course: CourseData): boolean {
     return course.isPhysicalExperiment === true || course.courseName.indexOf('物理实验') >= 0 ||
       /^实验\d+-\d+/.test(course.courseName);
@@ -556,15 +562,24 @@ export class AppStorage {
    * 否则「移除实验课」清空缓存后，并发读取会把旧课表里的实验课迁移回来。
    */
   async getPhysicalExperimentCourses(): Promise<CourseData[]> {
-    return this.enqueueCourseWrite(() => this.readPhysicalExperimentCoursesUnlocked());
+    return this.enqueueCourseWrite(async () => {
+      const archiveId = await this.getCurrentArchiveId();
+      return this.readPhysicalExperimentCoursesUnlocked(archiveId);
+    });
   }
 
   /**
    * 已持有写入队列时使用的读取实现。
    * 队列内部不能再调用会再次入队的公开方法，否则会等待自身造成死锁。
    */
-  private async readPhysicalExperimentCoursesUnlocked(): Promise<CourseData[]> {
-    const saved = await this.getStoredCourses('physicalExperimentCourses');
+  private async readPhysicalExperimentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {
+    const key = await this.physicalExperimentKey(archiveId);
+    let saved = await this.getStoredCourses(key);
+    if (archiveId === 'mine' && saved.length === 0) {
+      // 旧版本只有一个全局实验课缓存：迁移给「我的课表」。
+      const legacySaved = await this.getStoredCourses(await this.physicalExperimentKey('mine'));
+      if (legacySaved.length > 0) saved = legacySaved;
+    }
     const current = await this.getStoredCourses('currentCourses');
     const legacy: CourseData[] = [];
     for (let i = 0; i < current.length; i++) {
@@ -572,21 +587,25 @@ export class AppStorage {
     }
     const merged = this.mergePhysicalExperiments(saved, legacy);
     if (merged.length !== saved.length) {
-      await this.putStr('physicalExperimentCourses', JSON.stringify(merged));
+      await this.putStr(key, JSON.stringify(merged));
     }
     return merged;
   }
 
   async setPhysicalExperimentCourses(value: CourseData[]): Promise<void> {
-    return this.enqueueCourseWrite(() => this.writePhysicalExperimentCoursesUnlocked(value));
+    return this.enqueueCourseWrite(async () => {
+      const archiveId = await this.getCurrentArchiveId();
+      await this.writePhysicalExperimentCoursesUnlocked(value, archiveId);
+    });
   }
 
-  private async writePhysicalExperimentCoursesUnlocked(value: CourseData[]): Promise<void> {
+  private async writePhysicalExperimentCoursesUnlocked(value: CourseData[],
+    archiveId: string = 'mine'): Promise<void> {
     const experiments: CourseData[] = [];
     for (let i = 0; i < value.length; i++) {
       if (this.isPhysicalExperimentCourse(value[i])) experiments.push(this.normalizePhysicalExperiment(value[i]));
     }
-    await this.putStr('physicalExperimentCourses', JSON.stringify(experiments));
+    await this.putStr(await this.physicalExperimentKey(archiveId), JSON.stringify(experiments));
   }
 
   /**
@@ -597,8 +616,10 @@ export class AppStorage {
   async resetCourseCache(): Promise<void> {
     return this.enqueueCourseWrite(async () => {
       this.courseCacheMarker = `reset_${Date.now()}`;
+      const archiveId = await this.getCurrentArchiveId();
       await this.putStr('currentCourses', '[]');
-      await this.putStr('physicalExperimentCourses', '[]');
+      await this.putStr(await this.physicalExperimentKey(archiveId), '[]');
+      await this.putStr(await this.physicalExperimentKey('mine'), '[]');
     });
   }
 
@@ -613,8 +634,10 @@ export class AppStorage {
         return false;
       }
       this.courseCacheMarker = `reset_${Date.now()}`;
+      const archiveId = await this.getCurrentArchiveId();
       await this.putStr('currentCourses', '[]');
-      await this.putStr('physicalExperimentCourses', '[]');
+      await this.putStr(await this.physicalExperimentKey(archiveId), '[]');
+      await this.putStr(await this.physicalExperimentKey('mine'), '[]');
       return true;
     });
   }
@@ -624,12 +647,15 @@ export class AppStorage {
    * 避免和「移除实验课」交错把已移除的课程又写回来。
    */
   async getCurrentCourses(): Promise<CourseData[]> {
-    return this.enqueueCourseWrite(() => this.readCurrentCoursesUnlocked());
+    return this.enqueueCourseWrite(async () => {
+      const archiveId = await this.getCurrentArchiveId();
+      return this.readCurrentCoursesUnlocked(archiveId);
+    });
   }
 
-  private async readCurrentCoursesUnlocked(): Promise<CourseData[]> {
+  private async readCurrentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {
     const current = await this.getStoredCourses('currentCourses');
-    const experiments = await this.readPhysicalExperimentCoursesUnlocked();
+    const experiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
     const merged = this.mergePhysicalExperiments(current, experiments);
     if (merged.length !== current.length) {
       await this.putStr('currentCourses', JSON.stringify(merged));
@@ -655,14 +681,15 @@ export class AppStorage {
     const epochAtStart = this.sessionEpoch;
     return this.enqueueCourseWrite(async () => {
       if (this.sessionEpoch !== epochAtStart) return;
-      const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked();
+      const archiveId = await this.getCurrentArchiveId();
+      const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
       const incomingExperiments: CourseData[] = [];
       for (let i = 0; i < value.length; i++) {
         if (this.isPhysicalExperimentCourse(value[i])) incomingExperiments.push(value[i]);
       }
       const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
       if (this.sessionEpoch !== epochAtStart) return;
-      await this.writePhysicalExperimentCoursesUnlocked(experiments);
+      await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId);
       if (this.sessionEpoch !== epochAtStart) return;
       const merged = this.mergePhysicalExperiments(value, experiments);
       // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
@@ -679,13 +706,16 @@ export class AppStorage {
     const epochAtStart = this.sessionEpoch;
     return this.enqueueCourseWrite(async () => {
       if (this.sessionEpoch !== epochAtStart) return;
-      const experiments: CourseData[] = [];
+      // 该档案自己的实验课缓存要保留：切回自己的档案时不能把已有实验课清掉。
+      const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
+      const incomingExperiments: CourseData[] = [];
       for (let i = 0; i < value.length; i++) {
         if (this.isPhysicalExperimentCourse(value[i])) {
-          experiments.push(this.normalizePhysicalExperiment(value[i]));
+          incomingExperiments.push(this.normalizePhysicalExperiment(value[i]));
         }
       }
-      await this.putStr('physicalExperimentCourses', JSON.stringify(experiments));
+      const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
+      await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId);
       if (this.sessionEpoch !== epochAtStart) return;
       const merged = this.mergePhysicalExperiments(value, experiments);
       this.courseCacheMarker = `archive_${archiveId}_${Date.now()}`;
@@ -714,7 +744,11 @@ export class AppStorage {
       }
       if (removed === 0) return 0;
       this.courseCacheMarker = `remove_experiments_${Date.now()}`;
-      await this.putStr('physicalExperimentCourses', '[]');
+      const archiveId = await this.getCurrentArchiveId();
+      await this.putStr(await this.physicalExperimentKey(archiveId), '[]');
+      if (archiveId !== 'mine') {
+        await this.putStr(await this.physicalExperimentKey('mine'), '[]');
+      }
       await this.putStr('currentCourses', JSON.stringify(remaining));
       return removed;
     });

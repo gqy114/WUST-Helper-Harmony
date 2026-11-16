@@ -151,8 +151,13 @@ struct CourseSharePage {
     const chunkSize = max - 12 - id.length;
     if (chunkSize <= 0) return [];
     const raw: string[] = [];
-    for (let start = 0; start < payload.length; start += chunkSize) {
-      raw.push(payload.substring(start, start + chunkSize));
+    // 按 Unicode 码点切分：直接 substring 会把 emoji/生僻字的代理对从中间截断，扫码后变乱码。
+    const chars: string[] = [];
+    for (const ch of payload) {
+      chars.push(ch);
+    }
+    for (let start = 0; start < chars.length; start += chunkSize) {
+      raw.push(chars.slice(start, start + chunkSize).join(''));
     }
     if (raw.length > 9) return [];
     const total = raw.length;
