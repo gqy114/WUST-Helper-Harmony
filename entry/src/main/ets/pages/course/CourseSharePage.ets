@@ -7,6 +7,7 @@ import { systemShare } from '@kit.ShareKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import uniformTypeDescriptor from '@ohos.data.uniformTypeDescriptor';
 import { AppStorage } from '../../store/AppStorage';
+import { CourseData } from '../../model/CourseModel';
 import { DynamicScheduleApi } from '../../net/DynamicScheduleApi';
 import {
   initialScheduleShareState,
@@ -25,20 +26,23 @@ struct CourseSharePage {
   );
   private timer: number = -1;
   private appearanceId: number = 0;
-  // 普通课表二维码的实际内容：课表档案 JSON（扫码导入用）。
+  // 普通课表二维码的实际内容：紧凑课表档案（扫码导入用）。
   private staticQrPayload: string = '';
+  // 华为文档：QRCode 组件最多支持 512 个字符，超过会被截断。
+  private static readonly QR_MAX_CHARS = 500;
 
   aboutToAppear(): void {
     const appearanceId: number = ++this.appearanceId;
     this.shareController.onChange = (state: ScheduleShareState): void => {
-      // 普通课表二维码直接放课表档案 JSON，鸿蒙端“扫码导入课表档案”才能识别；
-      // 之前放的是 wusthelper:// 链接，扫出来只能当链接、导不进课表。
+      // 普通课表二维码放紧凑课表档案，鸿蒙端“扫码导入课表档案”才能识别；
+      // 且必须控制在 QRCode 组件的 512 字符上限内，否则会被系统截断、扫出来无法导入。
       if (!state.isDynamic && state.qrValue.length > 0) {
-        if (this.staticQrPayload.length > 0 && this.staticQrPayload.length <= 2800) {
+        if (this.staticQrPayload.length > 0 && this.staticQrPayload.length <= CourseSharePage.QR_MAX_CHARS) {
           state.qrValue = this.staticQrPayload;
+          state.errorMsg = '';
         } else {
           state.qrValue = '';
-          state.errorMsg = '当前课表过大，无法生成可导入的二维码，请改用动态课表';
+          state.errorMsg = '课表内容过长（二维码最多 512 字符），请改用动态课表分享';
         }
       }
       this.share = state;
@@ -67,11 +71,8 @@ struct CourseSharePage {
       this.avatarUrl = avatarUrl;
       try {
         const courses = await storage.getCurrentCourses();
-        this.staticQrPayload = JSON.stringify({
-          name: `${nickname}的课表`,
-          semester: semester,
-          courses: courses
-        });
+        this.staticQrPayload = CourseSharePage.encodeArchive(
+          `${nickname}的课表`, semester, courses);
       } catch (_) {
         this.staticQrPayload = '';
       }
@@ -88,6 +89,34 @@ struct CourseSharePage {
         errorMsg: '读取分享信息失败，请重新进入页面'
       };
     }
+  }
+
+  private static cleanField(value: string): string {
+    return (value || '').replace(/[|;~\r\n]/g, ' ').trim();
+  }
+
+  /**
+   * 把课表压缩成便于扫码的文本：
+   * WUSTC1|学期|名称|课程1;课程2;...
+   * 每门课：课程名~教师~周几~开始节~结束节~周次~地点
+   * 鸿蒙端扫码导入按同一格式解析，长度可控在 QRCode 组件的 512 字符内。
+   */
+  static encodeArchive(name: string, semester: string, courses: CourseData[]): string {
+    const head = `WUSTC1|${CourseSharePage.cleanField(semester)}|${CourseSharePage.cleanField(name)}`;
+    const rows: string[] = [];
+    for (let i = 0; i < courses.length; i++) {
+      const course = courses[i];
+      rows.push([
+        CourseSharePage.cleanField(course.courseName),
+        CourseSharePage.cleanField(course.teacher),
+        `${course.dayOfWeek}`,
+        `${course.startPeriod}`,
+        `${course.endPeriod}`,
+        CourseSharePage.cleanField(course.weekRanges),
+        CourseSharePage.cleanField(course.location)
+      ].join('~'));
+    }
+    return `${head}|${rows.join(';')}`;
   }
 
   private countdownText(): string {

@@ -1,7 +1,7 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { scanBarcode, scanCore } from '@kit.ScanKit';
 import common from '@ohos.app.ability.common';
-import { CourseArchive, getDefaultArchive } from '../../model/CourseModel';
+import { CourseArchive, CourseData, getDefaultArchive } from '../../model/CourseModel';
 import { AppStorage as PreferencesStorage } from '../../store/AppStorage';
 
 @Entry
@@ -44,6 +44,31 @@ struct CourseArchivePage {
     setTimeout(() => router.back(), 800);
   }
 
+  /** 解析分享页生成的紧凑课表（WUSTC1|学期|名称|课程…）。 */
+  static parseCompact(content: string): CourseArchive | null {
+    const parts = content.split('|');
+    if (parts.length < 4 || parts[0] !== 'WUSTC1') return null;
+    const semester = parts[1].trim();
+    const name = parts[2].trim();
+    const rows = parts[3].split(';').filter((row: string) => row.trim().length > 0);
+    if (!name || !semester || rows.length === 0) return null;
+    const courses: CourseData[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const fields = rows[i].split('~');
+      if (fields.length < 7) return null;
+      courses.push({
+        courseName: fields[0],
+        teacher: fields[1],
+        dayOfWeek: Number(fields[2]) || 0,
+        startPeriod: Number(fields[3]) || 0,
+        endPeriod: Number(fields[4]) || 0,
+        weekRanges: fields[5],
+        location: fields[6]
+      });
+    }
+    return { id: `archive_${Date.now()}`, name, semester, courses, isMine: false };
+  }
+
   private async addArchiveByScan(): Promise<void> {
     try {
       const context = getContext(this) as common.UIAbilityContext;
@@ -53,18 +78,27 @@ struct CourseArchivePage {
         enableAlbum: true
       });
       const content = result.originalValue;
-      const parsed = JSON.parse(content) as CourseArchive;
-      if (!parsed.name || !parsed.semester || !Array.isArray(parsed.courses) || parsed.courses.length === 0) {
+      let archive: CourseArchive | null = null;
+      if (content.startsWith('WUSTC1|')) {
+        archive = CourseArchivePage.parseCompact(content);
+      } else {
+        const parsed = JSON.parse(content) as CourseArchive;
+        if (!parsed.name || !parsed.semester || !Array.isArray(parsed.courses) || parsed.courses.length === 0) {
+          promptAction.showToast({ message: '二维码格式不正确', duration: 1500 });
+          return;
+        }
+        archive = {
+          id: `archive_${Date.now()}`,
+          name: parsed.name,
+          semester: parsed.semester,
+          courses: parsed.courses,
+          isMine: false
+        };
+      }
+      if (!archive) {
         promptAction.showToast({ message: '二维码格式不正确', duration: 1500 });
         return;
       }
-      const archive: CourseArchive = {
-        id: `archive_${Date.now()}`,
-        name: parsed.name,
-        semester: parsed.semester,
-        courses: parsed.courses,
-        isMine: false
-      };
       this.archives = [...this.archives, archive];
       await PreferencesStorage.getInstance().setCourseArchives(this.archives);
       AppStorage.setOrCreate<CourseArchive[]>('courseArchives', this.archives);

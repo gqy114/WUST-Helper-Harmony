@@ -56,16 +56,19 @@ test('第二课堂页面本身也会把“无效查询请求”转为可读提�
   assert.match(page, /rawMessage\.indexOf\('无效'\)/, '没有识别后端的无效请求文案');
 });
 
-test('普通课表二维码放课表档案 JSON，可供鸿蒙扫码导入', async () => {
+test('普通课表二维码使用紧凑格式并限制在 512 字符内', async () => {
   const page = await source('pages/course/CourseSharePage.ets');
-  assert.match(page, /private staticQrPayload: string = '';/, '缺少课表档案二维码内容');
-  assert.match(page, /name: `\$\{nickname\}的课表`/, '二维码内容不是课表档案结构');
-  assert.match(page, /state\.qrValue = this\.staticQrPayload/, '静态二维码仍在使用链接');
-  assert.match(page, /当前课表过大，无法生成可导入的二维码/, '缺少课表过大的提示');
+  assert.match(page, /private staticQrPayload: string = '';/, '缺少课表二维码内容');
+  assert.match(page, /QR_MAX_CHARS = 500;/, '缺少 512 字符上限保护');
+  assert.match(page, /this\.staticQrPayload\.length <= CourseSharePage\.QR_MAX_CHARS/, '没有按上限校验');
+  assert.match(page, /`WUSTC1\|/, '二维码内容没有使用紧凑格式');
+  assert.match(page, /state\.qrValue = this\.staticQrPayload/, '静态二维码没有使用课表内容');
+  assert.match(page, /课表内容过长（二维码最多 512 字符）/, '缺少内容过长的提示');
 });
-
-test('扫码导入页面仍按课表档案 JSON 解析', async () => {
+test('扫码导入页面能解析紧凑格式，并兼容旧 JSON', async () => {
   const page = await source('pages/course/CourseArchivePage.ets');
-  assert.match(page, /JSON\.parse\(content\) as CourseArchive/, '扫码导入没有解析课表档案');
-  assert.match(page, /Array\.isArray\(parsed\.courses\)/, '扫码导入没有校验课程数组');
+  assert.match(page, /static parseCompact\(content: string\): CourseArchive \| null/, '缺少紧凑格式解析');
+  assert.match(page, /parts\[0\] !== 'WUSTC1'/, '没有识别紧凑格式前缀');
+  assert.match(page, /content\.startsWith\('WUSTC1\|'\)/, '扫码后没有优先解析紧凑格式');
+  assert.match(page, /JSON\.parse\(content\) as CourseArchive/, '没有兼容旧的 JSON 课表档案');
 });
