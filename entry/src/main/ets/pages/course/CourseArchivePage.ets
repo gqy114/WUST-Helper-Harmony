@@ -44,7 +44,7 @@ struct CourseArchivePage {
     setTimeout(() => router.back(), 800);
   }
 
-  /** 解析分享页生成的紧凑课表（WUSTC1|学期|名称|课程…）。 */
+  /** 解析分享页生成的紧凑课表（WUSTC1|学期|名称|课程…），保留物理实验信息。 */
   static parseCompact(content: string): CourseArchive | null {
     const parts = content.split('|');
     if (parts.length < 4 || parts[0] !== 'WUSTC1') return null;
@@ -56,7 +56,7 @@ struct CourseArchivePage {
     for (let i = 0; i < rows.length; i++) {
       const fields = rows[i].split('~');
       if (fields.length < 7) return null;
-      courses.push({
+      const course: CourseData = {
         courseName: fields[0],
         teacher: fields[1],
         dayOfWeek: Number(fields[2]) || 0,
@@ -64,20 +64,65 @@ struct CourseArchivePage {
         endPeriod: Number(fields[4]) || 0,
         weekRanges: fields[5],
         location: fields[6]
-      });
+      };
+      if (fields.length >= 9 && fields[7] === '1') {
+        course.isPhysicalExperiment = true;
+        course.physicalDate = fields[8];
+      }
+      courses.push(course);
     }
     return { id: `archive_${Date.now()}`, name, semester, courses, isMine: false };
+  }
+
+  private async scanOnce(context: common.UIAbilityContext): Promise<string> {
+    const result = await scanBarcode.startScanForResult(context, {
+      scanTypes: [scanCore.ScanType.QR_CODE],
+      enableMultiMode: false,
+      enableAlbum: true
+    });
+    return result.originalValue;
+  }
+
+  /** 收集一张或多张二维码（WUSTC2|i/n|片段），拼回完整内容。 */
+  private async collectQrContent(context: common.UIAbilityContext): Promise<string> {
+    const parts: string[] = [];
+    let total = 0;
+    for (let round = 0; round < 12; round++) {
+      const content = await this.scanOnce(context);
+      if (!content.startsWith('WUSTC2|')) {
+        return content;
+      }
+      const match = /^WUSTC2\|(\d+)\/(\d+)\|([\s\S]*)$/.exec(content);
+      if (!match) return '';
+      const index = Number(match[1]);
+      const count = Number(match[2]);
+      if (count < 1 || count > 9 || index < 1 || index > count) return '';
+      total = count;
+      parts[index - 1] = match[3];
+      let collected = 0;
+      for (let i = 0; i < total; i++) {
+        if (parts[i] !== undefined && parts[i].length >= 0) collected++;
+      }
+      if (collected < total) {
+        promptAction.showToast({
+          message: `已扫描 ${collected}/${total} 张，请继续扫描下一张`,
+          duration: 1800
+        });
+        continue;
+      }
+      return parts.join('');
+    }
+    return '';
   }
 
   private async addArchiveByScan(): Promise<void> {
     try {
       const context = getContext(this) as common.UIAbilityContext;
-      const result = await scanBarcode.startScanForResult(context, {
-        scanTypes: [scanCore.ScanType.QR_CODE],
-        enableMultiMode: false,
-        enableAlbum: true
-      });
-      const content = result.originalValue;
+      const content = await this.collectQrContent(context);
+      if (!content) {
+        promptAction.showToast({ message: '二维码不完整，请重新扫码', duration: 1800 });
+        return;
+      }
       let archive: CourseArchive | null = null;
       if (content.startsWith('WUSTC1|')) {
         archive = CourseArchivePage.parseCompact(content);

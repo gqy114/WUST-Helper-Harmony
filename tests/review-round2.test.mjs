@@ -56,19 +56,28 @@ test('第二课堂页面本身也会把“无效查询请求”转为可读提�
   assert.match(page, /rawMessage\.indexOf\('无效'\)/, '没有识别后端的无效请求文案');
 });
 
-test('普通课表二维码使用紧凑格式并限制在 512 字符内', async () => {
+test('课程多时拆成多张二维码，且带上物理实验信息', async () => {
   const page = await source('pages/course/CourseSharePage.ets');
-  assert.match(page, /private staticQrPayload: string = '';/, '缺少课表二维码内容');
   assert.match(page, /QR_MAX_CHARS = 500;/, '缺少 512 字符上限保护');
-  assert.match(page, /this\.staticQrPayload\.length <= CourseSharePage\.QR_MAX_CHARS/, '没有按上限校验');
-  assert.match(page, /`WUSTC1\|/, '二维码内容没有使用紧凑格式');
-  assert.match(page, /state\.qrValue = this\.staticQrPayload/, '静态二维码没有使用课表内容');
-  assert.match(page, /课表内容过长（二维码最多 512 字符）/, '缺少内容过长的提示');
+  assert.match(page, /static chunkify\(payload: string\): string\[\]/, '缺少拆分多张二维码逻辑');
+  assert.match(page, /WUSTC2\|/, '缺少多张二维码前缀');
+  assert.match(page, /@State private qrParts: string\[\] = \[\];/, '缺少多张二维码状态');
+  assert.match(page, /ForEach\(this\.qrParts/, '页面没有渲染多张二维码');
+  assert.match(page, /course\.isPhysicalExperiment \? '1' : '0'/, '没有编码物理实验标记');
+  assert.match(page, /course\.physicalDate \|\| ''/, '没有编码物理实验日期');
 });
-test('扫码导入页面能解析紧凑格式，并兼容旧 JSON', async () => {
+
+test('空课表不生成二维码', async () => {
+  const page = await source('pages/course/CourseSharePage.ets');
+  assert.match(page, /courses\.length > 0/, '没有判断空课表');
+  assert.match(page, /当前课表没有课程，暂无可分享内容/, '空课表缺少提示');
+});
+
+test('扫码导入支持多张二维码，并恢复物理实验信息', async () => {
   const page = await source('pages/course/CourseArchivePage.ets');
-  assert.match(page, /static parseCompact\(content: string\): CourseArchive \| null/, '缺少紧凑格式解析');
-  assert.match(page, /parts\[0\] !== 'WUSTC1'/, '没有识别紧凑格式前缀');
-  assert.match(page, /content\.startsWith\('WUSTC1\|'\)/, '扫码后没有优先解析紧凑格式');
+  assert.match(page, /private async collectQrContent\(context: common\.UIAbilityContext\)/, '缺少多张二维码收集');
+  assert.match(page, /WUSTC2\\\|\(\\d\+\)\\\/\(\\d\+\)/, '没有解析多张二维码前缀');
+  assert.match(page, /course\.isPhysicalExperiment = true;/, '没有恢复物理实验标记');
+  assert.match(page, /course\.physicalDate = fields\[8\];/, '没有恢复物理实验日期');
   assert.match(page, /JSON\.parse\(content\) as CourseArchive/, '没有兼容旧的 JSON 课表档案');
 });

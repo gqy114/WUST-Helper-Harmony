@@ -28,22 +28,32 @@ struct CourseSharePage {
   private appearanceId: number = 0;
   // 普通课表二维码的实际内容：紧凑课表档案（扫码导入用）。
   private staticQrPayload: string = '';
+  // 课程多时拆成多张二维码，扫码端依次扫完再导入。
+  @State private qrParts: string[] = [];
   // 华为文档：QRCode 组件最多支持 512 个字符，超过会被截断。
   private static readonly QR_MAX_CHARS = 500;
 
   aboutToAppear(): void {
     const appearanceId: number = ++this.appearanceId;
     this.shareController.onChange = (state: ScheduleShareState): void => {
-      // 普通课表二维码放紧凑课表档案，鸿蒙端“扫码导入课表档案”才能识别；
-      // 且必须控制在 QRCode 组件的 512 字符上限内，否则会被系统截断、扫出来无法导入。
       if (!state.isDynamic && state.qrValue.length > 0) {
-        if (this.staticQrPayload.length > 0 && this.staticQrPayload.length <= CourseSharePage.QR_MAX_CHARS) {
-          state.qrValue = this.staticQrPayload;
-          state.errorMsg = '';
-        } else {
+        if (this.staticQrPayload.length === 0) {
+          this.qrParts = [];
           state.qrValue = '';
-          state.errorMsg = '课表内容过长（二维码最多 512 字符），请改用动态课表分享';
+          state.errorMsg = '当前课表没有课程，暂无可分享内容';
+        } else {
+          const parts = CourseSharePage.chunkify(this.staticQrPayload);
+          this.qrParts = parts;
+          if (parts.length === 0) {
+            state.qrValue = '';
+            state.errorMsg = '课表内容过长，无法生成二维码，请改用动态课表分享';
+          } else {
+            state.qrValue = parts[0];
+            state.errorMsg = parts.length > 1 ? `课程较多，请依次扫描 ${parts.length} 张二维码` : '';
+          }
         }
+      } else {
+        this.qrParts = [];
       }
       this.share = state;
     };
@@ -71,8 +81,9 @@ struct CourseSharePage {
       this.avatarUrl = avatarUrl;
       try {
         const courses = await storage.getCurrentCourses();
-        this.staticQrPayload = CourseSharePage.encodeArchive(
-          `${nickname}的课表`, semester, courses);
+        this.staticQrPayload = courses.length > 0
+          ? CourseSharePage.encodeArchive(`${nickname}的课表`, semester, courses)
+          : '';
       } catch (_) {
         this.staticQrPayload = '';
       }
@@ -113,10 +124,32 @@ struct CourseSharePage {
         `${course.startPeriod}`,
         `${course.endPeriod}`,
         CourseSharePage.cleanField(course.weekRanges),
-        CourseSharePage.cleanField(course.location)
+        CourseSharePage.cleanField(course.location),
+        // 物理实验标记与具体日期要一并带上，否则导入后信息丢失。
+        course.isPhysicalExperiment ? '1' : '0',
+        CourseSharePage.cleanField(course.physicalDate || '')
       ].join('~'));
     }
     return `${head}|${rows.join(';')}`;
+  }
+
+  /** 把紧凑课表拆成多张二维码；超过 9 张视为无法分享。 */
+  static chunkify(payload: string): string[] {
+    const max = CourseSharePage.QR_MAX_CHARS;
+    if (payload.length <= max) return [payload];
+    // 预留 "WUSTC2|9/9|" 前缀空间。
+    const chunkSize = max - 12;
+    const raw: string[] = [];
+    for (let start = 0; start < payload.length; start += chunkSize) {
+      raw.push(payload.substring(start, start + chunkSize));
+    }
+    if (raw.length > 9) return [];
+    const total = raw.length;
+    const parts: string[] = [];
+    for (let i = 0; i < raw.length; i++) {
+      parts.push(`WUSTC2|${i + 1}/${total}|${raw[i]}`);
+    }
+    return parts;
   }
 
   private countdownText(): string {
@@ -230,7 +263,17 @@ struct CourseSharePage {
               }.alignItems(HorizontalAlign.Start).margin({ left: 18 });
             }.width('100%').padding({ left: 24, top: 24, bottom: 24 });
             Column() {
-              if (this.share.qrValue.length > 0) {
+              if (!this.share.isDynamic && this.qrParts.length > 0) {
+                Column() {
+                  ForEach(this.qrParts, (part: string, index: number) => {
+                    Column() {
+                      QRCode(part).width(240).height(240).backgroundColor(Color.White);
+                      Text(this.qrParts.length > 1 ? `第 ${index + 1} / ${this.qrParts.length} 张` : '')
+                        .fontSize(13).fontColor('#888888').margin({ top: 6 });
+                    }.margin({ bottom: 12 });
+                  }, (part: string, index: number) => `${index}-${part.length}`);
+                }
+              } else if (this.share.qrValue.length > 0) {
                 QRCode(this.share.qrValue).width(270).height(270).backgroundColor(Color.White);
               } else {
                 Column() {
