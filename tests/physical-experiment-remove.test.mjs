@@ -117,9 +117,12 @@ test('移除在同一个写入任务里完成，避免实验课被迁移回课�
   store.getCurrentArchiveId = async () => 'mine';
   store.physicalExperimentKey = async () => 'physicalExperimentCourses';
   store.archiveKey = async (base) => base;
+  store.getStudentId = async () => '2024001';
   let migratedFlag = '';
+  let migratedOwner = '';
   store.getStr = async (key, def = '') => {
     if (key === 'physicalExperimentMigrated') return migratedFlag;
+    if (key === 'physicalExperimentMigratedOwner') return migratedOwner;
     if (key === 'courseArchives') return '';
     return def;
   };
@@ -150,9 +153,12 @@ test('没有实验课时原子方法不写存储', async () => {
   store.getCurrentArchiveId = async () => 'mine';
   store.physicalExperimentKey = async () => 'physicalExperimentCourses';
   store.archiveKey = async (base) => base;
+  store.getStudentId = async () => '2024001';
   let migratedFlag = '';
+  let migratedOwner = '';
   store.getStr = async (key, def = '') => {
     if (key === 'physicalExperimentMigrated') return migratedFlag;
+    if (key === 'physicalExperimentMigratedOwner') return migratedOwner;
     if (key === 'courseArchives') return '';
     return def;
   };
@@ -328,9 +334,12 @@ async function makeConcurrentStore(initialCourses, options = {}) {
   store.getCurrentArchiveId = async () => 'mine';
   store.physicalExperimentKey = async () => 'physicalExperimentCourses';
   store.archiveKey = async (base) => base;
+  store.getStudentId = async () => '2024001';
   let migratedFlag = '';
+  let migratedOwner = '';
   store.getStr = async (key, def = '') => {
     if (key === 'physicalExperimentMigrated') return migratedFlag;
+    if (key === 'physicalExperimentMigratedOwner') return migratedOwner;
     if (key === 'courseArchives') return '';
     return def;
   };
@@ -343,6 +352,8 @@ async function makeConcurrentStore(initialCourses, options = {}) {
   store.getStoredCourses = async (key) => (key === 'currentCourses' ? current.slice() : experiments.slice());
   store.putStr = async (key, value) => {
     if (key === 'physicalExperimentMigrated') { migratedFlag = value; return; }
+    if (key === 'physicalExperimentMigratedOwner') { migratedOwner = value; return; }
+    if (key === 'physicalExperimentMigratedOwner') { migratedOwner = value; return; }
     if (key === 'physicalExperimentCourses') {
       experiments = JSON.parse(value);
       // 复现评审步骤：清空实验缓存后暂停，给并发读取留出插入窗口。
@@ -423,4 +434,10 @@ test('旧实验课只迁移一次，切回自己档案不会吸收别人的实�
   assert.match(store, /const migrated = await this\.getStr\('physicalExperimentMigrated', ''\);/,
     '缺少一次性迁移标记');
   assert.match(store, /if \(migrated\) \{\s*return saved;\s*\}/, '迁移完成后仍在从 currentCourses 提取');
+});
+
+test('旧版实验课数据按归属账号迁移，切号不会认领', async () => {
+  const store = await source('../entry/src/main/ets/store/AppStorage.ts');
+  assert.match(store, /physicalExperimentMigratedOwner/, '没有记录实验课数据归属账号');
+  assert.match(store, /if \(owner && owner !== sid\) \{\s*return saved;\s*\}/, '换了账号仍在迁移旧实验课');
 });

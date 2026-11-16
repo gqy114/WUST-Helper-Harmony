@@ -579,11 +579,19 @@ export class AppStorage {
     if (archiveId !== 'mine') {
       return saved;
     }
-    // 旧版数据（全局 key / 混在 currentCourses 里）只迁移一次：
-    // 迁移完成后不再从 currentCourses 提取，否则切到别人档案再切回来会把别人的实验课带过来。
+    // 旧版数据（全局 key）只迁移给它的归属账号：旧数据尚未迁移时切换账号，
+    // 新账号不能认领旧账号的实验课。
+    const sid = (await this.getStudentId()).trim();
+    const owner = await this.getStr('physicalExperimentMigratedOwner', '');
+    if (owner && owner !== sid) {
+      return saved;
+    }
     const migrated = await this.getStr('physicalExperimentMigrated', '');
     if (migrated) {
       return saved;
+    }
+    if (!owner) {
+      await this.putStr('physicalExperimentMigratedOwner', sid);
     }
     if (saved.length === 0 && key !== 'physicalExperimentCourses') {
       const plainLegacy = await this.getStoredCourses('physicalExperimentCourses');
