@@ -48,3 +48,9 @@ test('校园资讯接口走 /News/Support，包含列表、详情、搜索', asy
   assert.match(api, /\/search/, '缺少搜索接口');
   assert.match(api, /page_size/, '缺少分页参数');
 });
+
+test('主节点 404 时校园资讯自动切换备用节点', async () => {
+  const api = await source('net/CampusNewsApi.ets');
+  assert.match(api, /const BACKUP = 'http:\/\/port\.happylandmc\.cc:52144\/News\/Support'/, '缺少备用节点');
+  assert.match(api, /const urls: string\[\] = \[`\$\{PRIMARY\}\$\{path\}`, `\$\{BACKUP\}\$\{path\}`\]/, '没有依次尝试主备节点');
+});

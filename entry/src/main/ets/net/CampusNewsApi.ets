@@ -1,8 +1,8 @@
 /**
  * 校园资讯接口（后端 /News/Support）。
  *
- * 旧的 https://news.wustlinghang.cn 网页已弃用，改为后端新闻服务：
- * 列表 /articles、搜索 /search、详情 /articles/:id。
+ * 主节点不可用（例如部署未包含新闻服务、返回 404）时自动切换备用节点，
+ * 避免用户只看到“加载失败”。
  */
 import { HttpRequest } from './HttpRequest';
 
@@ -18,6 +18,7 @@ export interface NewsArticle {
   published_at?: string;
   summary?: string;
   images?: string[];
+  cover_url?: string;
 }
 
 export interface NewsListPage {
@@ -45,6 +46,12 @@ interface NewsEnvelope<T> {
   data?: T;
 }
 
+interface NewsMessageEnvelope {
+  code?: number;
+  message?: string;
+  msg?: string;
+}
+
 export class CampusNewsApi {
   private static headers(): Record<string, string> {
     const headers: Record<string, string> = {};
@@ -57,50 +64,48 @@ export class CampusNewsApi {
     return code === 0 || code === 200 || code === 10000;
   }
 
-  private static messageOf(resp: NewsEnvelope<object> | undefined, fallback: string): string {
+  private static messageOf(resp: NewsMessageEnvelope | undefined, fallback: string): string {
     const message = (resp?.message || resp?.msg || '').trim();
     return message || fallback;
   }
 
+  /** 依次尝试主节点、备用节点；都失败才抛错。 */
+  private static async get<T>(path: string): Promise<T> {
+    const urls: string[] = [`${PRIMARY}${path}`, `${BACKUP}${path}`];
+    let lastMessage = '校园资讯加载失败';
+    for (let i = 0; i < urls.length; i++) {
+      try {
+        const result = await HttpRequest.request<NewsEnvelope<T>>(urls[i], 'GET', {
+          headers: CampusNewsApi.headers(),
+          pinBackend: true
+        });
+        const resp = result.data;
+        if (resp && CampusNewsApi.success(resp.code) && resp.data) {
+          return resp.data;
+        }
+        lastMessage = CampusNewsApi.messageOf(resp, lastMessage);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        if (message && message !== '[object Object]') lastMessage = message;
+      }
+    }
+    throw new Error(lastMessage);
+  }
+
   static async articles(page: number = 1, pageSize: number = 20, collegeId: string = '',
     categoryUrl: string = ''): Promise<NewsListPage> {
-    const params = [`page=${page}`, `page_size=${pageSize}`];
+    const params: string[] = [`page=${page}`, `page_size=${pageSize}`];
     if (collegeId) params.push(`college_id=${encodeURIComponent(collegeId)}`);
     if (categoryUrl) params.push(`category_url=${encodeURIComponent(categoryUrl)}`);
-    const query = `?${params.join('&')}`;
-    try {
-      const result = await HttpRequest.request<NewsEnvelope<NewsListPage>>(`${PRIMARY}/articles${query}`, 'GET',
-        { headers: CampusNewsApi.headers() });
-      const resp = result.data;
-      if (resp && CampusNewsApi.success(resp.code) && resp.data) {
-        return resp.data;
-      }
-      throw new Error(CampusNewsApi.messageOf(resp, '校园资讯加载失败'));
-    } catch (error) {
-      // 主后端失败时由 HttpRequest 自动切换备用节点，这里只负责给出可读错误。
-      const message = error instanceof Error && error.message ? error.message : '校园资讯加载失败';
-      throw new Error(message === '[object Object]' ? '校园资讯加载失败' : message);
-    }
+    return CampusNewsApi.get<NewsListPage>(`/articles?${params.join('&')}`);
   }
 
   static async detail(id: string): Promise<NewsDetail> {
-    const result = await HttpRequest.request<NewsEnvelope<NewsDetail>>(
-      `${PRIMARY}/articles/${encodeURIComponent(id)}`, 'GET', { headers: CampusNewsApi.headers() });
-    const resp = result.data;
-    if (resp && CampusNewsApi.success(resp.code) && resp.data) {
-      return resp.data;
-    }
-    throw new Error(CampusNewsApi.messageOf(resp, '资讯详情加载失败'));
+    return CampusNewsApi.get<NewsDetail>(`/articles/${encodeURIComponent(id)}`);
   }
 
   static async search(keyword: string, page: number = 1, pageSize: number = 20): Promise<NewsListPage> {
     const query = `?q=${encodeURIComponent(keyword)}&page=${page}&page_size=${pageSize}`;
-    const result = await HttpRequest.request<NewsEnvelope<NewsListPage>>(`${PRIMARY}/search${query}`, 'GET',
-      { headers: CampusNewsApi.headers() });
-    const resp = result.data;
-    if (resp && CampusNewsApi.success(resp.code) && resp.data) {
-      return resp.data;
-    }
-    throw new Error(CampusNewsApi.messageOf(resp, '搜索失败'));
+    return CampusNewsApi.get<NewsListPage>(`/search${query}`);
   }
 }
