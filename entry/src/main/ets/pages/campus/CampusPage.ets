@@ -32,6 +32,9 @@ export struct CampusPage {
   }
 
   private async load(reset: boolean): Promise<void> {
+    // 先判断是否正在加载：重复点“加载更多”不能推进代次，
+    // 否则正在进行的请求回来时会被判定过期，loadingMore 永远复位不了。
+    if (!reset && (this.loadingMore || !this.hasMore)) return;
     const generation = ++this.requestGeneration;
     if (reset) {
       this.page = 1;
@@ -40,7 +43,6 @@ export struct CampusPage {
       this.errorText = '';
       this.articles = [];
     } else {
-      if (this.loadingMore || !this.hasMore) return;
       this.loadingMore = true;
     }
     try {

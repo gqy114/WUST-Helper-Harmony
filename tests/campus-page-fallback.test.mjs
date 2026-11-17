@@ -54,3 +54,11 @@ test('主节点 404 时校园资讯自动切换备用节点', async () => {
   assert.match(api, /const BACKUP = 'http:\/\/port\.happylandmc\.cc:52144\/News\/Support'/, '缺少备用节点');
   assert.match(api, /const urls: string\[\] = \[`\$\{PRIMARY\}\$\{path\}`, `\$\{BACKUP\}\$\{path\}`\]/, '没有依次尝试主备节点');
 });
+
+test('加载更多进行中重复点击不会把请求代次推进导致卡在加载中', async () => {
+  const page = await source('pages/campus/CampusPage.ets');
+  const load = page.match(/private async load\(reset: boolean\): Promise<void> \{[\s\S]*?\n  \}/)?.[0] || '';
+  const guardIndex = load.indexOf('!reset && (this.loadingMore || !this.hasMore)');
+  const generationIndex = load.indexOf('++this.requestGeneration');
+  assert.ok(guardIndex >= 0 && generationIndex > guardIndex, '应先判断是否正在加载，再推进请求代次');
+});
