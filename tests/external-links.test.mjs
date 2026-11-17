@@ -8,9 +8,10 @@ const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
 test('QQ 群优先用 openLink 打开深链，失败再退回 Want 与复制', async () => {
   const page = await source(`${root}/ets/pages/profile/QQGroupPage.ets`);
-  assert.match(page, /await context\.openLink\(links\[i\]\)/, '缺少 openLink 跳转');
+  assert.match(page, /const openable: string\[\] = \[\];/, '缺少可用链接列表');
+  assert.match(page, /await context\.openLink\(openable\[i\]\)/, '缺少 openLink 跳转');
   assert.match(page, /mqqapi:\/\/card\/show_pslcard\?src_type=internal&version=1&uin=\$\{QQ_GROUP_NUMBER\}/, '缺少群卡片深链');
-  assert.match(page, /await context\.startAbility\(want\)/, '缺少 Want 兜底');
+  assert.doesNotMatch(page, /await context\.startAbility\(want\)/, '不应再用会弹系统选择框的 Want 兜底');
   assert.match(page, /const copied = await this\.copyGroupNumber\(false\)/, '打不开时没有等待复制结果');
   assert.match(page, /copied\s*\? '未检测到 QQ，已复制群号/, '复制成功提示没有使用真实结果');
   assert.match(page, /: '未检测到 QQ，且复制失败，请手动记录群号'/, '复制失败仍可能误报已复制');

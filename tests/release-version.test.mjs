@@ -6,10 +6,18 @@ import { readFile } from 'node:fs/promises';
 const root = '../';
 const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
-test('应用版本已升到 1.0.3 / 1000003', async () => {
+test('应用版本号合法且不低于 1.0.3 / 1000003', async () => {
   const app = await source(`${root}AppScope/app.json5`);
-  assert.match(app, /"versionName":\s*"1\.0\.3"/, 'versionName 未更新');
-  assert.match(app, /"versionCode":\s*1000003/, 'versionCode 未更新');
+  const nameMatch = /"versionName":\s*"(\d+)\.(\d+)\.(\d+)"/.exec(app);
+  const codeMatch = /"versionCode":\s*(\d+)/.exec(app);
+  assert.ok(nameMatch, '缺少合法 versionName');
+  assert.ok(codeMatch, '缺少 versionCode');
+  const major = Number(nameMatch[1]);
+  const minor = Number(nameMatch[2]);
+  const patch = Number(nameMatch[3]);
+  assert.ok(major > 1 || (major === 1 && minor > 0) || (major === 1 && minor === 0 && patch >= 3),
+    `versionName 低于 1.0.3：${nameMatch[0]}`);
+  assert.ok(Number(codeMatch[1]) >= 1000003, `versionCode 低于 1000003：${codeMatch[1]}`);
 });
 
 test('页面版本号从 bundle 读取，不再写死', async () => {
