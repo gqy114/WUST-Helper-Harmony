@@ -1,0 +1,38 @@
+// 倒计时页考试列表：静态 import、失败可见提示、不输出令牌。
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const source = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('考试列表使用静态 AppStorage 引用，不再动态 import', async () => {
+  const page = await source('entry/src/main/ets/pages/countdown/CountdownPage.ets');
+  assert.match(page, /import \{ AppStorage \} from '\.\.\/\.\.\/store\/AppStorage';/, '缺少静态导入');
+  assert.doesNotMatch(page, /await import\(/, '动态 import 在扩展进程/部分设备会失败');
+});
+
+test('考试获取失败时给出可见提示，而不是只留“没有内容”', async () => {
+  const page = await source('entry/src/main/ets/pages/countdown/CountdownPage.ets');
+  assert.match(page, /@State private loadHint: string = '';/, '缺少失败提示状态');
+  assert.match(page, /考试列表获取失败/, '失败只写日志，用户看不到原因');
+  assert.match(page, /考试安排获取失败，请重新登录或稍后重试/, '缺少用户可读的失败提示');
+  assert.match(page, /没有获取到考试安排：可能登录已失效，或本学期没有考试/, '空列表不能直接断言没有考试');
+  assert.match(page, /登录状态已失效，请重新登录后查看考试安排/, '无令牌时缺少登录失效提示');
+});
+
+test('诊断日志不输出令牌内容', async () => {
+  const page = await source('entry/src/main/ets/pages/countdown/CountdownPage.ets');
+  assert.match(page, /hasToken=\$\{hasToken\}/, '日志应只输出是否有令牌');
+  assert.doesNotMatch(page, /console\.(info|warn|error)\([^)]*token\)/, '日志不能直接输出令牌');
+});
+
+test('部分失败不会被当成“暂无”，且其它倒计时存在时也能看到提示', async () => {
+  const page = await source('entry/src/main/ets/pages/countdown/CountdownPage.ets');
+  assert.match(page, /this\.examFailed = true;/, '考试失败没有记录状态');
+  assert.match(page, /this\.customFailed = true;/, '自定义倒计时失败没有记录状态');
+  assert.match(page, /if \(this\.examFailed\) \{[\s\S]*?考试安排获取失败/, '考试失败时应显示失败原因');
+  assert.match(page, /if \(this\.customFailed\) \{[\s\S]*?hints\.push/, '自定义失败应显示对应原因');
+  assert.match(page, /hints\.push\(hasToken/, '空列表提示应按是否有令牌区分');
+  const hintRows = page.match(/if \(this\.loadHint\.length > 0\) \{/g) || [];
+  assert.ok(hintRows.length >= 2, '列表非空时也要显示失败提示');
+});

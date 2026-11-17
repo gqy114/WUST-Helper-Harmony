@@ -12,13 +12,20 @@ let widgetStorage: LocalStorage = new LocalStorage();
 @Component
 struct WidgetCard {
   @LocalStorageProp('mode') mode: string = 'countdown';
-  @LocalStorageProp('title') title: string = '梧桐助手';
+  @LocalStorageProp('title') title: string = '武科大助手';
   @LocalStorageProp('subtitle') subtitle: string = '正在加载数据…';
   @LocalStorageProp('line0') line0: string = '';
   @LocalStorageProp('line1') line1: string = '';
   @LocalStorageProp('line2') line2: string = '';
   @LocalStorageProp('line3') line3: string = '';
-  @LocalStorageProp('accent') accent: string = '#1EC98D';
+  @LocalStorageProp('days') days: string = '';
+  @LocalStorageProp('detail') detail: string = '';
+  @LocalStorageProp('accent') accent: string = '#EC5A3C';
+  @LocalStorageProp('bg') bg: string = '';
+  @LocalStorageProp('bgOpacity') bgOpacity: number = 0.7;
+  @LocalStorageProp('cardBg') cardBg: string = '#FFFFFF';
+  @LocalStorageProp('textColor') textColor: string = '#111111';
+  @LocalStorageProp('subColor') subColor: string = '#666666';
 
   private lineAt(index: number): string {
     if (index === 0) return this.line0;
@@ -33,14 +40,75 @@ struct WidgetCard {
     return result;
   }
 
-  build() {
+  @Builder
+  private countdownContent() {
+    Row() {
+      Column() {
+        Text(this.title)
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.textColor)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+        if (this.line0.length > 0) {
+          Text(this.line0)
+            .fontSize(13)
+            .fontColor(this.subColor)
+            .maxLines(1)
+            .margin({ top: 6 })
+            .width('100%')
+        }
+        if (this.detail.length > 0) {
+          Text(this.detail)
+            .fontSize(12)
+            .fontColor(this.subColor)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 4 })
+            .width('100%')
+        }
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      .height('100%')
+
+      Column() {
+        if (this.days.length > 0) {
+          Text(this.days)
+            .fontSize(52)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.accent)
+            .maxLines(1)
+          Text('天')
+            .fontSize(13)
+            .fontColor(this.subColor)
+        } else {
+          Text('—')
+            .fontSize(46)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.subColor)
+        }
+      }
+      .alignItems(HorizontalAlign.Center)
+      .justifyContent(FlexAlign.Center)
+      .width(96)
+      .height('100%')
+    }
+    .width('100%')
+    .height('100%')
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  private courseContent() {
     Column() {
       Row() {
         Column() {
           Text(this.title)
             .fontSize(17)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#222222')
+            .fontColor(this.textColor)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
@@ -57,14 +125,14 @@ struct WidgetCard {
       }
       .width('100%')
 
-      Divider().color('#F0F0F0').margin({ top: 8, bottom: 6 }).strokeWidth(0.5)
+      Divider().color('#33000000').margin({ top: 8, bottom: 6 }).strokeWidth(0.5)
 
       Column() {
         ForEach(this.lineIndexes(), (index: number) => {
           if (this.lineAt(index).length > 0) {
             Text(this.lineAt(index))
               .fontSize(12)
-              .fontColor('#444444')
+              .fontColor(this.subColor)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .width('100%')
@@ -75,23 +143,42 @@ struct WidgetCard {
       .alignItems(HorizontalAlign.Start)
       .width('100%')
       .layoutWeight(1)
-
-      Row() {
-        Text('梧桐助手')
-          .fontSize(10)
-          .fontColor('#BBBBBB')
-          .layoutWeight(1)
-        Text('点击打开')
-          .fontSize(10)
-          .fontColor('#BBBBBB')
-      }
-      .width('100%')
     }
     .width('100%')
     .height('100%')
-    .padding(12)
-    .backgroundColor('#FFFFFF')
+  }
+
+  build() {
+    Stack() {
+      // 底色 + 背景图；不透明度只作用于背景图，不影响文字。
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.cardBg)
+      if (this.bg.length > 0) {
+        Image(this.bg)
+          .width('100%')
+          .height('100%')
+          .objectFit(ImageFit.Cover)
+          .opacity(this.bgOpacity)
+      }
+
+      Column() {
+        if (this.mode === 'countdown') {
+          this.countdownContent()
+        } else {
+          this.courseContent()
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .padding(16)
+      .justifyContent(FlexAlign.Center)
+    }
+    .width('100%')
+    .height('100%')
     .borderRadius(16)
+    .clip(true)
     .onClick(() => {
       postCardAction(this, {
         action: 'router',

@@ -106,33 +106,21 @@ async function loadFavorites(initialRaw = '[]', options = {}) {
   const app = new SyntheticModule(['AppStorage'], function () {
     this.setExport('AppStorage', { getInstance: () => storage });
   }, { context });
-  const apiCalls = { add: 0, remove: 0, list: 0 };
-  const libraryApi = new SyntheticModule(['LibraryApi', 'LibraryFavoriteEntry'], function () {
-    this.setExport('LibraryApi', {
-      addFavorite: async () => { apiCalls.add += 1; return true; },
-      removeFavorite: async () => { apiCalls.remove += 1; return true; },
-      listFavorites: async () => { apiCalls.list += 1; return null; },
-    });
-    this.setExport('LibraryFavoriteEntry', undefined);
-  }, { context });
   const mod = new SourceTextModule(code, { context });
   await mod.link((name) => {
     if (name === './AppStorage') return app;
-    if (name === '../net/LibraryApi') return libraryApi;
     throw new Error(`Unexpected import: ${name}`);
   });
   await mod.evaluate();
-  return { favorites: mod.namespace.LibraryFavorites.getInstance(), store, apiCalls };
+  return { favorites: mod.namespace.LibraryFavorites.getInstance(), store };
 }
 
-test('匿名状态即使残留旧 token，也只使用本地收藏且不请求服务端', async () => {
-  const { favorites, apiCalls } = await loadFavorites([], { studentId: '', token: 'stale_token' });
+test('收藏只使用本机存储，不发任何网络请求', async () => {
+  const { favorites } = await loadFavorites([], { studentId: '', token: 'stale_token' });
   const item = { kind: 'article', id: 12, title: '本地收藏', link: 'https://a', tag: '活动' };
 
   assert.equal(await favorites.toggle(item), true);
   assert.equal(favorites.has('article', 12), true);
-  assert.equal(await favorites.syncFromServer(), false);
-  assert.deepEqual(apiCalls, { add: 0, remove: 0, list: 0 });
 });
 
 test('收藏可添加、可取消，并立即写入 preferences', async () => {
