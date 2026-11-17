@@ -38,6 +38,7 @@
     "pages/campus/SchoolBusPage",
     "pages/campus/MajorProgressPage",
     "pages/campus/CampusWallPage",
+    "pages/campus/CampusNewsDetailPage",
     "pages/campus/CampusHelpPage",
     "pages/campus/CampusLostPage",
     "pages/campus/CampusMatchPage",

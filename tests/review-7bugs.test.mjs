@@ -12,12 +12,12 @@ import { readFile } from 'node:fs/promises';
 const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const root = '../entry/src/main';
 
-test('培养方案：loadData 前必须编码 # 号（ArkWeb 会把 # 之后内容当成片段丢弃）', async () => {
+test('培养方案：改用结构化接口原生渲染，不再加载 HTML 网页', async () => {
   const code = await source(`${root}/ets/pages/campus/TrainingPlanPage.ets`);
-  assert.match(code, /encodeURIComponent\(/);
-  assert.match(code, /loadData\(encoded/);
-  // 未编码的 documentHtml 直接传给 loadData 就是白屏的原因。
-  assert.doesNotMatch(code, /loadData\(\s*this\.documentHtml/);
+  assert.match(code, /CultivationPlanApi\.fetchStructured\(\)/);
+  assert.doesNotMatch(code, /loadData\(/, '仍在用 WebView 加载 HTML');
+  const api = await source(`${root}/ets/net/CultivationPlanApi.ets`);
+  assert.match(api, /\/getTrainingPlan/, '没有请求结构化培养方案接口');
 });
 
 test('通用网页：只有主文档错误才算失败，子资源失败不能覆盖整页', async () => {
@@ -121,9 +121,9 @@ test('双创学分：请求只走 HTTPS，错误信息同时读 msg/message', as
   assert.match(api, /undefined, true,/, '敏感请求没有走 HTTPS 约束');
 });
 
-test('培养方案：每次加载重新等待 controller 绑定', async () => {
+test('培养方案：页面渲染结构化 blocks，并保留失败重试', async () => {
   const page = await source(`${root}/ets/pages/campus/TrainingPlanPage.ets`);
-  const load = page.slice(page.indexOf('private async load()'));
-  assert.match(load, /this\.controllerAttached = false;/);
-  assert.match(load, /this\.renderAttempts = 0;/);
+  assert.match(page, /ForEach\(this\.blocks/);
+  assert.match(page, /block\.type === 'heading'/);
+  assert.match(page, /Button\('重试'\)/);
 });
