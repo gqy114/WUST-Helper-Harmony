@@ -663,17 +663,14 @@ export class AppStorage {
   }
 
   /**
-   * 切换账号时使用：直接清空普通课表与实验课缓存。
-   * 不能走 setCurrentCourses([])：它会先把旧 currentCourses 里的实验课迁移到
-   * 实验课缓存再合并回来，导致上一个账号的实验课残留。
+   * 切换账号时使用：只清空共享的普通课表缓存。
+   * 实验课缓存按学号+档案分开存，是原账号自己的数据，切回来后还要用，
+   * 不能在这里清掉（否则切号后原账号的实验课会消失）。
    */
   async resetCourseCache(): Promise<void> {
     return this.enqueueCourseWrite(async () => {
       this.courseCacheMarker = `reset_${Date.now()}`;
-      const archiveId = await this.getCurrentArchiveId();
       await this.putStr('currentCourses', '[]');
-      await this.putStr(await this.physicalExperimentKey(archiveId), '[]');
-      await this.putStr(await this.physicalExperimentKey('mine'), '[]');
     });
   }
 
@@ -688,10 +685,8 @@ export class AppStorage {
         return false;
       }
       this.courseCacheMarker = `reset_${Date.now()}`;
-      const archiveId = await this.getCurrentArchiveId();
+      // 只回滚共享课表；按账号隔离的实验课缓存属于各自账号，不能一起清。
       await this.putStr('currentCourses', '[]');
-      await this.putStr(await this.physicalExperimentKey(archiveId), '[]');
-      await this.putStr(await this.physicalExperimentKey('mine'), '[]');
       return true;
     });
   }
