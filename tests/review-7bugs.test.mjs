@@ -117,7 +117,8 @@ test('双创学分：请求只走 HTTPS，错误信息同时读 msg/message', as
   const api = await source(`${root}/ets/net/InnovationCreditApi.ets`);
   assert.match(api, /message\?: string;/);
   assert.match(api, /envelope\.msg \|\| envelope\.message/);
-  assert.match(api, /undefined, undefined, true,/);
+  assert.match(api, /Platform: 'android'/, '认证请求缺少 Platform');
+  assert.match(api, /undefined, true,/, '敏感请求没有走 HTTPS 约束');
 });
 
 test('培养方案：页面渲染结构化 blocks，并保留失败重试', async () => {

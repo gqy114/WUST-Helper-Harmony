@@ -114,6 +114,19 @@ test('移除在同一个写入任务里完成，避免实验课被迁移回课�
   store.getStoredCourses = async () => [regular('高等数学'), experiment('实验4-18'), regular('大学物理')];
   store.putStr = async (key, value) => { writes.push([key, value]); };
   // 写入队列是同步执行的：不存在「清空实验缓存 → 读旧课表迁移 → 合并回课表」的中间态。
+  store.getCurrentArchiveId = async () => 'mine';
+  store.physicalExperimentKey = async () => 'physicalExperimentCourses';
+  store.archiveKey = async (base) => base;
+  store.getStudentId = async () => '2024001';
+  let migratedFlag = '';
+  let migratedOwner = '';
+  store.getStr = async (key, def = '') => {
+    if (key === 'physicalExperimentMigrated') return migratedFlag;
+    if (key === 'physicalExperimentMigratedOwner') return migratedOwner;
+    if (key === 'courseArchives') return '';
+    return def;
+  };
+  store.parseArchives = () => [];
   store.enqueueCourseWrite = async (task) => task();
 
   const removed = await store.removePhysicalExperimentCourses();
@@ -137,6 +150,19 @@ test('没有实验课时原子方法不写存储', async () => {
   store.isPhysicalExperimentCourse = (course) => course.isPhysicalExperiment === true;
   store.getStoredCourses = async () => [regular('高等数学')];
   store.putStr = async (key, value) => { writes.push([key, value]); };
+  store.getCurrentArchiveId = async () => 'mine';
+  store.physicalExperimentKey = async () => 'physicalExperimentCourses';
+  store.archiveKey = async (base) => base;
+  store.getStudentId = async () => '2024001';
+  let migratedFlag = '';
+  let migratedOwner = '';
+  store.getStr = async (key, def = '') => {
+    if (key === 'physicalExperimentMigrated') return migratedFlag;
+    if (key === 'physicalExperimentMigratedOwner') return migratedOwner;
+    if (key === 'courseArchives') return '';
+    return def;
+  };
+  store.parseArchives = () => [];
   store.enqueueCourseWrite = async (task) => task();
 
   assert.equal(await store.removePhysicalExperimentCourses(), 0);
@@ -284,9 +310,9 @@ async function makeConcurrentStore(initialCourses, options = {}) {
   const methods = [
     extractMethod(storeSource, '  async removePhysicalExperimentCourses(): Promise<number> {'),
     extractMethod(storeSource, '  async getPhysicalExperimentCourses(): Promise<CourseData[]> {'),
-    extractMethod(storeSource, '  private async readPhysicalExperimentCoursesUnlocked(): Promise<CourseData[]> {'),
+    extractMethod(storeSource, "  private async readPhysicalExperimentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {"),
     extractMethod(storeSource, '  async getCurrentCourses(): Promise<CourseData[]> {'),
-    extractMethod(storeSource, '  private async readCurrentCoursesUnlocked(): Promise<CourseData[]> {'),
+    extractMethod(storeSource, "  private async readCurrentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {"),
   ].join('\n');
 
   const pauseOnClear = options.pauseOnClear === true;
@@ -305,6 +331,19 @@ async function makeConcurrentStore(initialCourses, options = {}) {
   const store = new mod.namespace.TestStore();
   store.courseWriteChain = Promise.resolve();
   store.courseCacheMarker = '';
+  store.getCurrentArchiveId = async () => 'mine';
+  store.physicalExperimentKey = async () => 'physicalExperimentCourses';
+  store.archiveKey = async (base) => base;
+  store.getStudentId = async () => '2024001';
+  let migratedFlag = '';
+  let migratedOwner = '';
+  store.getStr = async (key, def = '') => {
+    if (key === 'physicalExperimentMigrated') return migratedFlag;
+    if (key === 'physicalExperimentMigratedOwner') return migratedOwner;
+    if (key === 'courseArchives') return '';
+    return def;
+  };
+  store.parseArchives = () => [];
   store.enqueueCourseWrite = function (task) {
     const run = this.courseWriteChain.then(task, task);
     this.courseWriteChain = run.then(() => {}, () => {});
@@ -312,6 +351,9 @@ async function makeConcurrentStore(initialCourses, options = {}) {
   };
   store.getStoredCourses = async (key) => (key === 'currentCourses' ? current.slice() : experiments.slice());
   store.putStr = async (key, value) => {
+    if (key === 'physicalExperimentMigrated') { migratedFlag = value; return; }
+    if (key === 'physicalExperimentMigratedOwner') { migratedOwner = value; return; }
+    if (key === 'physicalExperimentMigratedOwner') { migratedOwner = value; return; }
     if (key === 'physicalExperimentCourses') {
       experiments = JSON.parse(value);
       // 复现评审步骤：清空实验缓存后暂停，给并发读取留出插入窗口。
@@ -373,4 +415,45 @@ test('先发起课表读取再移除，最终结果也不含实验课', async ()
   await Promise.all([read, removal]);
   const list = await env.store.getCurrentCourses();
   assert.deepEqual(list.map((course) => course.courseName), ['高等数学']);
+});
+test('别人的课表档案不会吸收「我的课表」的实验课', async () => {
+  const store = await source('../entry/src/main/ets/store/AppStorage.ts');
+  assert.match(store, /if \(archiveId !== 'mine'\) \{\s*return saved;\s*\}/,
+    '读取别人的档案时仍在合并我的实验课');
+});
+
+test('删除实验课后清理旧全局缓存与档案残留，避免复活', async () => {
+  const store = await source('../entry/src/main/ets/store/AppStorage.ts');
+  assert.match(store, /putStr\('physicalExperimentCourses', '\[\]'\)/, '没有清理旧全局缓存');
+  assert.match(store, /physicalExperimentMigrated/, '没有记录迁移已完成');
+  assert.match(store, /archives\[i\]\.courses = kept/, '没有从档案数据里剔除实验课');
+});
+
+test('旧实验课只迁移一次，切回自己档案不会吸收别人的实验课', async () => {
+  const store = await source('../entry/src/main/ets/store/AppStorage.ts');
+  assert.match(store, /const migrated = await this\.getStr\('physicalExperimentMigrated', ''\);/,
+    '缺少一次性迁移标记');
+  assert.match(store, /if \(migrated\) \{\s*return saved;\s*\}/, '迁移完成后仍在从 currentCourses 提取');
+});
+
+test('旧版实验课数据按归属账号迁移，切号不会认领', async () => {
+  const store = await source('../entry/src/main/ets/store/AppStorage.ts');
+  assert.match(store, /physicalExperimentMigratedOwner/, '没有记录实验课数据归属账号');
+  assert.match(store, /if \(owner && owner !== sid\) \{\s*return saved;\s*\}/, '换了账号仍在迁移旧实验课');
+});
+
+test('升级启动时在课表刷新前迁移旧实验课', async () => {
+  const store = await source('../entry/src/main/ets/store/AppStorage.ts');
+  assert.match(store, /async migrateLegacyExperimentsIfNeeded\(\): Promise<void>/, '缺少启动迁移方法');
+  assert.match(store, /const current = await this\.getStoredCourses\('currentCourses'\)/, '没有从旧课表读取实验课');
+  const ability = await source('../entry/src/main/ets/entryability/EntryAbility.ets');
+  assert.match(ability, /migrateLegacyExperimentsIfNeeded\(\)/, '启动时没有调用实验课迁移');
+});
+
+test('切号只清共享课表，原账号实验课缓存仍保留', async () => {
+  const store = await source('../entry/src/main/ets/store/AppStorage.ts');
+  const reset = store.match(/async resetCourseCache\(\): Promise<void> \{[\s\S]*?\n  \}/)?.[0] || '';
+  assert.ok(reset.length > 0, '未找到 resetCourseCache');
+  assert.match(reset, /putStr\('currentCourses', '\[\]'\)/, '没有清空共享课表');
+  assert.doesNotMatch(reset, /physicalExperimentKey/, '切号时不能清掉按账号隔离的实验课缓存');
 });
