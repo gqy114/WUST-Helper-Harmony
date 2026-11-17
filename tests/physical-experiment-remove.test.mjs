@@ -449,3 +449,11 @@ test('升级启动时在课表刷新前迁移旧实验课', async () => {
   const ability = await source('../entry/src/main/ets/entryability/EntryAbility.ets');
   assert.match(ability, /migrateLegacyExperimentsIfNeeded\(\)/, '启动时没有调用实验课迁移');
 });
+
+test('切号只清共享课表，原账号实验课缓存仍保留', async () => {
+  const store = await source('../entry/src/main/ets/store/AppStorage.ts');
+  const reset = store.match(/async resetCourseCache\(\): Promise<void> \{[\s\S]*?\n  \}/)?.[0] || '';
+  assert.ok(reset.length > 0, '未找到 resetCourseCache');
+  assert.match(reset, /putStr\('currentCourses', '\[\]'\)/, '没有清空共享课表');
+  assert.doesNotMatch(reset, /physicalExperimentKey/, '切号时不能清掉按账号隔离的实验课缓存');
+});
