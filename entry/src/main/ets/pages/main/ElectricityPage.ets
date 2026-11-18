@@ -81,6 +81,15 @@ struct ElectricityPage {
         }
       }
       this.balances = updated;
+      // 把最新余额写进本地电表记录，快捷卡片才能直接读到。
+      for (let i = 0; i < this.savedRooms.length; i++) {
+        const item = updated.find((value: RoomBalance) => value.id === this.savedRooms[i].id);
+        if (item) {
+          this.savedRooms[i].remaining = item.remaining;
+          this.savedRooms[i].unit = item.unit;
+        }
+      }
+      await this.saveLocalRooms();
       const message = failed === 0 ? '电费已刷新' :
         (failed === this.savedRooms.length ? '刷新失败，请检查网络后重试' : `有${failed}个电表刷新失败，请重试`);
       promptAction.showToast({ message, duration: 1800 });
@@ -101,7 +110,9 @@ struct ElectricityPage {
       next.push({ id: room.id, name: pathName || room.name, type: roomType, remaining: data.remaining, unit: data.unit });
       this.balances = next;
       this.savedRooms = this.savedRooms.filter((item: YKTSavedRoom) => item.id !== room.id);
-      this.savedRooms.push({ id: room.id, name: pathName || room.name, type: roomType });
+      const savedRoom: YKTSavedRoom = { id: room.id, name: pathName || room.name, type: roomType,
+        remaining: data.remaining, unit: data.unit };
+      this.savedRooms.push(savedRoom);
       await this.saveLocalRooms();
       this.showAdd = false; this.selected = []; this.level = 0;
     } catch { promptAction.showToast({ message: '电费查询失败，请稍后重试', duration: 1500 }); }

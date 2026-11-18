@@ -371,7 +371,9 @@ struct CampusPostDetailPage {
       }.width('100%').height(96).alignItems(VerticalAlign.Center)
         .padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8')
 
-      Scroll() {
+      // 用 List 承载详情内容：List 始终从顶部排列，不会像 Scroll 那样在内容不足一屏时居中。
+      List() {
+        ListItem() {
         Column() {
           if (this.loading) {
             Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 40 })
@@ -430,8 +432,8 @@ struct CampusPostDetailPage {
             }, (reply: CampusWallReply) => `${reply.id || reply.createdAt || reply.content}`)
           }
         }.width('100%').alignItems(HorizontalAlign.Center)
-          .constraintSize({ minHeight: '100%' })
-      }.layoutWeight(1).width('100%').backgroundColor('#F5F6F8').align(Alignment.Top)
+        }.width('100%')
+      }.layoutWeight(1).width('100%').backgroundColor('#F5F6F8')
 
       Row() {
         Image(this.myAvatar || $r('app.media.ic_default_avatar'))
@@ -449,46 +451,46 @@ struct CampusPostDetailPage {
       Column().width('100%').height('100%').backgroundColor('#66000000').onClick(() => { this.actionOpen = false; })
       Column() {
         Row() {
-          Text('操作').fontSize(24).fontWeight(FontWeight.Bold).fontColor('#222222').layoutWeight(1)
-          Text('×').fontSize(32).fontWeight(FontWeight.Bold).fontColor('#555555').width(52).height(52)
-            .textAlign(TextAlign.Center).backgroundColor('#F5F5F5').borderRadius(26).onClick(() => { this.actionOpen = false; })
+          Text('操作').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#222222').layoutWeight(1)
+          Text('×').fontSize(24).fontWeight(FontWeight.Bold).fontColor('#555555').width(36).height(36)
+            .textAlign(TextAlign.Center).backgroundColor('#F5F5F5').borderRadius(18).onClick(() => { this.actionOpen = false; })
         }.width('100%')
         Row() {
           if (this.actionTarget === 'post') {
             Column() {
               Image(this.favorited ? $r('app.media.star_shine') : $r('app.media.star'))
-                .width(82).height(82).padding(20).objectFit(ImageFit.Contain)
-                .backgroundColor('#F7F7F7').borderRadius(18)
-              Text(this.favorited ? '取消收藏' : '收藏').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
-            }.margin({ right: 22 }).onClick(() => this.toggleFavorite())
+                .width(44).height(44).padding(10).objectFit(ImageFit.Contain)
+                .backgroundColor('#F7F7F7').borderRadius(10)
+              Text(this.favorited ? '取消收藏' : '收藏').fontSize(13).fontWeight(FontWeight.Bold).margin({ top: 6 })
+            }.width(60).onClick(() => this.toggleFavorite())
           } else if (this.canAcceptSelectedReply()) {
             Column() {
-              Image($r('app.media.checked_circle')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
-                .backgroundColor('#F7F7F7').borderRadius(18)
-              Text(this.accepting ? '采纳中' : '采纳').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
-            }.margin({ right: 22 }).onClick(() => this.acceptSelectedReply())
+              Image($r('app.media.checked_circle')).width(44).height(44).padding(10).objectFit(ImageFit.Contain)
+                .backgroundColor('#F7F7F7').borderRadius(10)
+              Text(this.accepting ? '采纳中' : '采纳').fontSize(13).fontWeight(FontWeight.Bold).margin({ top: 6 })
+            }.width(60).onClick(() => this.acceptSelectedReply())
           } else {
             Column() {
-              Image($r('app.media.reply')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
-                .backgroundColor('#F7F7F7').borderRadius(18)
-              Text('回复').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
-            }.margin({ right: 22 }).onClick(() => this.replyToSelected())
+              Image($r('app.media.reply')).width(44).height(44).padding(10).objectFit(ImageFit.Contain)
+                .backgroundColor('#F7F7F7').borderRadius(10)
+              Text('回复').fontSize(13).fontWeight(FontWeight.Bold).margin({ top: 6 })
+            }.width(60).onClick(() => this.replyToSelected())
           }
           if (this.isOwnTarget()) {
             Column() {
-              Image($r('app.media.delete')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
-                .backgroundColor('#F7F7F7').borderRadius(18)
-              Text('删除').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#D9534F').margin({ top: 10 })
-            }.margin({ right: 22 }).onClick(() => this.openDeleteDialog())
+              Image($r('app.media.delete')).width(44).height(44).padding(10).objectFit(ImageFit.Contain)
+                .backgroundColor('#F7F7F7').borderRadius(10)
+              Text('删除').fontSize(13).fontWeight(FontWeight.Bold).fontColor('#D9534F').margin({ top: 6 })
+            }.width(60).onClick(() => this.openDeleteDialog())
           }
           Column() {
-            Image($r('app.media.flag')).width(82).height(82).padding(20).objectFit(ImageFit.Contain)
-              .backgroundColor('#F7F7F7').borderRadius(18)
-            Text('举报').fontSize(18).fontWeight(FontWeight.Bold).margin({ top: 10 })
-          }.onClick(() => this.openReportDialog())
-        }.width('100%').margin({ top: 24 })
-      }.width('100%').height(310).padding({ left: 28, right: 28, top: 28 }).backgroundColor(Color.White)
-        .borderRadius({ topLeft: 28, topRight: 28 })
+            Image($r('app.media.flag')).width(44).height(44).padding(10).objectFit(ImageFit.Contain)
+              .backgroundColor('#F7F7F7').borderRadius(10)
+            Text('举报').fontSize(13).fontWeight(FontWeight.Bold).margin({ top: 6 })
+          }.width(60).onClick(() => this.openReportDialog())
+        }.width('100%').margin({ top: 14 }).justifyContent(FlexAlign.SpaceBetween)
+      }.width('50%').height(190).padding({ left: 14, right: 14, top: 14 }).backgroundColor(Color.White)
+        .borderRadius({ topLeft: 20, topRight: 20 })
     }
     if (this.deleteDialogOpen) {
       Stack({ alignContent: Alignment.Center }) {

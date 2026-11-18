@@ -148,6 +148,95 @@ struct WidgetCard {
     .height('100%')
   }
 
+  @Builder
+  private quickTile(label: string, route: string) {
+    Column() {
+      Text(label)
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.textColor)
+        .maxLines(2)
+        .textAlign(TextAlign.Center)
+    }
+    .layoutWeight(1)
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(this.accent)
+    .borderRadius(12)
+    .margin(4)
+    .onClick(() => {
+      postCardAction(this, {
+        action: 'router',
+        abilityName: 'EntryAbility',
+        params: { widgetRoute: route }
+      });
+    })
+  }
+
+  @Builder
+  private quickContent() {
+    Column() {
+      Row() {
+        Text('快捷功能')
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.textColor)
+          .layoutWeight(1)
+        Text('⚙')
+          .fontSize(16)
+          .fontColor(this.subColor)
+      }
+      .width('100%')
+      .margin({ bottom: 6 })
+
+      Row() {
+        Column() {
+          Text(this.title)
+            .fontSize(11)
+            .fontColor(this.textColor)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text(this.subtitle)
+            .fontSize(20)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.textColor)
+            .maxLines(1)
+            .margin({ top: 2 })
+        }
+        .layoutWeight(1)
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Start)
+        .padding({ left: 10, right: 10 })
+        .backgroundColor(this.accent)
+        .borderRadius(12)
+        .margin(4)
+        .onClick(() => {
+          postCardAction(this, {
+            action: 'router',
+            abilityName: 'EntryAbility',
+            params: { widgetRoute: 'pages/main/ElectricityPage' }
+          });
+        })
+        this.quickTile('成绩查询', 'pages/campus/grade/GradePage')
+        this.quickTile('校园墙', 'pages/campus/CampusWallPage')
+      }
+      .width('100%')
+      .layoutWeight(1)
+
+      Row() {
+        this.quickTile('教室查询', 'pages/campus/ClassroomQueryPage')
+        this.quickTile('图书馆', 'pages/library/LibraryPage')
+        this.quickTile('培养方案', 'pages/campus/TrainingPlanPage')
+      }
+      .width('100%')
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+  }
+
   build() {
     Stack() {
       // 底色 + 背景图；不透明度只作用于背景图，不影响文字。
@@ -164,7 +253,9 @@ struct WidgetCard {
       }
 
       Column() {
-        if (this.mode === 'countdown') {
+        if (this.mode === 'quick') {
+          this.quickContent()
+        } else if (this.mode === 'countdown') {
           this.countdownContent()
         } else {
           this.courseContent()

@@ -2,8 +2,8 @@
   "forms": [
     {
       "name": "wust_widget",
-      "displayName": "$string:widget_display_name",
-      "description": "$string:widget_desc",
+      "displayName": "$string:widget_countdown_name",
+      "description": "$string:widget_countdown_desc",
       "src": "./ets/widget/WidgetCard.ets",
       "uiSyntax": "arkts",
       "window": {
@@ -18,6 +18,71 @@
       "defaultDimension": "2*4",
       "supportDimensions": [
         "2*2",
+        "2*4",
+        "4*4"
+      ]
+    },
+    {
+      "name": "wust_weekly",
+      "displayName": "$string:widget_weekly_name",
+      "description": "$string:widget_weekly_desc",
+      "src": "./ets/widget/WidgetCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDefault": false,
+      "updateEnabled": true,
+      "scheduledUpdateTime": "07:00",
+      "updateDuration": 1,
+      "defaultDimension": "4*4",
+      "supportDimensions": [
+        "2*4",
+        "4*4"
+      ]
+    }
+    ,
+    {
+      "name": "wust_daily",
+      "displayName": "$string:widget_daily_name",
+      "description": "$string:widget_daily_desc",
+      "src": "./ets/widget/WidgetCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDefault": false,
+      "updateEnabled": true,
+      "scheduledUpdateTime": "07:00",
+      "updateDuration": 1,
+      "defaultDimension": "2*4",
+      "supportDimensions": [
+        "2*2",
+        "2*4",
+        "4*4"
+      ]
+    },
+    {
+      "name": "wust_quick",
+      "displayName": "$string:widget_quick_name",
+      "description": "$string:widget_quick_desc",
+      "src": "./ets/widget/WidgetCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDefault": false,
+      "updateEnabled": true,
+      "scheduledUpdateTime": "07:30",
+      "updateDuration": 1,
+      "defaultDimension": "4*4",
+      "supportDimensions": [
         "2*4",
         "4*4"
       ]

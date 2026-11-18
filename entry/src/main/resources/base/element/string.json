@@ -33,12 +33,36 @@
       "value": "在桌面展示倒计时与今日课表"
     },
     {
-      "name": "widget_display_name",
-      "value": "梧桐助手"
+      "name": "widget_countdown_name",
+      "value": "倒计时卡片"
     },
     {
-      "name": "widget_desc",
-      "value": "倒计时与今日课表小组件"
+      "name": "widget_countdown_desc",
+      "value": "考试与自定义倒计时"
+    },
+    {
+      "name": "widget_weekly_name",
+      "value": "周课表卡片"
+    },
+    {
+      "name": "widget_weekly_desc",
+      "value": "本周课程表"
+    },
+    {
+      "name": "widget_daily_name",
+      "value": "日课表卡片"
+    },
+    {
+      "name": "widget_daily_desc",
+      "value": "今天的课程安排"
+    },
+    {
+      "name": "widget_quick_name",
+      "value": "快捷功能卡片"
+    },
+    {
+      "name": "widget_quick_desc",
+      "value": "电量、成绩、校园墙等常用入口"
     }
   ]
 }

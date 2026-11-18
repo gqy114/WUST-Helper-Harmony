@@ -14,6 +14,7 @@ async function createPage(query) {
   await module.link(() => { throw new Error('Unexpected import'); });
   await module.evaluate();
   const page = new module.namespace.Page();
+  page.saveLocalRooms = async () => {};
   Object.assign(page, { loading: false, refreshing: false, showAdd: false,
     savedRooms: [{ id: 'room', name: '寝室' }, { id: 'ac', name: '空调' }],
     balances: [{ id: 'room', name: '寝室', type: '', remaining: '10', unit: '度' },
@@ -56,4 +57,10 @@ test('请求未完成时重复点击不会发起第二次刷新', async () => {
   release();
   await first;
   assert.equal(calls, 2);
+});
+
+test('刷新后把余额写进本地电表记录，快捷卡片能读到', async () => {
+  const { page } = await createPage(async (id) => ({ remaining: id === 'room' ? '11' : '21', unit: '度' }));
+  await page.refreshBalances();
+  assert.deepEqual(Array.from(page.savedRooms, (room) => room.remaining), ['11', '21']);
 });

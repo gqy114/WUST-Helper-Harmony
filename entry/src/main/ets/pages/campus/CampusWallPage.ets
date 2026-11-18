@@ -186,20 +186,20 @@ struct CampusWallPage {
         if (this.loading) { ListItem() { Text('加载中…').fontSize(18).fontColor('#999999').margin({ top: 36 }); } }
         else if (this.visiblePosts().length === 0) { ListItem() { Text('暂无符合条件的校园墙信息').fontSize(18).fontColor('#999999').margin({ top: 36 }); } }
         else { ForEach(this.visiblePosts(), (post: CampusWallPost) => ListItem() { Column() {
-          Row() { if (post.avatarUrl) { Image(post.avatarUrl).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.displayName || post.realName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); Text(post.college || post.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 }); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Text((post.replyCount || 0) > 0 ? `${post.replyCount} 个回复` : '暂无回复').fontSize(15).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); }.width('100%');
-          if (post.title) { CampusRichText({ content: post.title, fontSize: 22, textColor: '#222222', baseBold: true, lineHeight: 30 }); }
-          CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 }); if (post.images && post.images.length > 0) { CommunityPostImagePreview({ images: post.images }).margin({ top: 12 }); }
-          Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA').margin({ top: 10 });
+          Row() { if (post.avatarUrl) { Image(post.avatarUrl).width(42).height(42).borderRadius(21).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.displayName || post.realName || '同学').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#655C86').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }); Text(post.college || post.major || '').fontSize(12).fontColor('#888888').margin({ top: 2 }).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Text((post.replyCount || 0) > 0 ? `${post.replyCount} 个回复` : '暂无回复').fontSize(13).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(20).padding({ left: 13, right: 13, top: 6, bottom: 6 }); }.width('100%');
+          if (post.title) { CampusRichText({ content: post.title, fontSize: 18, textColor: '#222222', baseBold: true, lineHeight: 26 }); }
+          CampusRichText({ content: post.content || '', fontSize: 15, textColor: '#333333', lineHeight: 24 }); if (post.images && post.images.length > 0) { CommunityPostImagePreview({ images: post.images }).margin({ top: 12 }); }
+          Text(campusWallRelativeTime(post.createdAt)).fontSize(13).fontColor('#AAAAAA').margin({ top: 8 });
           Flex({ wrap: FlexWrap.Wrap }) {
             ForEach(WALL_REACTIONS, (option: WallReactionOption) => {
               if (this.reactionCount(post, option.type) > 0) {
-                Text(`${option.emoji} ${this.reactionCount(post, option.type)}`).fontSize(18).fontColor('#655C86')
-                  .padding({ left: 11, right: 11, top: 6, bottom: 6 }).backgroundColor('#ECF8F4')
+                Text(`${option.emoji} ${this.reactionCount(post, option.type)}`).fontSize(14).fontColor('#655C86')
+                  .padding({ left: 9, right: 9, top: 4, bottom: 4 }).backgroundColor('#ECF8F4')
                   .borderRadius(18).margin({ right: 7, top: 8 })
               }
             }, (option: WallReactionOption) => option.type)
           }.width('100%')
-        }.width('100%').padding({ left: 34, right: 34, top: 20, bottom: 22 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => this.openDetail(post.id || 0)); }, (post: CampusWallPost) => `${post.id || post.createdAt || post.content}`); }
+        }.width('100%').padding({ left: 20, right: 20, top: 14, bottom: 16 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => this.openDetail(post.id || 0)); }, (post: CampusWallPost) => `${post.id || post.createdAt || post.content}`); }
         if (!this.loading && this.posts.length > 0) { ListItem() { Row() { if (this.loadingMore) { LoadingProgress().width(22).height(22).color('#20C894'); Text('正在加载更多…').fontSize(15).fontColor('#888888').margin({ left: 8 }); } else if (!this.hasMore) { Text('已经到底了').fontSize(15).fontColor('#AAAAAA'); } }.width('100%').height(54).justifyContent(FlexAlign.Center); } }
       }.width('100%').layoutWeight(1).backgroundColor('#F5F6F8').onReachEnd(() => this.loadMore());
       }.width('100%').layoutWeight(1).onRefreshing((): void => { this.refreshList(); });

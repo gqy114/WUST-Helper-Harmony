@@ -186,7 +186,8 @@ struct WidgetSettingsPage {
     this.busy = true;
     const storage = AppStorage.getInstance();
     try {
-      this.snapshot = await WidgetData.build(storage, this.systemDark());
+      this.snapshot = await WidgetData.build(storage, this.systemDark(),
+        TAB_MODES[this.selectedTab] || 'countdown');
       const infos: formInfo.RunningFormInfo[] = await formProvider.getPublishedRunningFormInfos();
       this.publishedCount = infos.length;
       if (infos.length === 0) {
@@ -195,10 +196,15 @@ struct WidgetSettingsPage {
         }
         return;
       }
-      const data = formBindingData.createFormBindingData(this.snapshot);
       let updated = 0;
       for (let i = 0; i < infos.length; i++) {
         try {
+          // 每个桌面卡片按自己的类型刷新：不能统一用预览的 snapshot，否则周课表和倒计时会刷成同一种。
+          const formMode = (await storage.getSettingString(
+            `widgetFormMode_${infos[i].formId}`, '')).trim();
+          const mode = formMode.length > 0 ? formMode : TAB_MODES[this.selectedTab] || 'countdown';
+          const snapshot = await WidgetData.build(storage, this.systemDark(), mode);
+          const data = formBindingData.createFormBindingData(snapshot);
           await formProvider.updateForm(infos[i].formId, data);
           updated++;
         } catch (error) {
@@ -568,11 +574,29 @@ struct WidgetSettingsPage {
               .width('100%').margin({ bottom: 10 })
             this.previewCard()
 
-            Button(`添加小组件到桌面（已添加 ${this.publishedCount} 个）`)
-              .width('100%').height(46).fontSize(15).fontColor(Color.White)
-              .backgroundColor('#20C997').borderRadius(10)
-              .margin({ top: 16 })
-              .onClick(() => this.openAddWidget())
+            Row() {
+              Button('添加倒计时卡片')
+                .layoutWeight(1).height(46).fontSize(15).fontColor(Color.White)
+                .backgroundColor('#20C997').borderRadius(10)
+                .onClick(() => this.openAddWidget())
+              Button('添加周课表卡片')
+                .layoutWeight(1).height(46).fontSize(15).fontColor(Color.White)
+                .backgroundColor('#2F80ED').borderRadius(10)
+                .margin({ left: 10 })
+                .onClick(() => this.openAddWidget())
+            }.width('100%').margin({ top: 16 })
+
+            Row() {
+              Button('添加日课表卡片')
+                .layoutWeight(1).height(46).fontSize(15).fontColor(Color.White)
+                .backgroundColor('#F2994A').borderRadius(10)
+                .onClick(() => this.openAddWidget())
+              Button('添加快捷功能卡片')
+                .layoutWeight(1).height(46).fontSize(15).fontColor(Color.White)
+                .backgroundColor('#9B51E0').borderRadius(10)
+                .margin({ left: 10 })
+                .onClick(() => this.openAddWidget())
+            }.width('100%').margin({ top: 10 })
 
             Text('倒计时').fontSize(15).fontWeight(FontWeight.Medium).fontColor('#A7ABB3')
               .width('100%').margin({ top: 22, bottom: 8 })

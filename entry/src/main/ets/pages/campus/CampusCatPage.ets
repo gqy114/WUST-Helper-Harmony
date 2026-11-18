@@ -179,14 +179,14 @@ struct CampusCatPage {
           ForEach(this.visiblePosts(), (post: CampusCatPost) => {
             ListItem() {
               Column() {
-                Row() { if (post.authorAvatar) { Image(post.authorAvatar).width(52).height(52).sourceSize({ width: 104, height: 104 }).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.authorName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Column() { Text((post.tags && post.tags.length > 0) ? post.tags.join(' · ') : '日常').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#148D6D').backgroundColor('#E8F8F3').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); Text((post.commentCount || 0) > 0 ? `${post.commentCount} 个回答` : '校园猫动态').fontSize(15).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }).margin({ top: 6 }); }.alignItems(HorizontalAlign.End); }.width('100%');
-                if (post.title) { CampusRichText({ content: post.title, fontSize: 22, textColor: '#222222', baseBold: true, lineHeight: 30 }); }
-                CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 });
+                Row() { if (post.authorAvatar) { Image(post.authorAvatar).width(42).height(42).sourceSize({ width: 84, height: 84 }).borderRadius(21).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.authorName || '同学').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#655C86').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Column() { Text((post.tags && post.tags.length > 0) ? post.tags.join(' · ') : '日常').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#148D6D').backgroundColor('#E8F8F3').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); Text((post.commentCount || 0) > 0 ? `${post.commentCount} 个回答` : '校园猫动态').fontSize(13).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(20).padding({ left: 13, right: 13, top: 6, bottom: 6 }).margin({ top: 6 }); }.alignItems(HorizontalAlign.End); }.width('100%');
+                if (post.title) { CampusRichText({ content: post.title, fontSize: 18, textColor: '#222222', baseBold: true, lineHeight: 26 }); }
+                CampusRichText({ content: post.content || '', fontSize: 15, textColor: '#333333', lineHeight: 24 });
                 if (post.images && post.images.length > 0) {
                   this.imagePreview(post)
                 }
                 Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA');
-              }.width('100%').padding({ left: 34, right: 34, top: 20, bottom: 22 }).backgroundColor(Color.White)
+              }.width('100%').padding({ left: 20, right: 20, top: 14, bottom: 16 }).backgroundColor(Color.White)
                 .border({ width: { bottom: 1 }, color: '#EEEEEE' })
                 .onClick(() => this.openDetail(post.id || 0));
             }
