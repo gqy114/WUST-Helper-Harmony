@@ -175,8 +175,8 @@ struct CampusLostPage {
         else { ForEach(this.posts.filter((post: CampusWallPost) => this.filterMatch(post) && this.matchScore(post) > 0).sort((a: CampusWallPost, b: CampusWallPost) => this.matchScore(b) - this.matchScore(a)), (post: CampusWallPost) => { ListItem() {
           Column() {
             Row() {
-              if (post.avatarUrl) { Image(post.avatarUrl).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(52).height(52).borderRadius(26).objectFit(ImageFit.Cover).margin({ right: 12 }); }
-              Column() { Text(post.displayName || post.realName || '同学').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#655C86'); Text(post.college || post.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 }); }.alignItems(HorizontalAlign.Start).layoutWeight(1);
+              if (post.avatarUrl) { Image(post.avatarUrl).width(42).height(42).borderRadius(21).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).objectFit(ImageFit.Cover).margin({ right: 12 }); }
+              Column() { Text(post.displayName || post.realName || '同学').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#655C86').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }); Text(post.college || post.major || '').fontSize(12).fontColor('#888888').margin({ top: 2 }).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }); }.alignItems(HorizontalAlign.Start).layoutWeight(1);
               Column() {
                 Text(this.noticeLabel(post)).fontSize(16).fontWeight(FontWeight.Bold)
                   .fontColor(this.noticeLabel(post) === '失物招领' ? '#27865D' : '#B44F70')
@@ -184,18 +184,18 @@ struct CampusLostPage {
                   .borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 });
                 if (this.addressLabel(post)) {
                   Text(this.addressLabel(post)).fontSize(15).fontWeight(FontWeight.Medium).fontColor('#666666')
-                    .textAlign(TextAlign.End).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .constraintSize({ maxWidth: 180 })
+                    .textAlign(TextAlign.End).maxLines(3)
+                    .constraintSize({ maxWidth: '33%' })
                     .backgroundColor('#F4F4F5').borderRadius(18)
                     .padding({ left: 14, right: 14, top: 7, bottom: 7 }).margin({ top: 7 });
                 }
               }.alignItems(HorizontalAlign.End);
             }.width('100%');
-            if (post.title) { CampusRichText({ content: post.title, fontSize: 22, textColor: '#222222', baseBold: true, lineHeight: 30 }); }
-            CampusRichText({ content: post.content || '', fontSize: 18, textColor: '#333333', lineHeight: 28 });
+            if (post.title) { CampusRichText({ content: post.title, fontSize: 18, textColor: '#222222', baseBold: true, lineHeight: 26 }); }
+            CampusRichText({ content: post.content || '', fontSize: 15, textColor: '#333333', lineHeight: 24 });
             if (post.images && post.images.length > 0) { CommunityPostImagePreview({ images: post.images }).margin({ top: 12 }); }
             Row() { Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA').layoutWeight(1); Text(`评论 ${post.replyCount || 0}`).fontSize(16).fontColor('#999999').margin({ left: 20 }); }.margin({ top: 18 });
-          }.width('100%').padding({ left: 34, right: 34, top: 22, bottom: 24 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => this.openDetail(post.id || 0)); }
+          }.width('100%').padding({ left: 20, right: 20, top: 14, bottom: 16 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => this.openDetail(post.id || 0)); }
         }, (post: CampusWallPost) => `${post.id || post.createdAt || post.content}`); }
         if (!this.loading && this.posts.length > 0) { ListItem() { Row() { if (this.loadingMore) { LoadingProgress().width(22).height(22).color('#20C894'); Text('正在加载更多…').fontSize(15).fontColor('#888888').margin({ left: 8 }); } else if (!this.hasMore) { Text('已经到底了').fontSize(15).fontColor('#AAAAAA'); } }.width('100%').height(54).justifyContent(FlexAlign.Center); } }
         }.width('100%').layoutWeight(1).backgroundColor('#F5F6F7').onReachEnd(() => this.loadMore());

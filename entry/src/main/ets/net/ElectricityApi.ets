@@ -6,7 +6,7 @@ export interface YKTLocationPage { type: string; end: boolean; items: YKTLocatio
 export interface YKTLocationResponse { code: number; message: string; data?: YKTLocationPage; }
 export interface YKTElectricity { roomId: string; remaining: string; unit: string; }
 export interface YKTElectricityResponse { code: number; message: string; data?: YKTElectricity; }
-export interface YKTSavedRoom { id: string; name?: string; type?: string; }
+export interface YKTSavedRoom { id: string; name?: string; type?: string; remaining?: string; unit?: string; }
 interface YKTCloudElectricity { rooms?: YKTSavedRoom[]; }
 interface YKTCloudPayload { electricity?: YKTCloudElectricity; }
 interface YKTCloudData { data?: YKTCloudPayload; }

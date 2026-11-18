@@ -5,11 +5,27 @@ import { readFile } from 'node:fs/promises';
 
 const source = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('卡片使用系统支持的 2*4 宽卡（视觉上的 4×2）', async () => {
+test('倒计时与周课表是两个独立小组件', async () => {
   const config = await source('entry/src/main/resources/base/profile/form_config.json');
-  assert.match(config, /"defaultDimension": "2\*4"/, '默认尺寸应为宽卡 2*4');
+  assert.match(config, /"name": "wust_widget"/, '缺少倒计时组件');
+  assert.match(config, /"name": "wust_weekly"/, '缺少周课表组件');
+  assert.match(config, /"defaultDimension": "2\*4"/, '倒计时默认尺寸应为宽卡 2*4');
   assert.match(config, /"supportDimensions": \[\s*"2\*2",\s*"2\*4",\s*"4\*4"/, '2*4 宽卡不在支持列表');
   assert.doesNotMatch(config, /"4\*2"/, 'config 不支持 4*2 写法');
+});
+
+test('简洁白使用白色蒙版，而不是不透明白底', async () => {
+  const data = await source('entry/src/main/ets/widget/WidgetData.ets');
+  assert.match(data, /'#F2FFFFFF'/, '简洁白没有使用半透明白色蒙版');
+});
+
+test('FormAbility 按组件名称区分四种卡片', async () => {
+  const ability = await source('entry/src/main/ets/entryformability/EntryFormAbility.ets');
+  assert.match(ability, /FORM_NAME_KEY = 'ohos\.extra\.param\.key\.form_name'/, '没有读取组件名称');
+  for (const mode of ['weekly', 'daily', 'quick']) {
+    assert.match(ability, new RegExp(`initialMode = '${mode}'`), `缺少 ${mode} 模式`);
+  }
+  assert.match(ability, /FORM_MODE_PREFIX/, '没有按 formId 记录组件模式');
 });
 
 test('预览使用 setting.svg 和 add.svg 图标', async () => {

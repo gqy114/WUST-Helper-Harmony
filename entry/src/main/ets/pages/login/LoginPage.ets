@@ -47,7 +47,13 @@ struct ErrorLoginDialog {
         .fontColor(this.title.includes('锁定') ? '#C9C14239' : '#333')
         .margin({ top: 10 })
       Scroll() {
-        Text(this.content).fontSize(15).fontColor('#666').lineHeight(20).padding(16).width('100%')
+        Text(this.content)
+          .fontSize(15)
+          .fontColor('#666')
+          .lineHeight(22)
+          .textAlign(TextAlign.Start)
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
       }.height(180).width('100%')
       Row() {
         Text('暂不需要').fontSize(16).fontColor('#666').height(32).layoutWeight(1).textAlign(TextAlign.Center)
@@ -433,12 +439,10 @@ struct LoginPage {
     const c = this.errorCount[sid];
     if (c === 3) {
       this.showErrorDialog('错误登录提醒',
-        `\t\t\t\t\t该账号已三次登录"武科大助手"密码错误，您可以去帮助中心寻求帮助，也可联系相关管理员为您解
-      决。`);
+        '该账号已三次登录"武科大助手"密码错误，您可以去帮助中心寻求帮助，也可联系相关管理员为您解决。');
     } else if (c > 4) {
       this.showErrorDialog('！账号锁定提醒',
-        `\t\t\t\t\t该账号已五次或以上登录"武科大助手"密码错误，您可以去新版教务处官网查验此账号是否被锁
-      定。`);
+        '该账号已五次或以上登录"武科大助手"密码错误，您可以去新版教务处官网查验此账号是否被锁定。');
     }
   }
 

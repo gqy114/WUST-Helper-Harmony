@@ -10,6 +10,7 @@ import { CourseData, isCourseInWeek } from '../model/CourseModel';
 export const WIDGET_MODE_COUNTDOWN: string = 'countdown';
 export const WIDGET_MODE_DAILY: string = 'daily';
 export const WIDGET_MODE_WEEKLY: string = 'weekly';
+export const WIDGET_MODE_QUICK: string = 'quick';
 
 export const WIDGET_THEME_SYSTEM: string = 'system';
 export const WIDGET_THEME_LIGHT: string = 'light';
@@ -30,6 +31,8 @@ export interface WidgetCountdownItem {
   date: string;
   detail?: string;
 }
+
+interface QuickRoomPref { id?: string; name?: string; remaining?: string; unit?: string; }
 
 export interface WidgetSnapshot {
   mode: string;
@@ -60,7 +63,8 @@ const WEEKDAY_NAMES: string[] = ['周日', '周一', '周二', '周三', '周四
 
 function themeColors(dark: boolean): string[] {
   // [卡片底色, 主文字, 次文字]
-  return dark ? ['#1C1C1E', '#FFFFFF', '#B9BDC6'] : ['#FFFFFF', '#111111', '#666666'];
+  // 简洁白：白色蒙版（半透明）盖在背景图上，而不是整块不透明白。
+  return dark ? ['#1C1C1E', '#FFFFFF', '#B9BDC6'] : ['#F2FFFFFF', '#111111', '#666666'];
 }
 
 function normalizeOpacity(value: number): number {
@@ -334,8 +338,46 @@ export class WidgetData {
    * 生成卡片数据。
    * @param systemDark 系统是否深色（“跟随系统”主题时使用）。
    */
-  static async build(storage: AppStorage, systemDark: boolean = false): Promise<WidgetSnapshot> {
-    const mode = await WidgetPrefs.getMode(storage);
+  /** 快捷功能卡片：电量数据来自本机缓存，其余入口是固定路由。 */
+  private static async quickSnapshot(storage: AppStorage, accent: string): Promise<WidgetSnapshot> {
+    let roomLabel = '快捷功能';
+    let valueText = '校园生活 一手掌握';
+    try {
+      const raw = await storage.getSettingString('electricityRooms', '');
+      const rooms = JSON.parse(raw) as QuickRoomPref[];
+      if (Array.isArray(rooms) && rooms.length > 0) {
+        const room = rooms[0];
+        roomLabel = (room.name || room.id || '我的寝室').trim();
+        valueText = `${(room.remaining || '--')}${(room.unit || '度')}`;
+      }
+    } catch (error) {
+      console.warn('WidgetData', `read electricity failed: ${JSON.stringify(error)}`);
+    }
+    return {
+      mode: WIDGET_MODE_QUICK,
+      title: roomLabel,
+      subtitle: valueText,
+      line0: '成绩查询',
+      line1: '校园墙',
+      line2: '教室查询',
+      line3: '图书馆',
+      line4: '培养方案',
+      line5: '',
+      days: '',
+      detail: '',
+      accent: accent,
+      bg: '',
+      bgOpacity: 0.7,
+      cardBg: '',
+      textColor: '',
+      subColor: '',
+      updatedAt: WidgetData.formatDate(new Date())
+    };
+  }
+
+  static async build(storage: AppStorage, systemDark: boolean = false,
+    modeOverride: string = ''): Promise<WidgetSnapshot> {
+    const mode = modeOverride.length > 0 ? modeOverride : await WidgetPrefs.getMode(storage);
     const accent = await WidgetPrefs.getAccent(storage);
     const theme = await WidgetPrefs.getTheme(storage);
     const dark = theme === WIDGET_THEME_DARK || (theme === WIDGET_THEME_SYSTEM && systemDark);
@@ -344,7 +386,9 @@ export class WidgetData {
     const bgOpacity = await WidgetPrefs.getBackgroundOpacity(storage);
 
     let snapshot: WidgetSnapshot;
-    if (mode === WIDGET_MODE_COUNTDOWN) {
+    if (mode === WIDGET_MODE_QUICK) {
+      snapshot = await WidgetData.quickSnapshot(storage, accent);
+    } else if (mode === WIDGET_MODE_COUNTDOWN) {
       // 优先展示考试倒计时；没有考试数据时退回手动倒计时。
       const sid = (await storage.getStudentId()).trim();
       let term = (await storage.getSemester()).trim();

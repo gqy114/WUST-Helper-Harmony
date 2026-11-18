@@ -269,7 +269,9 @@ struct SecondHandBookPage {
       }.width('100%').height(76).padding({ left: 14, right: 24 }).backgroundColor('#F5F6F8');
 
       if (this.filterOpen) {
-        Column() {
+        // 筛选面板可能比屏幕高：放进可滚动容器并限制高度，避免点不到、划不动。
+        Scroll() {
+          Column() {
           Text('选择专业').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
           Flex({ wrap: FlexWrap.Wrap }) {
             ForEach(['全部专业', '我的专业', '指定专业'], (item: string) => {
@@ -308,7 +310,9 @@ struct SecondHandBookPage {
             Text('取消').fontSize(17).fontColor('#999999').layoutWeight(1).onClick(() => this.closeFilter());
             Text('确定').fontSize(17).fontColor('#20C894').onClick(() => this.applyFilter());
           }.width('100%').margin({ top: 4 });
-        }.width('92%').padding(16).backgroundColor(Color.White).borderRadius(16).margin({ bottom: 10 })
+        }.width('100%').padding(16)
+        }.width('92%').constraintSize({ maxHeight: '55%' }).scrollBar(BarState.Off)
+          .backgroundColor(Color.White).borderRadius(16).margin({ bottom: 10 })
           .shadow({ radius: 12, color: '#22000000', offsetY: 3 })
           .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: 0, y: -80 })))
           .animation({ duration: 240, curve: Curve.EaseInOut });

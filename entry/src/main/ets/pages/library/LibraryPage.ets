@@ -206,17 +206,17 @@ struct LibraryPage {
   private navigationItem(title: string, index: number) {
     Column() {
       Text(title)
-        .fontSize(17)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.selectedTab === index ? '#333333' : '#666666')
+        .fontSize(this.selectedTab === index ? 18 : 16)
+        .fontWeight(this.selectedTab === index ? FontWeight.Bold : FontWeight.Medium)
+        .fontColor(this.selectedTab === index ? '#111111' : '#8C8C8C')
         .height(48)
         .textAlign(TextAlign.Center)
       Divider()
         .width('100%')
-        .height(3)
-        .color(this.selectedTab === index ? '#91D04E' : '#E5E5E5')
+        .height(this.selectedTab === index ? 4 : 2)
+        .color(this.selectedTab === index ? '#20C894' : '#F0F0F0')
     }
-    .width(index === 0 ? 96 : 104)
+    .width(index === 0 ? 116 : 124)
     .height(51)
     .onClick(() => this.selectTab(index))
   }
@@ -473,7 +473,7 @@ struct LibraryPage {
             })
           }
           .height(51)
-          .constraintSize({ minWidth: 616 })
+          .constraintSize({ minWidth: 740 })
         }
         .width('100%').scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
         .backgroundColor(Color.White)
