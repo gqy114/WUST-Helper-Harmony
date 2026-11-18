@@ -61,8 +61,19 @@ struct CountdownPage {
       console.warn('CountdownPage', `考试列表获取失败: ${JSON.stringify(error)}`);
       this.examFailed = true;
     }
-    this.events = custom.concat(exams).sort((a: CountdownItem, b: CountdownItem) => this.eventTimestamp(a.time) - this.eventTimestamp(b.time));
-    this.eventCount = this.events.length;
+    const merged = custom.concat(exams);
+    merged.sort((a: CountdownItem, b: CountdownItem): number => {
+      const endedA = this.isEndedCountdown(a.time);
+      const endedB = this.isEndedCountdown(b.time);
+      // 已经结束的倒计时全部置底；其余按离现在越近越靠前。
+      if (endedA !== endedB) return endedA ? 1 : -1;
+      const stampA = this.eventTimestamp(a.time);
+      const stampB = this.eventTimestamp(b.time);
+      return endedA ? stampB - stampA : stampA - stampB;
+    });
+    this.events = merged;
+    this.eventCount = this.events.filter((item: CountdownItem) =>
+      !this.isEndedCountdown(item.time)).length;
     const hints: string[] = [];
     if (this.examFailed) {
       hints.push('考试安排获取失败，请重新登录或稍后重试');
@@ -103,6 +114,15 @@ struct CountdownPage {
     const today = new Date();
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
     return Math.max(0, Math.ceil((timestamp - startOfToday) / 86400000));
+  }
+
+  /** 只有日期已经过去才算结束；当天仍显示 0 天。 */
+  private isEndedCountdown(value: string): boolean {
+    const timestamp = this.eventTimestamp(value);
+    if (timestamp === Number.MAX_SAFE_INTEGER) return false;
+    const today = new Date();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    return timestamp < startOfToday;
   }
 
   private itemDetail(item: CountdownItem): string {
@@ -302,7 +322,8 @@ struct CountdownPage {
               }
             }
           } else {
-            Scroll() { Column() {
+            // 用 List 承载倒计时：始终从顶部排列，内容不足一屏也不会居中。
+            List() { ListItem() { Column() {
               // 有其它倒计时时也要提示考试/自定义项获取失败，不能默默隐藏。
               if (this.loadHint.length > 0) {
                 Text(this.loadHint)
@@ -312,34 +333,48 @@ struct CountdownPage {
                   .padding({ left: 18, right: 18, top: 10, bottom: 10 })
                   .textAlign(TextAlign.Center)
               }
-              ForEach(this.events, (item: CountdownItem) => Row() {
-                Column().width(5).height(92).backgroundColor(item.source === 'exam' ? '#FFAA54' : '#20C78A').margin({ right: 18 });
-                Column() {
-                  Text(`${item.source === 'exam' ? '[考试] ' : ''}${item.name}`).fontSize(21).fontWeight(FontWeight.Bold)
-                    .fontColor('#333333').width('100%').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-                  Text(item.time || '时间待定').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#66736F').width('100%').margin({ top: 9 });
-                  if (this.itemDetail(item).length > 0) {
-                    Text(this.itemDetail(item)).fontSize(15).fontColor('#7A8581').width('100%').maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 8 });
+              ForEach(this.events, (item: CountdownItem) => {
+                Row() {
+                  Column().width(5).height(92)
+                    .backgroundColor(this.isEndedCountdown(item.time) ? '#CFCFCF' :
+                      (item.source === 'exam' ? '#FFAA54' : '#20C78A')).margin({ right: 18 });
+                  Column() {
+                    Text(`${item.source === 'exam' ? '[考试] ' : ''}${item.name}`).fontSize(21).fontWeight(FontWeight.Bold)
+                      .fontColor(this.isEndedCountdown(item.time) ? '#9B9B9B' : '#333333')
+                      .width('100%').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+                    Text(item.time || '时间待定').fontSize(16).fontWeight(FontWeight.Medium)
+                      .fontColor(this.isEndedCountdown(item.time) ? '#AEAEAE' : '#66736F')
+                      .width('100%').margin({ top: 9 });
+                    if (this.itemDetail(item).length > 0) {
+                      Text(this.itemDetail(item)).fontSize(15)
+                        .fontColor(this.isEndedCountdown(item.time) ? '#B8B8B8' : '#7A8581')
+                        .width('100%').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 8 });
+                    }
+                  }.layoutWeight(1).alignItems(HorizontalAlign.Start);
+                  if (this.isEndedCountdown(item.time)) {
+                    Text('已结束').fontSize(15).fontWeight(FontWeight.Bold).fontColor('#999999')
+                      .width(64).textAlign(TextAlign.Center);
+                  } else {
+                    Column() {
+                      Text(`${this.daysUntil(item.time)}`).fontSize(38).fontWeight(FontWeight.Bold)
+                        .fontColor(item.source === 'exam' ? '#FFAA54' : '#20C78A');
+                      Text('天').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#666666').margin({ top: 3 });
+                    }.width(64).alignItems(HorizontalAlign.Center).justifyContent(FlexAlign.Center);
                   }
-                }.layoutWeight(1).alignItems(HorizontalAlign.Start);
-                Column() {
-                  Text(`${this.daysUntil(item.time)}`).fontSize(38).fontWeight(FontWeight.Bold)
-                    .fontColor(item.source === 'exam' ? '#FFAA54' : '#20C78A');
-                  Text('天').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#666666').margin({ top: 3 });
-                }.width(64).alignItems(HorizontalAlign.Center).justifyContent(FlexAlign.Center);
-              }.width('92%').padding({ left: 12, right: 16, top: 16, bottom: 16 }).backgroundColor(Color.White)
-                .borderRadius(16).shadow({ radius: 6, color: '#18000000', offsetY: 2 }).margin({ bottom: 14 }),
-                (item: CountdownItem) => item.uuid);
-            }.width('100%').alignItems(HorizontalAlign.Center) }.width('100%').height('100%').scrollBar(BarState.Off).align(Alignment.Top)
+                }.width('92%').padding({ left: 12, right: 16, top: 16, bottom: 16 }).backgroundColor(Color.White)
+                  .borderRadius(16).shadow({ radius: 6, color: '#18000000', offsetY: 2 }).margin({ bottom: 14 })
+              }, (item: CountdownItem) => item.uuid);
+            }.width('100%').alignItems(HorizontalAlign.Center) }.width('100%') }.width('100%').height('100%').scrollBar(BarState.Off)
           }
         }
         .layoutWeight(1)
         .width('100%')
-        .backgroundColor('#FAFAFA')
+        .margin({ top: -40 })
+        .backgroundColor(Color.Transparent)
       }
       .width('100%')
       .height('100%')
+      .backgroundColor('#FAFAFA')
 
       Column() {
         Text('+')
