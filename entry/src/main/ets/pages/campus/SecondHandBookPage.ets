@@ -22,6 +22,7 @@ struct SecondHandBookPage {
   @State private avatarUrl: string = '';
   @State private selfMajor: string = '';
   @State private majors: string[] = [];
+  @State private majorsLoading: boolean = false;
   @State private activeMajorMode: string = '全部专业';
   @State private pendingMajorMode: string = '全部专业';
   @State private filterOpen: boolean = false;
@@ -33,6 +34,8 @@ struct SecondHandBookPage {
   @State private pendingCampus: string = '全部校区';
   @State private activeSort: string = '默认排序';
   @State private pendingSort: string = '默认排序';
+  @State private majorPickerOpen: boolean = false;
+  private majorPickerOriginal: string[] = [];
   @State private refreshing: boolean = false;
   private listScroller: Scroller = new Scroller();
   private pendingRestoreOffset: number = -1;
@@ -71,7 +74,17 @@ struct SecondHandBookPage {
   }
 
   private async loadMajors(): Promise<void> {
-    try { this.majors = await SecondHandBookApi.majors(); } catch { this.majors = []; }
+    if (this.majorsLoading) return;
+    this.majorsLoading = true;
+    try {
+      const result = await SecondHandBookApi.majors();
+      this.majors = result.filter((major: string, index: number, all: string[]) =>
+        major.trim().length > 0 && all.indexOf(major) === index);
+    } catch {
+      this.majors = [];
+    } finally {
+      this.majorsLoading = false;
+    }
   }
 
   private restoreListOffset(): void {
@@ -215,7 +228,10 @@ struct SecondHandBookPage {
     animateTo({ duration: 240, curve: Curve.EaseInOut }, () => { this.filterOpen = true; });
   }
 
-  private closeFilter(): void { animateTo({ duration: 240, curve: Curve.EaseInOut }, () => { this.filterOpen = false; }); }
+  private closeFilter(): void {
+    this.majorPickerOpen = false;
+    animateTo({ duration: 240, curve: Curve.EaseInOut }, () => { this.filterOpen = false; });
+  }
 
   private applyFilter(): void {
     this.activeMajor = this.pendingMajor;
@@ -224,7 +240,6 @@ struct SecondHandBookPage {
     this.activeCampus = this.pendingCampus;
     this.activeSort = this.pendingSort;
     this.closeFilter();
-    this.load();
   }
 
   private chooseMajorMode(mode: string): void {
@@ -232,6 +247,8 @@ struct SecondHandBookPage {
       this.pendingMajorMode = mode;
       this.pendingMajor = this.pendingMajors.join('、');
       if (this.majors.length === 0) this.loadMajors();
+      this.majorPickerOriginal = this.pendingMajors.slice();
+      this.majorPickerOpen = true;
       return;
     }
     this.pendingMajorMode = mode;
@@ -245,13 +262,21 @@ struct SecondHandBookPage {
     } else {
       this.pendingMajors = this.pendingMajors.concat([major]);
     }
+    this.pendingMajor = this.pendingMajors.join('、');
+  }
+
+  private cancelMajorPicker(): void {
+    this.pendingMajors = this.majorPickerOriginal.slice();
+    this.pendingMajor = this.pendingMajors.join('、');
+    this.majorPickerOpen = false;
   }
 
   @Builder
-  private optionTag(label: string, selected: boolean) {
+  private optionTag(label: string, selected: boolean, action: () => void) {
     Text(label).fontSize(17).fontWeight(FontWeight.Medium).fontColor(selected ? '#20C894' : '#777777')
       .backgroundColor(selected ? '#E7F8F2' : '#F5F5F5').borderRadius(20)
       .padding({ left: 18, right: 18, top: 9, bottom: 9 }).margin({ right: 10, bottom: 10 })
+      .onClick(() => action())
   }
 
   build() {
@@ -275,35 +300,33 @@ struct SecondHandBookPage {
           Text('选择专业').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
           Flex({ wrap: FlexWrap.Wrap }) {
             ForEach(['全部专业', '我的专业', '指定专业'], (item: string) => {
-              Column() { this.optionTag(item, this.pendingMajorMode === item); }
-                .onClick(() => { this.chooseMajorMode(item); });
+              this.optionTag(item, this.pendingMajorMode === item, () => this.chooseMajorMode(item));
             })
           }.width('100%');
           if (this.pendingMajorMode === '指定专业') {
-            if (this.majors.length === 0) {
-              Text('专业列表加载中…').fontSize(15).fontColor('#999999').width('100%').margin({ bottom: 8 })
-            } else {
-              Flex({ wrap: FlexWrap.Wrap }) {
-                ForEach(this.majors, (major: string) => {
-                  Column() { this.optionTag(major, this.pendingMajors.indexOf(major) >= 0); }
-                    .onClick(() => {
-                      this.togglePendingMajor(major);
-                      this.pendingMajor = this.pendingMajors.join('、');
-                    })
-                }, (major: string) => major)
-              }.width('100%').margin({ bottom: 8 })
-            }
+            Row() {
+              Text(this.pendingMajors.length > 0 ? `已选择 ${this.pendingMajors.length} 个专业` : '尚未选择专业')
+                .fontSize(16).fontColor(this.pendingMajors.length > 0 ? '#20C894' : '#999999')
+                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1);
+              Text('修改').fontSize(16).fontColor('#20C894').margin({ left: 12 });
+            }.width('100%').height(46).padding({ left: 14, right: 14 })
+              .backgroundColor('#F7F8F9').borderRadius(12).margin({ bottom: 10 })
+              .onClick(() => {
+                this.majorPickerOriginal = this.pendingMajors.slice();
+                this.majorPickerOpen = true;
+                if (this.majors.length === 0) this.loadMajors();
+              });
           }
           Text('选择校区').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
           Flex({ wrap: FlexWrap.Wrap }) {
             ForEach(['全部校区', '黄家湖', '青山', '洪山'], (item: string) => {
-              Column() { this.optionTag(item, this.pendingCampus === item); }.onClick(() => { this.pendingCampus = item; });
+              this.optionTag(item, this.pendingCampus === item, () => { this.pendingCampus = item; });
             })
           }.width('100%');
           Text('排序方式').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ top: 6, bottom: 10 });
           Flex({ wrap: FlexWrap.Wrap }) {
             ForEach(['默认排序', '最新发布', '价格升序', '价格降序'], (item: string) => {
-              Column() { this.optionTag(item, this.pendingSort === item); }.onClick(() => { this.pendingSort = item; });
+              this.optionTag(item, this.pendingSort === item, () => { this.pendingSort = item; });
             })
           }.width('100%');
           Row() {
@@ -356,6 +379,60 @@ struct SecondHandBookPage {
           .textAlign(TextAlign.Center).width('88%').height(54).backgroundColor('#857A25').borderRadius(27);
       }.margin({ bottom: 16 }).onClick(() => router.pushUrl({ url: 'pages/campus/SecondHandBookPublishPage' }));
     }.width('100%').height('100%').backgroundColor('#F5F6F8');
+
+      if (this.majorPickerOpen) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column().width('100%').height('100%').backgroundColor('#66000000');
+          Column() {
+            Row() {
+              Text('选择专业').fontSize(22).fontWeight(FontWeight.Bold).fontColor('#333333');
+              Blank().layoutWeight(1);
+              Text(`已选 ${this.pendingMajors.length} 个`).fontSize(15).fontColor('#20C894');
+            }.width('100%').height(58).padding({ left: 20, right: 20 });
+
+            Divider().color('#EEEEEE');
+
+            if (this.majorsLoading) {
+              Column() {
+                LoadingProgress().width(34).height(34).color('#20C894');
+                Text('正在加载专业…').fontSize(15).fontColor('#999999').margin({ top: 12 });
+              }.layoutWeight(1).justifyContent(FlexAlign.Center);
+            } else if (this.majors.length === 0) {
+              Column() {
+                Text('专业列表加载失败').fontSize(17).fontColor('#777777');
+                Text('重新加载').fontSize(16).fontColor('#20C894').margin({ top: 14 })
+                  .onClick(() => this.loadMajors());
+              }.layoutWeight(1).justifyContent(FlexAlign.Center);
+            } else {
+              List() {
+                ForEach(this.majors, (major: string) => {
+                  ListItem() {
+                    Row() {
+                      Text(major).fontSize(17).fontColor('#444444').layoutWeight(1).maxLines(2);
+                      if (this.pendingMajors.indexOf(major) >= 0) {
+                        Text('✓').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#20C894').margin({ left: 12 });
+                      }
+                    }.width('100%').constraintSize({ minHeight: 52 }).padding({ left: 20, right: 20, top: 10, bottom: 10 })
+                      .backgroundColor(this.pendingMajors.indexOf(major) >= 0 ? '#EFFAF6' : Color.White)
+                      .onClick(() => this.togglePendingMajor(major));
+                  }
+                }, (major: string) => major)
+              }.width('100%').layoutWeight(1).scrollBar(BarState.Auto);
+            }
+
+            Divider().color('#EEEEEE');
+            Row() {
+              Text('取消').fontSize(17).fontColor('#888888').textAlign(TextAlign.Center).layoutWeight(1).height(52)
+                .onClick(() => this.cancelMajorPicker());
+              Divider().vertical(true).height(24).color('#EEEEEE');
+              Text('确定').fontSize(17).fontWeight(FontWeight.Medium).fontColor('#20C894')
+                .textAlign(TextAlign.Center).layoutWeight(1).height(52)
+                .onClick(() => { this.majorPickerOpen = false; });
+            }.width('100%').alignItems(VerticalAlign.Center);
+          }.width('88%').height('72%').backgroundColor(Color.White).borderRadius(20)
+            .shadow({ radius: 18, color: '#33000000', offsetY: 6 });
+        }.width('100%').height('100%');
+      }
     }.width('100%').height('100%');
   }
 }
