@@ -36,6 +36,7 @@ struct SecondHandBookPage {
   @State private pendingSort: string = '默认排序';
   @State private majorPickerOpen: boolean = false;
   private majorPickerOriginal: string[] = [];
+  private majorPickerOriginalMode: string = '全部专业';
   @State private refreshing: boolean = false;
   private listScroller: Scroller = new Scroller();
   private pendingRestoreOffset: number = -1;
@@ -244,6 +245,8 @@ struct SecondHandBookPage {
 
   private chooseMajorMode(mode: string): void {
     if (mode === '指定专业') {
+      // 记录进入专业选择前的筛选模式，取消时一并恢复。
+      this.majorPickerOriginalMode = this.pendingMajorMode;
       this.pendingMajorMode = mode;
       this.pendingMajor = this.pendingMajors.join('、');
       if (this.majors.length === 0) this.loadMajors();
@@ -266,8 +269,16 @@ struct SecondHandBookPage {
   }
 
   private cancelMajorPicker(): void {
-    this.pendingMajors = this.majorPickerOriginal.slice();
-    this.pendingMajor = this.pendingMajors.join('、');
+    // 取消“指定专业”：不只恢复专业列表，还要恢复原来的筛选模式，
+    // 否则外层确认时会把「我的专业」悄悄变成「指定专业」。
+    this.pendingMajorMode = this.majorPickerOriginalMode;
+    if (this.pendingMajorMode === '指定专业') {
+      this.pendingMajors = this.majorPickerOriginal.slice();
+      this.pendingMajor = this.pendingMajors.join('、');
+    } else {
+      this.pendingMajors = [];
+      this.pendingMajor = this.pendingMajorMode;
+    }
     this.majorPickerOpen = false;
   }
 
