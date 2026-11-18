@@ -111,9 +111,12 @@ struct CountdownPage {
   private daysUntil(value: string): number {
     const timestamp = this.eventTimestamp(value);
     if (timestamp === Number.MAX_SAFE_INTEGER) return 0;
+    const event = new Date(timestamp);
+    const startOfEvent = new Date(event.getFullYear(), event.getMonth(), event.getDate()).getTime();
     const today = new Date();
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-    return Math.max(0, Math.ceil((timestamp - startOfToday) / 86400000));
+    // 按日历日期差计算：今天（无论几点）都是 0 天，明天 1 天，不能向上取整多算一天。
+    return Math.max(0, Math.round((startOfEvent - startOfToday) / 86400000));
   }
 
   /** 只有日期已经过去才算结束；当天仍显示 0 天。 */

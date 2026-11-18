@@ -49,3 +49,10 @@ test('倒计时按离现在远近排序，已结束置底并灰显', async () =>
   assert.match(page, /List\(\) \{ ListItem\(\)/, '倒计时列表没有用 List 顶对齐');
   assert.match(page, /\.margin\(\{ top: -40 \}\)/, '第一张卡片没有越过绿色区域');
 });
+
+test('倒计时天数按日历日期差计算，不向上取整', async () => {
+  const page = await source('entry/src/main/ets/pages/countdown/CountdownPage.ets');
+  assert.match(page, /const startOfEvent = new Date\(event\.getFullYear\(\), event\.getMonth\(\), event\.getDate\(\)\)\.getTime\(\);/, '没有按日期计算');
+  assert.match(page, /Math\.round\(\(startOfEvent - startOfToday\) \/ 86400000\)/, '仍在向上取整');
+  assert.doesNotMatch(page, /Math\.ceil\(\(timestamp - startOfToday\) \/ 86400000\)/, '仍会把今天算成 1 天');
+});
