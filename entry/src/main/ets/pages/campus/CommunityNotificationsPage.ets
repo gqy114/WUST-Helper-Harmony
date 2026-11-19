@@ -2,6 +2,7 @@ import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { CampusRichText } from '../../components/CampusRichText';
 import { CampusWallApi, CampusWallNotification } from '../../net/CampusWallApi';
+import { formatMentionText } from '../../utils/MentionText';
 
 @Entry
 @Component
@@ -97,10 +98,10 @@ struct CommunityNotificationsPage {
           .fontColor('#2F2F2F').layoutWeight(1).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis });
       }.width('100%').alignItems(VerticalAlign.Center);
       if (item.postTitle) {
-        CampusRichText({ content: item.postTitle, fontSize: 18, textColor: '#555555', baseBold: true, lineHeight: 26 });
+        CampusRichText({ content: formatMentionText(item.postTitle, item.mentionUsers), fontSize: 18, textColor: '#555555', baseBold: true, lineHeight: 26 });
       }
       if (item.content) {
-        CampusRichText({ content: item.content, fontSize: 18, textColor: '#666666', lineHeight: 26 });
+        CampusRichText({ content: formatMentionText(item.content, item.mentionUsers), fontSize: 18, textColor: '#666666', lineHeight: 26 });
       }
       Text(this.dateText(item.createdAt)).fontSize(16).fontColor('#999999').margin({ top: 12 });
     }.width('100%').alignItems(HorizontalAlign.Start)

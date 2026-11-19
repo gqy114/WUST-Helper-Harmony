@@ -3,6 +3,7 @@ import { AppStorage } from '../../store/AppStorage';
 import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi, CampusWallPost, campusWallExtra, campusWallRelativeTime } from '../../net/CampusWallApi';
 import { CampusRichText } from '../../components/CampusRichText';
+import { formatMentionText } from '../../utils/MentionText';
 import { CommunityPostImagePreview } from '../../components/CommunityPostImagePreview';
 import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
@@ -198,7 +199,7 @@ struct CampusMatchPage {
                   Column() { Text(this.teamLabel(post)).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#2D6E9F').backgroundColor('#E7F4FF').borderRadius(22).padding({ left: 16, right: 16, top: 8, bottom: 8 }); Text((post.replyCount || 0) > 0 ? `${post.replyCount} 条回复` : '等待回应').fontSize(13).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(20).padding({ left: 13, right: 13, top: 6, bottom: 6 }).margin({ top: 6 }); }.alignItems(HorizontalAlign.End);
                 }.width('100%');
                 if (post.title) { CampusRichText({ content: post.title, fontSize: 18, textColor: '#222222', baseBold: true, lineHeight: 26 }); }
-                CampusRichText({ content: post.content || '', fontSize: 15, textColor: '#333333', lineHeight: 24 });
+                CampusRichText({ content: formatMentionText(post.content || '', post.mentionUsers), fontSize: 15, textColor: '#333333', lineHeight: 24 });
                 if (post.images && post.images.length > 0) { CommunityPostImagePreview({ images: post.images }).margin({ top: 12 }); }
                 Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA').margin({ top: 18 });
               }.width('100%').padding({ left: 20, right: 20, top: 14, bottom: 16 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => this.openDetail(post.id || 0)); }

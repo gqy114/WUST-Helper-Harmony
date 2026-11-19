@@ -3,6 +3,7 @@ import { AppStorage } from '../../store/AppStorage';
 import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi, CampusWallPost, campusWallExtra, campusWallRelativeTime } from '../../net/CampusWallApi';
 import { CampusRichText } from '../../components/CampusRichText';
+import { formatMentionText } from '../../utils/MentionText';
 import { CommunityPostImagePreview } from '../../components/CommunityPostImagePreview';
 import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
@@ -192,7 +193,7 @@ struct CampusLostPage {
               }.alignItems(HorizontalAlign.End);
             }.width('100%');
             if (post.title) { CampusRichText({ content: post.title, fontSize: 18, textColor: '#222222', baseBold: true, lineHeight: 26 }); }
-            CampusRichText({ content: post.content || '', fontSize: 15, textColor: '#333333', lineHeight: 24 });
+            CampusRichText({ content: formatMentionText(post.content || '', post.mentionUsers), fontSize: 15, textColor: '#333333', lineHeight: 24 });
             if (post.images && post.images.length > 0) { CommunityPostImagePreview({ images: post.images }).margin({ top: 12 }); }
             Row() { Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA').layoutWeight(1); Text(`评论 ${post.replyCount || 0}`).fontSize(16).fontColor('#999999').margin({ left: 20 }); }.margin({ top: 18 });
           }.width('100%').padding({ left: 20, right: 20, top: 14, bottom: 16 }).backgroundColor(Color.White).border({ width: { bottom: 1 }, color: '#EEEEEE' }).onClick(() => this.openDetail(post.id || 0)); }
