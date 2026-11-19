@@ -36,3 +36,23 @@ test('部分失败不会被当成“暂无”，且其它倒计时存在时也�
   const hintRows = page.match(/if \(this\.loadHint\.length > 0\) \{/g) || [];
   assert.ok(hintRows.length >= 2, '列表非空时也要显示失败提示');
 });
+
+test('倒计时按离现在远近排序，已结束置底并灰显', async () => {
+  const page = await source('entry/src/main/ets/pages/countdown/CountdownPage.ets');
+  assert.match(page, /private isEndedCountdown\(value: string\): boolean/, '缺少结束判断');
+  assert.match(page, /return timestamp < startOfToday;/, '当天不应算结束');
+  assert.match(page, /if \(endedA !== endedB\) return endedA \? 1 : -1;/, '已结束项没有置底');
+  assert.match(page, /return endedA \? stampB - stampA : stampA - stampB;/, '未结束项没有按最近优先');
+  assert.match(page, /this\.eventCount = this\.events\.filter/, '正在进行数量没有排除已结束项');
+  assert.match(page, /Text\('已结束'\)/, '已结束项没有显示已结束');
+  assert.match(page, /#9B9B9B/, '已结束项文字没有变灰');
+  assert.match(page, /List\(\) \{ ListItem\(\)/, '倒计时列表没有用 List 顶对齐');
+  assert.match(page, /\.margin\(\{ top: -40 \}\)/, '第一张卡片没有越过绿色区域');
+});
+
+test('倒计时天数按日历日期差计算，不向上取整', async () => {
+  const page = await source('entry/src/main/ets/pages/countdown/CountdownPage.ets');
+  assert.match(page, /const startOfEvent = new Date\(event\.getFullYear\(\), event\.getMonth\(\), event\.getDate\(\)\)\.getTime\(\);/, '没有按日期计算');
+  assert.match(page, /Math\.round\(\(startOfEvent - startOfToday\) \/ 86400000\)/, '仍在向上取整');
+  assert.doesNotMatch(page, /Math\.ceil\(\(timestamp - startOfToday\) \/ 86400000\)/, '仍会把今天算成 1 天');
+});
