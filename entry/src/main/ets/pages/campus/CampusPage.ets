@@ -108,6 +108,17 @@ export struct CampusPage {
         Text('重试').fontSize(13).fontColor('#20C997').onClick(() => this.load(true))
       }.width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 })
       .backgroundColor(Color.White).borderRadius(12).margin({ bottom: 16 })
+    } else if (this.articles.length === 0) {
+      // 接口成功但暂时没有数据时也要有可见内容，不能留给用户一整页空白。
+      Row() {
+        Image($r('app.media.empty')).width(30).height(30).objectFit(ImageFit.Contain)
+        Column() {
+          Text('暂无校园资讯').fontSize(14).fontWeight(FontWeight.Medium).fontColor('#555555').width('100%')
+          Text('稍后再试，或点击右侧刷新').fontSize(11).fontColor('#999999').margin({ top: 2 }).width('100%')
+        }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 10 })
+        Text('刷新').fontSize(13).fontColor('#20C997').onClick(() => this.load(true))
+      }.width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 })
+      .backgroundColor(Color.White).borderRadius(12).margin({ bottom: 16 })
     } else {
       Column() {
         ForEach(this.articles, (item: NewsArticle) => {
