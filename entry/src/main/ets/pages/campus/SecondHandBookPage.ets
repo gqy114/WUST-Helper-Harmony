@@ -323,6 +323,8 @@ struct SecondHandBookPage {
             }.width('100%').height(46).padding({ left: 14, right: 14 })
               .backgroundColor('#F7F8F9').borderRadius(12).margin({ bottom: 10 })
               .onClick(() => {
+                // “修改”入口也保存本次打开前的状态，取消时才能恢复回原来的专业选择。
+                this.majorPickerOriginalMode = this.pendingMajorMode;
                 this.majorPickerOriginal = this.pendingMajors.slice();
                 this.majorPickerOpen = true;
                 if (this.majors.length === 0) this.loadMajors();
