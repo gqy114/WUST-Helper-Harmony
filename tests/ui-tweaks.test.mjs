@@ -78,3 +78,13 @@ test('二手书筛选面板可滚动且有高度上限，选项和按钮都能�
   assert.match(block, /Text\('取消'\)/, '取消按钮缺失');
   assert.match(block, /Text\('确定'\)/, '确定按钮缺失');
 });
+
+test('取消指定专业会恢复原来的筛选模式', async () => {
+  const page = await src('pages/campus/SecondHandBookPage.ets');
+  assert.match(page, /private majorPickerOriginalMode: string/, '没有记录进入前的筛选模式');
+  assert.match(page, /this\.majorPickerOriginalMode = this\.pendingMajorMode;/, '进入指定专业前没有保存模式');
+  assert.match(page, /this\.pendingMajorMode = this\.majorPickerOriginalMode;/, '取消时没有恢复筛选模式');
+  assert.match(page, /this\.pendingMajors = \[\];\s*this\.pendingMajor = this\.pendingMajorMode;/, '恢复非指定专业模式时没有清空专业列表');
+  const saves = page.match(/this\.majorPickerOriginalMode = this\.pendingMajorMode;/g) || [];
+  assert.ok(saves.length >= 2, '修改入口没有保存本次打开前的模式');
+});
