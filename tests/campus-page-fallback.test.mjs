@@ -62,3 +62,10 @@ test('加载更多进行中重复点击不会把请求代次推进导致卡在�
   const generationIndex = load.indexOf('++this.requestGeneration');
   assert.ok(guardIndex >= 0 && generationIndex > guardIndex, '应先判断是否正在加载，再推进请求代次');
 });
+
+test('校园资讯为空时显示占位与刷新，不出现整页空白', async () => {
+  const page = await readFile(new URL('../entry/src/main/ets/pages/campus/CampusPage.ets', import.meta.url), 'utf8');
+  assert.match(page, /else if \(this\.articles\.length === 0\)/, '缺少空列表状态');
+  assert.match(page, /暂无校园资讯/, '空列表没有提示文案');
+  assert.match(page, /Text\('刷新'\)/, '空列表没有刷新入口');
+});
