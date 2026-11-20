@@ -1,5 +1,6 @@
 /** 教室查询入口页 */
 import router from '@ohos.router';
+import { HotFeatureTopBar } from '../../components/HotFeatureTopBar';
 
 @Entry
 @Component
@@ -21,11 +22,7 @@ struct ClassroomQueryPage {
 
   build() {
     Column() {
-      Row() {
-        Image($r('app.media.ic_arrow_left')).width(24).height(24).objectFit(ImageFit.Contain)
-          .fillColor(Color.White).onClick(() => router.back())
-        Text('教室查询').fontSize(20).fontWeight(FontWeight.Bold).fontColor(Color.White).margin({ left: 12 })
-      }.width('100%').height(56).padding({ left: 16 }).alignItems(VerticalAlign.Center).backgroundColor('#23C087')
+      HotFeatureTopBar({ title: '教室查询' })
 
       Scroll() {
         Column() {

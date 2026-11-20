@@ -1,4 +1,5 @@
 import { router, promptAction } from '@kit.ArkUI';
+import { HotFeatureTopBar } from '../../components/HotFeatureTopBar';
 import {
   LibraryApi, LibraryNotice, LibraryHomeArticle, LibraryArticle, LibraryResource,
   articleTagLabel, resourceTypeLabel
@@ -459,12 +460,12 @@ struct LibraryPage {
   build() {
     Stack() {
       Column() {
-        Row() {
-          Text('‹').fontSize(42).fontColor(Color.White).fontWeight(FontWeight.Lighter).width(46).onClick(() => router.back())
-          Text('图书馆').fontSize(26).fontWeight(FontWeight.Bold).fontColor(Color.White).margin({ left: 8 }).layoutWeight(1)
-          Image($r('app.media.search')).width(27).height(27).fillColor(Color.White).onClick(() => this.openEntry(this.entries[0]))
-        }
-        .width('100%').height(72).padding({ left: 18, right: 24, top: 8 }).backgroundColor(LIBRARY_GREEN)
+        HotFeatureTopBar({
+          title: '图书馆',
+          actionIcon: $r('app.media.search'),
+          actionLabel: '搜索',
+          onAction: () => this.openEntry(this.entries[0])
+        })
 
         Scroll() {
           Row() {

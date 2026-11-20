@@ -1,5 +1,6 @@
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
+import { HotFeatureTopBar } from '../../components/HotFeatureTopBar';
 import {
   TrainingPlanApi,
   TrainingPlanCourse,
@@ -102,29 +103,12 @@ struct MajorProgressPage {
 
   build() {
     Column() {
-      Row() {
-        Text('‹')
-          .fontSize(44)
-          .fontColor(Color.White)
-          .width(48)
-          .textAlign(TextAlign.Center)
-          .onClick(() => this.goBack())
-        Text(this.pageTitle())
-          .fontSize(28)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White)
-          .margin({ left: 18 })
-        Blank().layoutWeight(1)
-        Text('↻')
-          .fontSize(36)
-          .fontColor(Color.White)
-          .visibility(this.detailMode === 'overview' ? Visibility.Visible : Visibility.Hidden)
-          .onClick(() => this.load())
-      }
-      .width('100%')
-      .height(88)
-      .padding({ left: 14, right: 24 })
-      .backgroundColor('#20C894')
+      HotFeatureTopBar({
+        title: this.pageTitle(),
+        actionVisible: this.detailMode === 'overview',
+        onBack: () => this.goBack(),
+        onAction: () => this.load()
+      })
 
       if (this.loading) {
         Column() {

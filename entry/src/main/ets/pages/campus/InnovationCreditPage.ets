@@ -7,9 +7,10 @@
  *
  * 之前首页入口直接指向 pages/common/WebPage 且 url 为空，必然显示“页面加载失败”。
  */
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
 import webview from '@ohos.web.webview';
 import { common, Want } from '@kit.AbilityKit';
+import { HotFeatureTopBar } from '../../components/HotFeatureTopBar';
 import { AppStorage } from '../../store/AppStorage';
 import { InnovationCreditApi, InnovationCreditTicket } from '../../net/InnovationCreditApi';
 
@@ -90,23 +91,7 @@ struct InnovationCreditPage {
 
   build() {
     Column() {
-      Row() {
-        Image($r('app.media.ic_arrow_left'))
-          .width(24).height(24)
-          .onClick(() => router.back())
-        Text('双创学分')
-          .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#333333')
-          .margin({ left: 8 })
-        Blank()
-        Text('刷新')
-          .fontSize(15).fontColor('#1ec98d')
-          .onClick(() => this.start())
-      }
-      .width('100%').height(48)
-      .padding({ left: 12, right: 14 })
-      .backgroundColor(Color.White)
-
-      Divider().height(0.5).color('#EEEEEE').width('100%')
+      HotFeatureTopBar({ title: '双创学分', onAction: () => this.start() })
 
       if (this.loading) {
         Column() {
