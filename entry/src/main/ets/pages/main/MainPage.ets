@@ -694,7 +694,8 @@ struct MainPage {
           Text('主页').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333333')
           Text('HOME').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#666666').margin({ left: 12 })
         }
-        .width('100%').padding({ left: 16, top: 10, bottom: 18 })
+        // 内容区已有 16vp 留白，标题再内收 12vp，与志愿工时页对齐。
+        .width('100%').padding({ left: 12, right: 12, top: 30, bottom: 22 })
 
         // ── Banner ──
         Swiper() {
@@ -718,7 +719,6 @@ struct MainPage {
         .loop(this.visibleBanners().length > 1)
         .borderRadius(16)
         .clip(true)
-        .margin({ left: 16, right: 16 })
 
         // ── 公告栏 ──
         Row() {
@@ -736,7 +736,7 @@ struct MainPage {
         })
         .backgroundColor('#FFFFFF')
         .borderRadius(12)
-        .margin({ left: 16, right: 16, top: 12 })
+        .margin({ top: 12 })
         .onClick(() => router.pushUrl({ url: 'pages/main/HomeNoticePage' }))
 
           // ── 热门功能标题 ──
@@ -746,7 +746,7 @@ struct MainPage {
             .fontColor('#333333')
             .width('100%')
             .textAlign(TextAlign.Start)
-            .margin({ left: 16, right: 16, top: 24 })
+            .margin({ top: 24 })
 
           // ── 成绩查询（通栏） ──
           Column() {
@@ -763,7 +763,7 @@ struct MainPage {
             })
           }
           .width('100%')
-          .margin({ left: 16, right: 16, top: 12 })
+          .margin({ top: 12 })
 
 
           // ── 倒计时跨两行，右侧图书馆与培养方案 ──
@@ -779,7 +779,6 @@ struct MainPage {
             .layoutWeight(1)
           }
           .width('100%')
-          .padding({ left: 16, right: 16 })
           .margin({ top: 16 })
 
           Row() {
@@ -794,7 +793,6 @@ struct MainPage {
             .layoutWeight(1)
           }
             .width('100%')
-            .padding({ left: 16, right: 16 })
             .margin({ top: 16 })
 
           Row() {
@@ -809,7 +807,6 @@ struct MainPage {
             .layoutWeight(1)
           }
           .width('100%')
-          .padding({ left: 16, right: 16 })
           .margin({ top: 16 })
 
           // ── 校园社区标题 ──
@@ -844,7 +841,7 @@ struct MainPage {
               .margin({ left: 10 })
               .onClick(() => this.openCommunityMessages())
             }
-          }.width('100%').padding({ left: 16, right: 16 }).margin({ top: 24 })
+          }.width('100%').margin({ top: 24 })
 
           Grid() {
             ForEach(campusCommunityList, (item: CardItem) => {
@@ -852,7 +849,7 @@ struct MainPage {
             }, (item: CardItem) => item.title)
           }
           .columnsTemplate('1fr 1fr').columnsGap(12).rowsGap(12)
-          .width('100%').padding({ left: 16, right: 16 }).margin({ top: 12 })
+          .width('100%').margin({ top: 12 })
 
           Column() {
             // ── 小工具标题 ──
@@ -877,7 +874,7 @@ struct MainPage {
             .width('100%')
             .margin({ top: 12 })
 
-          }.width('100%').padding({ left: 16, right: 16 })
+          }.width('100%')
 
           // ── 底部版权 ──
           Text('领航工作室出品')
@@ -887,7 +884,7 @@ struct MainPage {
             .textAlign(TextAlign.Center)
             .margin({ top: 24, bottom: 40 })
 
-      }.width('100%').backgroundColor('#F5F6F8')
+      }.width('100%').padding({ left: 16, right: 16 }).backgroundColor('#F5F6F8')
     }
     .padding({ bottom: 100 })
   }
