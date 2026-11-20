@@ -53,16 +53,17 @@ struct SecondHandBookPage {
         : deletedSecondhandIds.indexOf(item.id || 0) < 0);
     }
     const returnOffset = navigation.consumeListReturnOffset(this.pageKey);
-    if (returnOffset >= 0) {
+    const published = navigation.consumeListPublished(this.pageKey);
+    if (published) {
+      this.pendingRestoreOffset = -1;
+    } else if (returnOffset >= 0) {
       this.pendingRestoreOffset = returnOffset;
-      if (this.listings.length > 0) {
-        this.restoreListOffset();
-      } else {
-        this.load().then((): void => { this.restoreListOffset(); });
-      }
-      return;
     }
-    this.load();
+    if (published || this.requestGeneration === 0) {
+      this.load();
+    } else if (!this.loading) {
+      this.restoreListOffset();
+    }
   }
   private openDetail(item: SecondhandListing): void {
     CommunityNavigationStore.getInstance().rememberListReturn(this.pageKey, this.listScroller.currentOffset().yOffset);
@@ -88,6 +89,10 @@ struct SecondHandBookPage {
     }
   }
 
+  private openPublish(): void {
+    CommunityNavigationStore.getInstance().rememberListReturn(this.pageKey, this.listScroller.currentOffset().yOffset);
+    router.pushUrl({ url: 'pages/campus/SecondHandBookPublishPage' });
+  }
   private restoreListOffset(): void {
     if (this.pendingRestoreOffset < 0) return;
     const offset = this.pendingRestoreOffset;
@@ -133,6 +138,7 @@ struct SecondHandBookPage {
       promptAction.showToast({ message: '暂无二手书信息', duration: 1200 });
     }
     this.loading = false;
+    this.restoreListOffset();
   }
 
   private listingKey(item: SecondhandListing): string {
@@ -371,7 +377,7 @@ struct SecondHandBookPage {
           } else {
             ForEach(this.visibleListings(), (item: SecondhandListing) => {
               ListItem() { Row() {
-                if (item.bookCover) { Image(item.bookCover).width(92).height(116).objectFit(ImageFit.Cover).borderRadius(10).margin({ right: 16 }); }
+                if (item.bookCover) { Image(item.bookCover).width(92).height(116).objectFit(ImageFit.Cover).autoResize(true).borderRadius(10).margin({ right: 16 }); }
                 Column() {
                   Text(item.bookTitle || '未命名书籍').fontSize(21).fontWeight(FontWeight.Bold).fontColor('#857A25').maxLines(2);
                   if (item.bookAuthor) { Text(item.bookAuthor).fontSize(15).fontColor('#888888'); }
@@ -390,7 +396,7 @@ struct SecondHandBookPage {
       Row() {
         Text('发布二手书').fontSize(19).fontWeight(FontWeight.Bold).fontColor(Color.White)
           .textAlign(TextAlign.Center).width('88%').height(54).backgroundColor('#857A25').borderRadius(27);
-      }.margin({ bottom: 16 }).onClick(() => router.pushUrl({ url: 'pages/campus/SecondHandBookPublishPage' }));
+      }.margin({ bottom: 16 }).onClick(() => this.openPublish());
     }.width('100%').height('100%').backgroundColor('#F5F6F8');
 
       if (this.majorPickerOpen) {

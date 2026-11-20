@@ -6,6 +6,7 @@ import { StorageUtil } from '../utils/StorageUtil';
 import { AppStorage } from '../store/AppStorage';
 
 const DOMAIN = 0x0000;
+const IMAGE_DATA_CACHE_BYTES: number = 16 * 1024 * 1024;
 
 export default class EntryAbility extends UIAbility {
   // 快捷功能卡片点击后要直达的页面；为空时仍走开屏页。
@@ -127,10 +128,13 @@ export default class EntryAbility extends UIAbility {
         hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
         // 内容加载完成后窗口已进入前台全屏态，此时请求旋转才能在平板上真正生效。
         try {
-          this.requestPortraitOrientation(windowStage.getMainWindowSync());
-        } catch (orientationError) {
-          hilog.warn(DOMAIN, 'testTag', 'Main window is not ready after load. Cause: %{public}s',
-            JSON.stringify(orientationError));
+          const mainWindow = windowStage.getMainWindowSync();
+          this.requestPortraitOrientation(mainWindow);
+          // 缩略图组件重建时，优先复用已下载的图片数据。
+          mainWindow.getUIContext().setImageRawDataCacheSize(IMAGE_DATA_CACHE_BYTES);
+        } catch (windowError) {
+          hilog.warn(DOMAIN, 'testTag', 'Failed to configure main window. Cause: %{public}s',
+            JSON.stringify(windowError));
         }
       });
     };

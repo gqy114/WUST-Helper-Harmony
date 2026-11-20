@@ -18,6 +18,7 @@ export class CommunityNavigationStore {
   private updatedCatPostIds: number[] = [];
   private returnPageKeys: string[] = [];
   private returnOffsets: number[] = [];
+  private publishedListKeys: Set<string> = new Set<string>();
 
   static getInstance(): CommunityNavigationStore {
     if (!CommunityNavigationStore.instance) {
@@ -66,6 +67,14 @@ export class CommunityNavigationStore {
     const ids = this.updatedCatPostIds.slice();
     this.updatedCatPostIds = [];
     return ids;
+  }
+
+  markListPublished(pageKey: string): void {
+    this.publishedListKeys.add(pageKey);
+  }
+
+  consumeListPublished(pageKey: string): boolean {
+    return this.publishedListKeys.delete(pageKey);
   }
 
   rememberListReturn(pageKey: string, offset: number): void {

@@ -49,6 +49,14 @@ test('删除与更新记录消费后清空，不跨页面积累', async () => {
   assert.deepEqual(Array.from(store.consumeUpdatedCatPostIds()), [3]);
 });
 
+test('发布成功信号只由对应列表消费一次', async () => {
+  const store = await loadStore();
+  store.markListPublished('campus-wall');
+  assert.equal(store.consumeListPublished('campus-cat'), false);
+  assert.equal(store.consumeListPublished('campus-wall'), true);
+  assert.equal(store.consumeListPublished('campus-wall'), false);
+});
+
 test('非法 id 不进入队列', async () => {
   const store = await loadStore();
   store.markCampusPostDeleted(0);
@@ -158,11 +166,15 @@ async function makeListPageHarness(state) {
     assert.ok(found, `${name} 方法未找到`);
     return found[0];
   };
-  const calls = { load: 0, patched: [], scrolled: [], key: null };
+  const calls = { load: 0, patched: [], scrolled: [], key: null, route: null };
+  const navigation = await loadStore();
+  if (state.offset >= 0) navigation.rememberListReturn('campus-wall', state.offset);
   const store = {
     consumeDeletedCampusPostIds: () => state.deleted || [],
     consumeUpdatedCampusPostIds: () => state.updated || [],
-    consumeListReturnOffset: (key) => { calls.key = key; return state.offset; },
+    rememberListReturn: (key, offset) => navigation.rememberListReturn(key, offset),
+    consumeListReturnOffset: (key) => { calls.key = key; return navigation.consumeListReturnOffset(key); },
+    consumeListPublished: (key) => navigation.consumeListPublished(key),
   };
   const timers = [];
   const served = state.served || [{ id: 1, title: 'a' }, { id: 2, title: 'b' }];
@@ -172,12 +184,13 @@ async function makeListPageHarness(state) {
     JSON,
     CommunityNavigationStore: { getInstance: () => store },
     CampusWallApi: { list: async () => { calls.load += 1; return served; } },
+    router: { pushUrl: (route) => { calls.route = route; } },
     promptAction: { showToast: () => {} },
     setTimeout: (callback) => { timers.push(callback); },
   });
   // 连真实的 load() 一起抽出来：页面重建时 onPageShow 依赖 load 结束时恢复位置。
   const mod = new SourceTextModule(
-    stripTypeScriptTypes(`export class TestPage {\n${extract('onPageShow')}\n${extract('restoreListOffset')}\n${extract('load')}\n}`, { mode: 'transform' }),
+    stripTypeScriptTypes(`export class TestPage {\n${extract('onPageShow')}\n${extract('restoreListOffset')}\n${extract('openPublish')}\n${extract('load')}\n}`, { mode: 'transform' }),
     { context });
   await mod.link(() => { throw new Error('No imports expected'); });
   await mod.evaluate();
@@ -185,16 +198,19 @@ async function makeListPageHarness(state) {
   page.posts = (state.posts || []).slice();
   page.pageKey = 'campus-wall';
   page.pendingRestoreOffset = -1;
-  page.requestGeneration = 0;
+  page.requestGeneration = state.started || page.posts.length > 0 ? 1 : 0;
   page.loading = false;
   page.loadingMore = false;
   page.currentPage = 1;
   page.hasMore = true;
   page.pageSize = 20;
   page.patchUpdatedPosts = async (ids) => { calls.patched.push(ids); };
-  page.listScroller = { scrollTo: (options) => { calls.scrolled.push(options.yOffset); } };
+  page.listScroller = {
+    currentOffset: () => ({ yOffset: state.scrollPosition ?? 0 }),
+    scrollTo: (options) => { calls.scrolled.push(options.yOffset); },
+  };
   return {
-    page, calls,
+    page, calls, navigation,
     runTimers: () => { while (timers.length > 0) { const callback = timers.shift(); callback(); } },
   };
 }
@@ -212,6 +228,47 @@ test('从详情返回：不重新加载、过滤删除项、补拉更新项，�
   assert.deepEqual(harness.calls.patched, [[9]], '更新过的帖子应补拉');
   harness.runTimers();
   assert.deepEqual(harness.calls.scrolled, [640], '应滚动回保存的位置');
+});
+
+test('取消发布后保留帖子、分页和滚动位置，后续显示也不重复请求', async () => {
+  const posts = [{ id: 10 }, { id: 11 }];
+  const { page, calls, runTimers } = await makeListPageHarness({ posts, scrollPosition: 525 });
+  page.currentPage = 3;
+
+  page.openPublish();
+  assert.equal(calls.route.params.returnPageKey, 'campus-wall');
+  page.onPageShow();
+  runTimers();
+  page.onPageShow();
+  runTimers();
+
+  assert.equal(calls.load, 0);
+  assert.deepEqual(Array.from(page.posts), posts);
+  assert.equal(page.currentPage, 3);
+  assert.deepEqual(calls.scrolled, [525]);
+});
+
+test('已加载的空列表在退出发布页时也不重新请求', async () => {
+  const { page, calls } = await makeListPageHarness({ posts: [], started: true });
+  page.openPublish();
+  page.onPageShow();
+  assert.equal(calls.load, 0);
+});
+
+test('成功发布后刷新一次，显示新帖子', async () => {
+  const { page, calls, navigation, runTimers } = await makeListPageHarness({
+    posts: [{ id: 1 }], served: [{ id: 20 }, { id: 1 }], scrollPosition: 525,
+  });
+  page.openPublish();
+  navigation.markListPublished(calls.route.params.returnPageKey);
+  page.onPageShow();
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  page.onPageShow();
+  runTimers();
+
+  assert.equal(calls.load, 1);
+  assert.equal(page.posts[0].id, 20);
+  assert.deepEqual(calls.scrolled, []);
 });
 
 test('首次进入（没有返回状态）时正常加载，且不触发滚动恢复', async () => {

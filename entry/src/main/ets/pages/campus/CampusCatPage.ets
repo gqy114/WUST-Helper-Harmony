@@ -4,7 +4,7 @@ import { promptAction } from '@kit.ArkUI';
 import { CampusCatApi, CampusCatPost } from '../../net/CampusCatApi';
 import { campusWallRelativeTime } from '../../net/CampusWallApi';
 import { CampusRichText } from '../../components/CampusRichText';
-import { CommunityPostImage } from '../../components/CommunityPostImage';
+import { CommunityPostImagePreview } from '../../components/CommunityPostImagePreview';
 import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
 @Entry @Component
@@ -38,20 +38,28 @@ struct CampusCatPage {
     const updatedIds = navigation.consumeUpdatedCatPostIds();
     if (updatedIds.length > 0) { this.patchUpdatedPosts(updatedIds); }
     const returnOffset = navigation.consumeListReturnOffset(this.pageKey);
-    if (returnOffset >= 0) {
+    const published = navigation.consumeListPublished(this.pageKey);
+    if (published) {
+      this.pendingRestoreOffset = -1;
+    } else if (returnOffset >= 0) {
       this.pendingRestoreOffset = returnOffset;
-      if (this.posts.length > 0) {
-        this.restoreListOffset();
-      } else {
-        this.load().then((): void => { this.restoreListOffset(); });
-      }
-      return;
     }
-    this.load();
+    if (published || this.requestGeneration === 0) {
+      this.load();
+    } else if (!this.loading) {
+      this.restoreListOffset();
+    }
   }
   private openDetail(postId: number): void {
     CommunityNavigationStore.getInstance().rememberListReturn(this.pageKey, this.listScroller.currentOffset().yOffset);
     router.pushUrl({ url: 'pages/campus/CampusCatDetailPage', params: { id: String(postId) } });
+  }
+  private openPublish(): void {
+    CommunityNavigationStore.getInstance().rememberListReturn(this.pageKey, this.listScroller.currentOffset().yOffset);
+    router.pushUrl({
+      url: 'pages/campus/CampusPublishPage',
+      params: { tag: 'cat', label: '发布校园猫帖子', returnPageKey: this.pageKey }
+    });
   }
   private restoreListOffset(): void {
     if (this.pendingRestoreOffset < 0) return;
@@ -101,6 +109,7 @@ struct CampusCatPage {
       promptAction.showToast({ message: '校园猫加载失败', duration: 1500 });
     }
     this.loading = false;
+    this.restoreListOffset();
   }
   private async loadMore(): Promise<void> {
     if (this.loading || this.loadingMore || !this.hasMore) return;
@@ -132,22 +141,6 @@ struct CampusCatPage {
   private visiblePosts(): CampusCatPost[] {
     return this.posts.filter((post: CampusCatPost) => this.filterMatch(post) && this.matchScore(post) > 0)
       .sort((a: CampusCatPost, b: CampusCatPost) => this.matchScore(b) - this.matchScore(a));
-  }
-  @Builder
-  private imagePreview(post: CampusCatPost) {
-    Stack({ alignContent: Alignment.BottomEnd }) {
-      CommunityPostImage({ src: (post.images || [])[0] })
-      if ((post.images || []).length > 1) {
-        Text(`共 ${(post.images || []).length} 张`)
-          .fontSize(15)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White)
-          .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-          .backgroundColor('#99000000')
-          .borderRadius(18)
-          .margin({ right: 10, bottom: 10 })
-      }
-    }.width('100%').margin({ top: 12 })
   }
   build() {
     Column() {
@@ -183,7 +176,7 @@ struct CampusCatPage {
                 if (post.title) { CampusRichText({ content: post.title, fontSize: 18, textColor: '#222222', baseBold: true, lineHeight: 26 }); }
                 CampusRichText({ content: post.content || '', fontSize: 15, textColor: '#333333', lineHeight: 24 });
                 if (post.images && post.images.length > 0) {
-                  this.imagePreview(post)
+                  CommunityPostImagePreview({ images: post.images }).margin({ top: 12 })
                 }
                 Text(campusWallRelativeTime(post.createdAt)).fontSize(16).fontColor('#AAAAAA');
               }.width('100%').padding({ left: 20, right: 20, top: 14, bottom: 16 }).backgroundColor(Color.White)
@@ -199,7 +192,7 @@ struct CampusCatPage {
         }
         }.width('100%').layoutWeight(1).backgroundColor('#F5F6F8').onReachEnd(() => this.loadMore());
       }.width('100%').layoutWeight(1).onRefreshing((): void => { this.refreshList(); });
-      Row() { Image(this.avatarUrl || $r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).margin({ right: 12 }); Text('发布校园猫...').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#999999').layoutWeight(1); Text('+').fontSize(32).onClick(() => router.pushUrl({ url: 'pages/campus/CampusPublishPage', params: { tag: 'cat', label: '发布校园猫帖子' } })).fontColor(Color.White).width(58).height(58).textAlign(TextAlign.Center).backgroundColor('#20C894').borderRadius(29); }.width('88%').height(76).padding({ left: 18, right: 14 }).backgroundColor(Color.White).borderRadius(38).shadow({ radius: 12, color: '#33000000', offsetY: 3 }).margin({ bottom: 18 });
+      Row() { Image(this.avatarUrl || $r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).margin({ right: 12 }); Text('发布校园猫...').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#999999').layoutWeight(1); Text('+').fontSize(32).onClick(() => this.openPublish()).fontColor(Color.White).width(58).height(58).textAlign(TextAlign.Center).backgroundColor('#20C894').borderRadius(29); }.width('88%').height(76).padding({ left: 18, right: 14 }).backgroundColor(Color.White).borderRadius(38).shadow({ radius: 12, color: '#33000000', offsetY: 3 }).margin({ bottom: 18 });
     }.width('100%').height('100%').backgroundColor('#F5F6F8');
   }
 }
