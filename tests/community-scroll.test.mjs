@@ -183,7 +183,11 @@ async function makeListPageHarness(state) {
     Array,
     JSON,
     CommunityNavigationStore: { getInstance: () => store },
-    CampusWallApi: { list: async () => { calls.load += 1; return served; } },
+    CampusWallApi: { list: async () => {
+      calls.load += 1;
+      if (state.failFirst && calls.load === 1) throw new Error('network');
+      return served;
+    } },
     router: { pushUrl: (route) => { calls.route = route; } },
     promptAction: { showToast: () => {} },
     setTimeout: (callback) => { timers.push(callback); },
@@ -199,6 +203,7 @@ async function makeListPageHarness(state) {
   page.pageKey = 'campus-wall';
   page.pendingRestoreOffset = -1;
   page.requestGeneration = state.started || page.posts.length > 0 ? 1 : 0;
+  page.hasLoadedSuccessfully = Boolean(state.started || page.posts.length > 0);
   page.loading = false;
   page.loadingMore = false;
   page.currentPage = 1;
@@ -269,6 +274,24 @@ test('成功发布后刷新一次，显示新帖子', async () => {
   assert.equal(calls.load, 1);
   assert.equal(page.posts[0].id, 20);
   assert.deepEqual(calls.scrolled, []);
+});
+
+test('首次加载失败后取消发布会重新请求列表', async () => {
+  const harness = await makeListPageHarness({ failFirst: true, posts: [], scrollPosition: 0 });
+  harness.page.onPageShow();
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  assert.equal(harness.calls.load, 1);
+  assert.equal(harness.page.hasLoadedSuccessfully, false);
+  assert.equal(harness.page.loading, false);
+
+  harness.page.openPublish();
+  harness.page.onPageShow();
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  harness.runTimers();
+
+  assert.equal(harness.calls.load, 2, '首次请求失败后返回列表应允许重试');
+  assert.equal(harness.page.hasLoadedSuccessfully, true);
+  assert.deepEqual(Array.from(harness.page.posts, (post) => post.id), [1, 2]);
 });
 
 test('首次进入（没有返回状态）时正常加载，且不触发滚动恢复', async () => {

@@ -17,6 +17,8 @@ struct CampusLostPage {
   private readonly pageSize: number = 20;
   // 每次刷新递增；旧的分页/首屏响应只有在代次未变时才允许写回列表和页码。
   private requestGeneration: number = 0;
+  private hasLoadedSuccessfully: boolean = false;
+  // 只有拿到过有效列表后，返回发布页才复用当前页面。首次加载失败需要允许重试。
   @State private searching: boolean = false;
   @State private query: string = "";
   @State private filterOpen: boolean = false;
@@ -46,7 +48,7 @@ struct CampusLostPage {
     } else if (returnOffset >= 0) {
       this.pendingRestoreOffset = returnOffset;
     }
-    if (published || this.requestGeneration === 0) {
+    if (published || this.requestGeneration === 0 || (!this.hasLoadedSuccessfully && !this.loading)) {
       this.load();
     } else if (!this.loading) {
       this.restoreListOffset();
@@ -96,6 +98,7 @@ struct CampusLostPage {
   }
   private async load(): Promise<void> {
     const generation = ++this.requestGeneration;
+    this.hasLoadedSuccessfully = false;
     this.loading = true;
     this.loadingMore = false;
     this.posts = [];
@@ -105,6 +108,7 @@ struct CampusLostPage {
       const firstPage = await CampusWallApi.list(1, 'lost');
       if (generation !== this.requestGeneration) return;
       this.posts = firstPage;
+      this.hasLoadedSuccessfully = true;
       this.hasMore = firstPage.length >= this.pageSize;
     }
     catch {

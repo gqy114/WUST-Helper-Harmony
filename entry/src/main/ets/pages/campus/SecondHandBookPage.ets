@@ -19,6 +19,8 @@ struct SecondHandBookPage {
   private readonly pageSize: number = 20;
   // 每次刷新递增；旧的分页/首屏响应只有在代次未变时才允许写回列表和页码。
   private requestGeneration: number = 0;
+  private hasLoadedSuccessfully: boolean = false;
+  // 只有拿到过有效列表后，返回发布页才复用当前页面。首次加载失败需要允许重试。
   @State private avatarUrl: string = '';
   @State private selfMajor: string = '';
   @State private majors: string[] = [];
@@ -59,7 +61,7 @@ struct SecondHandBookPage {
     } else if (returnOffset >= 0) {
       this.pendingRestoreOffset = returnOffset;
     }
-    if (published || this.requestGeneration === 0) {
+    if (published || this.requestGeneration === 0 || (!this.hasLoadedSuccessfully && !this.loading)) {
       this.load();
     } else if (!this.loading) {
       this.restoreListOffset();
@@ -112,6 +114,7 @@ struct SecondHandBookPage {
   }
   private async load(): Promise<void> {
     const generation = ++this.requestGeneration;
+    this.hasLoadedSuccessfully = false;
     this.loading = true;
     this.loadingMore = false;
     this.listings = [];
@@ -121,12 +124,15 @@ struct SecondHandBookPage {
     this.communityHasMore = true;
     let listings: SecondhandListing[] = [];
     let community: SecondhandListing[] = [];
+    let listingsLoaded = false;
+    let communityLoaded = false;
     try {
       listings = await SecondHandBookApi.feed(this.query, '', '', 1, this.pageSize);
+      listingsLoaded = true;
       listings.forEach((item: SecondhandListing) => { if (!item.source) item.source = 'secondhand'; });
     } catch {}
     if (generation !== this.requestGeneration) return;
-    try { community = await SecondHandBookApi.communityFeed(1); } catch {}
+    try { community = await SecondHandBookApi.communityFeed(1); communityLoaded = true; } catch {}
     if (generation !== this.requestGeneration) return;
     this.nativeHasMore = listings.length >= this.pageSize;
     this.communityHasMore = community.length >= this.pageSize;
@@ -134,6 +140,7 @@ struct SecondHandBookPage {
     const matched = keyword.length === 0 ? community : community.filter((item: SecondhandListing) =>
       `${item.bookTitle || ''} ${item.note || ''} ${item.bookAuthor || ''}`.toLowerCase().indexOf(keyword) >= 0);
     this.listings = this.appendUniqueListings([], listings.concat(matched));
+    this.hasLoadedSuccessfully = listingsLoaded || communityLoaded;
     if (this.listings.length === 0 && listings.length === 0 && community.length === 0) {
       promptAction.showToast({ message: '暂无二手书信息', duration: 1200 });
     }
