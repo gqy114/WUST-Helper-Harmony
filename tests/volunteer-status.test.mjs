@@ -53,6 +53,15 @@ test('工时状态优先于审核附带字段，8、2、0.5 小时均计入已�
   assert.deepEqual({ ...data.summary }, { certifiedHours: 10.5, uncertifiedHours: 0, participatedCount: 3 });
 });
 
+test('未知主状态不会覆盖明确的审核通过', async () => {
+  const data = await loadPageData([
+    { activityName: '活动', volunteerTime: 2, status: '2', auditStatusName: '审核通过' },
+  ], { timePassed: 2, timeToBePassed: 0, activityJoined: 1 });
+
+  assert.equal(data.logs[0].certified, true);
+  assert.deepEqual({ ...data.summary }, { certifiedHours: 2, uncertifiedHours: 0, participatedCount: 1 });
+});
+
 test('明确的未认证状态不受其他字段中的通过状态影响', async () => {
   const data = await loadPageData([
     { volunteerTime: 2, volunteerStatus: 0, status: 5, volunteerStatusName: '已认证' },

@@ -322,26 +322,40 @@ export class VolunteerApi {
     return 1;
   }
 
+  private static volunteerStatusKind(status: string): string {
+    const value = status.trim().toLowerCase();
+    if (value.length === 0) return 'empty';
+    const negative: boolean = value === '0' || value === '4' || value.includes('未认证') ||
+      value.includes('待认证') || value.includes('待审核') || value.includes('未通过') ||
+      value.includes('驳回') || value.includes('pending') || value.includes('unapproved') ||
+      value.includes('uncertified') || value.includes('rejected') ||
+      /\bnot\s+(?:approved|certified|passed)\b/.test(value);
+    if (negative) return 'negative';
+    const positive: boolean = value === '5' || value.includes('已认证') || value.includes('审核通过') ||
+      value.includes('认证通过') || value.includes('已通过') || value === '通过' ||
+      value.includes('passed') || value.includes('approved') || value.includes('certified');
+    if (positive) return 'positive';
+    return 'unknown';
+  }
+
   private static mapLog(raw: RawVolunteerLog): VolunteerLog {
-    // 与安卓端一致，优先使用工时记录状态，审核文案等字段仅用于兼容。
     const statusValues: Array<string | number | undefined> = [
       raw.volunteerStatus, raw.status, raw.volunteerStatusName, raw.auditStatusName, raw.auditStatus, raw.statusName
     ];
-    const status: string = statusValues
-      .map((value: string | number | undefined): string => `${value ?? ''}`.trim().toLowerCase())
-      .find((value: string): boolean => value.length > 0) ?? '';
-    const hours: number = VolunteerApi.numberValue(raw.volunteerTime ?? raw.sumTime ?? raw.hours ?? raw.time);
-    let certified: boolean = status === '5';
-    if (!certified && status.length > 0) {
-      const positive: boolean = status.includes('已认证') || status.includes('审核通过') ||
-        status.includes('认证通过') || status.includes('已通过') || status === '通过' ||
-        status.includes('passed') || status.includes('approved') || status.includes('certified');
-      const negative: boolean = status.includes('未认证') || status.includes('待认证') ||
-        status.includes('待审核') || status.includes('未通过') || status.includes('驳回') ||
-        status.includes('pending') || status.includes('unapproved') || status.includes('uncertified') ||
-        status.includes('rejected') || /\bnot\s+(?:approved|certified|passed)\b/.test(status);
-      certified = positive && !negative;
+    const normalizedStatuses: string[] = statusValues.map(
+      (value: string | number | undefined): string => `${value ?? ''}`.trim().toLowerCase()
+    );
+    let status: string = normalizedStatuses.find((value: string): boolean => value.length > 0) ?? '';
+    // 未知的主状态不能盖掉其他字段里明确的“审核通过/未认证”结果。
+    if (VolunteerApi.volunteerStatusKind(status) === 'unknown') {
+      const recognized: string | undefined = normalizedStatuses.find((value: string): boolean => {
+        const kind = VolunteerApi.volunteerStatusKind(value);
+        return kind === 'positive' || kind === 'negative';
+      });
+      if (recognized !== undefined) status = recognized;
     }
+    const hours: number = VolunteerApi.numberValue(raw.volunteerTime ?? raw.sumTime ?? raw.hours ?? raw.time);
+    let certified: boolean = VolunteerApi.volunteerStatusKind(status) === 'positive';
     // 老接口的工时明细只有已审核记录且不返回状态字段；有有效工时即视作已认证。
     if (status.length === 0 && hours > 0) certified = true;
     return {
