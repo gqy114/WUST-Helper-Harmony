@@ -56,13 +56,15 @@ struct SchoolBusPage {
           Text('‹').fontSize(38).fontColor(Color.White).width(42).textAlign(TextAlign.Center).onClick(() => router.back());
           Text('校车').fontSize(25).fontWeight(FontWeight.Bold).fontColor(Color.White).margin({ left: 12 });
         }.width('100%').padding({ left: 14, top: 22 });
-        Row() {
+        Row({ space: 12 }) {
           Column() {
-            Text(`${this.appliedFrom.replace('校区', '')}  →  ${this.appliedTo.replace('校区', '')}`).fontSize(22).fontWeight(FontWeight.Bold).fontColor(Color.White).maxLines(1);
+            Text(`${this.appliedFrom.replace('校区', '')} → ${this.appliedTo.replace('校区', '')}`)
+              .width('100%').fontSize(22).fontWeight(FontWeight.Bold).fontColor(Color.White);
             Text(this.appliedDay === '周末' ? '周六至周日' : '周一至周五').fontSize(16).fontWeight(FontWeight.Bold).fontColor(Color.White).margin({ top: 12 });
           }.alignItems(HorizontalAlign.Start).layoutWeight(1);
-          Image($r('app.media.schoolbus')).width(112).height(76).objectFit(ImageFit.Contain);
-        }.width('100%').padding({ left: 58, right: 34, top: 24, bottom: 30 });
+          Image($r('app.media.schoolbus'))
+            .width('28%').constraintSize({ maxWidth: 112 }).height(76).objectFit(ImageFit.Contain);
+        }.width('100%').padding({ left: 28, right: 24, top: 24, bottom: 30 });
       }.width('100%').backgroundColor('#20C894').onClick(() => { animateTo({ duration: 260, curve: Curve.EaseOut }, () => { this.showPicker = true; }); });
       Scroll() {
         Stack({ alignContent: Alignment.TopStart }) {
