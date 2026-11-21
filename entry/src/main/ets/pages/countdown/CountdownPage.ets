@@ -1,4 +1,5 @@
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
+import { HOT_FEATURE_BAR_COLOR, HotFeatureTopBar } from '../../components/HotFeatureTopBar';
 import { CountdownApi, CountdownItem } from '../../net/CountdownApi';
 import { AppStorage } from '../../store/AppStorage';
 
@@ -260,29 +261,10 @@ struct CountdownPage {
     Stack({ alignContent: Alignment.BottomEnd }) {
       Column() {
         Column() {
-          Row() {
-            Text('←')
-              .fontSize(34)
-              .fontColor('#FFFFFF')
-              .width(56)
-              .textAlign(TextAlign.Center)
-              .onClick(() => router.back())
-            Text('倒计时')
-              .fontSize(24)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#FFFFFF')
-              .layoutWeight(1)
-              .textAlign(TextAlign.Center)
-            Image($r('app.media.refresh'))
-              .width(28)
-              .height(28)
-              .fillColor('#FFFFFF')
-              .margin({ right: 20 })
-              .onClick(() => { this.updateDate(); this.loadCountdowns(); })
-          }
-          .width('100%')
-          .height(70)
-          .alignItems(VerticalAlign.Center)
+          HotFeatureTopBar({
+            title: '倒计时',
+            onAction: () => { this.updateDate(); this.loadCountdowns(); }
+          })
 
           Text(this.currentDate)
             .fontSize(19)
@@ -306,7 +288,7 @@ struct CountdownPage {
             .margin({ left: 50, top: 28, bottom: 36 })
         }
         .width('100%')
-        .backgroundColor('#20C78A')
+        .backgroundColor(HOT_FEATURE_BAR_COLOR)
 
         Stack({ alignContent: Alignment.Top }) {
           if (this.loading) {

@@ -4,9 +4,9 @@
  * 后端 /UnderGraduate|Graduate/Support/getTrainingPlan 直接返回
  * { title, blocks:[{type,text,rows,links,...}] }，页面原生渲染，不再加载 HTML。
  */
-import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { common, Want } from '@kit.AbilityKit';
+import { HotFeatureTopBar } from '../../components/HotFeatureTopBar';
 import {
   CultivationPlanApi, TrainingPlan, TrainingPlanBlock, TrainingPlanCell,
   TrainingPlanLink, TrainingPlanRow
@@ -132,12 +132,7 @@ struct TrainingPlanPage {
 
   build() {
     Column() {
-      Row() {
-        Text('←').fontSize(26).fontColor('#333333').onClick(() => router.back())
-        Text(this.titleText).fontSize(19).fontWeight(FontWeight.Bold).fontColor('#333333')
-          .margin({ left: 14 }).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
-        Text('刷新').fontSize(14).fontColor('#20C997').onClick(() => this.load())
-      }.width('100%').padding({ left: 18, right: 18, top: 14, bottom: 10 }).backgroundColor(Color.White)
+      HotFeatureTopBar({ title: this.titleText, onAction: () => this.load() })
 
       if (this.loading) {
         Column() {
