@@ -79,6 +79,15 @@ test('二手书筛选面板可滚动且有高度上限，选项和按钮都能�
   assert.match(block, /Text\('确定'\)/, '确定按钮缺失');
 });
 
+test('回复时 @ 使用学号，展示时再转成昵称', async () => {
+  const page = await src('pages/campus/CampusPostDetailPage.ets');
+  assert.match(page, /private actionReplyStudentId: string = '';/, '没有记录被回复人的学号');
+  assert.match(page, /this\.actionReplyStudentId = \(reply\.studentId \|\| ''\)\.trim\(\);/, '没有取回复作者学号');
+  assert.match(page, /this\.replyText = `@\$\{target\} `;/, '插入的不是学号');
+  assert.match(page, /private displayMentions\(text: string\): string/, '缺少 @学号 转昵称的展示逻辑');
+  assert.match(page, /displayMentions\(this\.post\.content/, '正文没有转换 @学号');
+});
+
 test('取消指定专业会恢复原来的筛选模式', async () => {
   const page = await src('pages/campus/SecondHandBookPage.ets');
   assert.match(page, /private majorPickerOriginalMode: string/, '没有记录进入前的筛选模式');
@@ -87,4 +96,19 @@ test('取消指定专业会恢复原来的筛选模式', async () => {
   assert.match(page, /this\.pendingMajors = \[\];\s*this\.pendingMajor = this\.pendingMajorMode;/, '恢复非指定专业模式时没有清空专业列表');
   const saves = page.match(/this\.majorPickerOriginalMode = this\.pendingMajorMode;/g) || [];
   assert.ok(saves.length >= 2, '修改入口没有保存本次打开前的模式');
+});
+
+test('@ 昵称使用接口 mentionUsers，列表和通知也会转换', async () => {
+  const util = await src('utils/MentionText.ets');
+  assert.match(util, /export function formatMentionText/, '缺少统一的 @ 转昵称方法');
+  assert.match(util, /user\.mentionUsers|users\.length/, '没有处理 mentionUsers 列表');
+  for (const path of ['pages/campus/CampusWallPage.ets', 'pages/campus/CampusHelpPage.ets',
+    'pages/campus/CampusMatchPage.ets', 'pages/campus/CampusLostPage.ets']) {
+    const page = await src(path);
+    assert.match(page, /formatMentionText\(post\.content \|\| '', post\.mentionUsers\)/, `${path} 列表没有转换 @ 学号`);
+  }
+  const notice = await src('pages/campus/CommunityNotificationsPage.ets');
+  assert.match(notice, /formatMentionText\(item\.content, item\.mentionUsers\)/, '通知没有转换 @ 学号');
+  const detail = await src('pages/campus/CampusPostDetailPage.ets');
+  assert.match(detail, /const postMentions: MentionUser\[\] = this\.post\.mentionUsers \|\| \[\];/, '详情没有用 mentionUsers');
 });

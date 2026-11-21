@@ -5,6 +5,9 @@ import { AppStorage } from '../../store/AppStorage';
 import { CampusRichText } from '../../components/CampusRichText';
 import { CommunityPostImage } from '../../components/CommunityPostImage';
 import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
+import { formatMentionText } from '../../utils/MentionText';
+
+interface MentionUser { studentId?: string; displayName?: string; realName?: string; nickname?: string; name?: string; id?: string | number; }
 
 interface DetailParams extends Record<string, string> { id: string; }
 interface FormattedRun {
@@ -33,6 +36,7 @@ struct CampusPostDetailPage {
   @State private actionTarget: string = 'post';
   @State private actionReplyId: number = 0;
   @State private actionReplyName: string = '';
+  @State private actionReplyStudentId: string = '';
   @State private reactionsOpen: boolean = false;
   @State private favorited: boolean = false;
   @State private reportDialogOpen: boolean = false;
@@ -99,6 +103,7 @@ struct CampusPostDetailPage {
     this.actionTarget = 'post';
     this.actionReplyId = 0;
     this.actionReplyName = '';
+    this.actionReplyStudentId = '';
     this.actionOpen = true;
   }
 
@@ -106,6 +111,7 @@ struct CampusPostDetailPage {
     this.actionTarget = 'reply';
     this.actionReplyId = reply.id || 0;
     this.actionReplyName = reply.displayName || reply.realName || '同学';
+    this.actionReplyStudentId = (reply.studentId || '').trim();
     this.actionOpen = true;
   }
 
@@ -123,8 +129,34 @@ struct CampusPostDetailPage {
   }
 
   private replyToSelected(): void {
-    this.replyText = `@${this.actionReplyName} `;
+    // 消息里 @ 后面必须是学号，显示时再转成昵称；不能直接写昵称发给服务端。
+    const target = this.actionReplyStudentId.length > 0 ? this.actionReplyStudentId : this.actionReplyName;
+    this.replyText = `@${target} `;
     this.actionOpen = false;
+  }
+
+  /** 把内容里的 @学号 转成 @昵称 展示，未知学号保持原样。 */
+  private displayMentions(text: string): string {
+    const users: MentionUser[] = [];
+    const postMentions: MentionUser[] = this.post.mentionUsers || [];
+    for (let i = 0; i < postMentions.length; i++) users.push(postMentions[i]);
+    const replies: CampusWallReply[] = this.post.replies || [];
+    for (let i = 0; i < replies.length; i++) {
+      const replyMentions: MentionUser[] = replies[i].mentionUsers || [];
+      for (let j = 0; j < replyMentions.length; j++) users.push(replyMentions[j]);
+    }
+    // 接口没给 mentionUsers 时，至少能用帖子和回复作者兜底。
+    if (this.post.studentId) {
+      const author: MentionUser = { studentId: this.post.studentId,
+        displayName: this.post.displayName || this.post.realName || '' };
+      users.push(author);
+    }
+    for (let i = 0; i < replies.length; i++) {
+      const person: MentionUser = { studentId: replies[i].studentId,
+        displayName: replies[i].displayName || replies[i].realName || '' };
+      users.push(person);
+    }
+    return formatMentionText(text, users);
   }
 
   private isHelpPost(): boolean {
@@ -283,7 +315,7 @@ struct CampusPostDetailPage {
 
   @Builder
   private formattedBody() {
-    CampusRichText({ content: this.post.content || '', fontSize: 20, textColor: '#444444', lineHeight: 32 })
+    CampusRichText({ content: this.displayMentions(this.post.content || ''), fontSize: 20, textColor: '#444444', lineHeight: 32 })
       .margin({ top: 18 })
   }
 
@@ -351,7 +383,7 @@ struct CampusPostDetailPage {
           Image($r('app.media.more_horiz')).width(24).height(24).onClick(() => this.openReplyActions(reply))
         }.width('100%')
         Text(reply.college || reply.major || '').fontSize(15).fontColor('#888888').margin({ top: 3 })
-        CampusRichText({ content: reply.content || '', fontSize: 19, textColor: '#333333', lineHeight: 29 }).margin({ top: 16 })
+        CampusRichText({ content: this.displayMentions(reply.content || ''), fontSize: 19, textColor: '#333333', lineHeight: 29 }).margin({ top: 16 })
         ForEach(reply.images || [], (url: string) => {
           this.postImage(url)
         }, (url: string) => url)
