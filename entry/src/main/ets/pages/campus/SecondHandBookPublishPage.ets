@@ -3,6 +3,7 @@ import { promptAction } from '@kit.ArkUI';
 import { SecondHandBookApi } from '../../net/SecondHandBookApi';
 import common from '@ohos.app.ability.common';
 import { CommunityImageService } from '../../utils/CommunityImageService';
+import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
 @Entry
 @Component
@@ -50,6 +51,7 @@ struct SecondHandBookPublishPage {
       await SecondHandBookApi.publishManual(this.title.trim(), amount, this.edition.trim(), this.meetingPlace.trim(),
         this.contact.trim(), this.note.trim(), images, this.condition, this.selectedMajors.join('、'), this.campus, this.contactType,
         this.author.trim(), this.publisher.trim(), this.isbn.trim());
+      CommunityNavigationStore.getInstance().markListPublished('secondhand');
       promptAction.showToast({ message: '发布成功', duration: 1200 });
       router.back();
     } catch {

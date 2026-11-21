@@ -17,6 +17,8 @@ struct CampusHelpPage {
   private readonly pageSize: number = 20;
   // 每次刷新递增；旧的分页/首屏响应只有在代次未变时才允许写回列表和页码。
   private requestGeneration: number = 0;
+  private hasLoadedSuccessfully: boolean = false;
+  // 只有拿到过有效列表后，返回发布页才复用当前页面。首次加载失败需要允许重试。
   @State private searching: boolean = false;
   @State private query: string = "";
   @State private filterOpen: boolean = false;
@@ -42,20 +44,28 @@ struct CampusHelpPage {
     const updatedIds = navigation.consumeUpdatedCampusPostIds();
     if (updatedIds.length > 0) { this.patchUpdatedPosts(updatedIds); }
     const returnOffset = navigation.consumeListReturnOffset(this.pageKey);
-    if (returnOffset >= 0) {
+    const published = navigation.consumeListPublished(this.pageKey);
+    if (published) {
+      this.pendingRestoreOffset = -1;
+    } else if (returnOffset >= 0) {
       this.pendingRestoreOffset = returnOffset;
-      if (this.posts.length > 0) {
-        this.restoreListOffset();
-      } else {
-        this.load().then((): void => { this.restoreListOffset(); });
-      }
-      return;
     }
-    this.load();
+    if (published || this.requestGeneration === 0 || (!this.hasLoadedSuccessfully && !this.loading)) {
+      this.load();
+    } else if (!this.loading) {
+      this.restoreListOffset();
+    }
   }
   private openDetail(postId: number): void {
     CommunityNavigationStore.getInstance().rememberListReturn(this.pageKey, this.listScroller.currentOffset().yOffset);
     router.pushUrl({ url: 'pages/campus/CampusPostDetailPage', params: { id: String(postId) } });
+  }
+  private openPublish(): void {
+    CommunityNavigationStore.getInstance().rememberListReturn(this.pageKey, this.listScroller.currentOffset().yOffset);
+    router.pushUrl({
+      url: 'pages/campus/CampusPublishPage',
+      params: { tag: 'help', label: '发布求助问题', returnPageKey: this.pageKey }
+    });
   }
   private restoreListOffset(): void {
     if (this.pendingRestoreOffset < 0) return;
@@ -90,6 +100,7 @@ struct CampusHelpPage {
   }
   private async load(): Promise<void> {
     const generation = ++this.requestGeneration;
+    this.hasLoadedSuccessfully = false;
     this.loading = true;
     this.loadingMore = false;
     this.posts = [];
@@ -101,12 +112,14 @@ struct CampusHelpPage {
       const firstPage = await CampusWallApi.list(1, 'help');
       if (generation !== this.requestGeneration) return;
       this.posts = firstPage;
+      this.hasLoadedSuccessfully = true;
       this.hasMore = firstPage.length >= this.pageSize;
     } catch {
       if (generation !== this.requestGeneration) return;
       promptAction.showToast({ message: '求助信息加载失败', duration: 1500 });
     }
     this.loading = false;
+    this.restoreListOffset();
   }
   private appendUniquePosts(current: CampusWallPost[], incoming: CampusWallPost[]): CampusWallPost[] {
     const result = current.slice();
@@ -186,7 +199,7 @@ struct CampusHelpPage {
         if (!this.loading && this.posts.length > 0) { ListItem() { Row() { if (this.loadingMore) { LoadingProgress().width(22).height(22).color('#20C894'); Text('正在加载更多…').fontSize(15).fontColor('#888888').margin({ left: 8 }); } else if (!this.hasMore) { Text('已经到底了').fontSize(15).fontColor('#AAAAAA'); } }.width('100%').height(54).justifyContent(FlexAlign.Center); } }
         }.width('100%').layoutWeight(1).backgroundColor('#F5F6F8').onReachEnd(() => this.loadMore());
       }.width('100%').layoutWeight(1).onRefreshing((): void => { this.refreshList(); });
-      Row() { Image(this.avatarUrl || $r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).margin({ right: 12 }); Text('发布求助问题...').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#999999').layoutWeight(1); Text('+').fontSize(32).onClick(() => router.pushUrl({ url: 'pages/campus/CampusPublishPage', params: { tag: 'help', label: '发布求助问题' } })).fontColor(Color.White).width(58).height(58).textAlign(TextAlign.Center).backgroundColor('#20C894').borderRadius(29); }.width('88%').height(76).padding({ left: 18, right: 14 }).backgroundColor(Color.White).borderRadius(38).shadow({ radius: 12, color: '#33000000', offsetY: 3 }).margin({ bottom: 18 });
+      Row() { Image(this.avatarUrl || $r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).margin({ right: 12 }); Text('发布求助问题...').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#999999').layoutWeight(1); Text('+').fontSize(32).onClick(() => this.openPublish()).fontColor(Color.White).width(58).height(58).textAlign(TextAlign.Center).backgroundColor('#20C894').borderRadius(29); }.width('88%').height(76).padding({ left: 18, right: 14 }).backgroundColor(Color.White).borderRadius(38).shadow({ radius: 12, color: '#33000000', offsetY: 3 }).margin({ bottom: 18 });
     }.width('100%').height('100%').backgroundColor('#F5F6F8');
   }
 }
