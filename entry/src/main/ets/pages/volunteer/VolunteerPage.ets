@@ -38,8 +38,11 @@ export struct VolunteerPage {
 
   private async load(): Promise<void> {
     const storage = AppStorage.getInstance();
-    this.name = await storage.getRealName();
     this.studentId = await storage.getStudentId();
+    const realName: string = (await storage.getRealName()).trim();
+    const userName: string = (await storage.getUserName()).trim();
+    const usableUserName: boolean = userName.length > 0 && userName !== '木有设置' && userName !== '未设置昵称';
+    this.name = realName || (usableUserName ? userName : '');
     if (this.loadingData) return;
     this.loadingData = true;
     this.dataError = '';

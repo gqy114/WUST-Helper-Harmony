@@ -25,11 +25,11 @@ import { HttpRequest } from '../../net/HttpRequest';
 import { CampusWallApi, CampusRedFlowerRank, CampusRedFlowerRanking } from '../../net/CampusWallApi';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
 import { AppVersion } from '../../utils/AppVersion';
+import { isUpdateNotice, UpdateNoticeItem } from '../../utils/UpdateNotice';
 
 const TAG = 'MinePage';
 AppStorage.setOrCreate<number>('profileVersion', 0);
-interface UpdateItem { title?: string; context?: string; }
-interface UpdateResponse { data?: UpdateItem[]; }
+interface UpdateResponse { data?: UpdateNoticeItem[]; }
 interface UpdateHeaders extends Record<string, string> { Accept: string; }
 
 interface MineFeatureItem {
@@ -199,9 +199,10 @@ struct MinePage {
     for (const url of urls) {
       try {
         const result = await HttpRequest.get<UpdateResponse>(url, headers);
-        const items = result.data.data || [];
-        if (items.length > 0) {
-          promptAction.showDialog({ title: items[0].title || '发现更新', message: items[0].context || '请前往官网下载最新版本。', buttons: [{ text: '知道了', color: '#1EC98D' }] });
+        const items: UpdateNoticeItem[] = Array.isArray(result.data.data) ? result.data.data : [];
+        const update: UpdateNoticeItem | undefined = items.find((item: UpdateNoticeItem): boolean => isUpdateNotice(item));
+        if (update) {
+          promptAction.showDialog({ title: update.title || '发现更新', message: update.context || update.content || '请前往官网下载最新版本。', buttons: [{ text: '知道了', color: '#1EC98D' }] });
         } else { promptAction.showToast({ message: '当前已是最新版本', duration: 1500 }); }
         return;
       } catch { continue; }

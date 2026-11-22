@@ -10,8 +10,10 @@ const apiCode = stripTypeScriptTypes(source, { mode: 'transform' });
 async function loadPageData(records, summary = {}) {
   const response = (data) => ({ data: { code: 0, data }, response: { responseCode: 200 } });
   const http = {
-    request: async (url, method) => {
-      assert.ok(url.endsWith('/login/mobile'));
+    request: async (url, method, options) => {
+      assert.equal(new URL(url).origin, 'https://lyzyy.love:8081');
+      assert.equal(new URL(url).pathname, '/api/v1/volunteer/login/mobile');
+      assert.equal(options?.headers?.token, 'app-test-token');
       assert.equal(method, 'POST');
       return response('volunteer-test-token');
     },
