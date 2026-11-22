@@ -147,7 +147,10 @@ export interface VolunteerPageData {
 
 export class VolunteerApi {
   private static readonly APP_BASE: string = 'https://lyzyy.love:8081/api/v1';
-  private static readonly VOLUNTEER_BASE: string = 'https://volunteer-api.wustlinghang.cn/volunteer';
+  // 志愿系统的登录和数据接口由 Go 后端代理，代理会用 App Auth 令牌
+  // 绑定当前账号后再访问志愿系统。直接访问上游服务拿不到同一份登录态。
+  private static readonly VOLUNTEER_BASE: string = 'https://lyzyy.love:8081/api/v1/volunteer';
+  private static readonly VOLUNTEER_UPSTREAM_BASE: string = 'https://volunteer-api.wustlinghang.cn/volunteer';
   private static volunteerToken: string = '';
 
   private static isSuccess(code: number | undefined): boolean {
@@ -178,38 +181,39 @@ export class VolunteerApi {
   private static async login(force: boolean = false, retryAppAuth: boolean = true): Promise<string> {
     if (!force && VolunteerApi.volunteerToken.length > 0) return VolunteerApi.volunteerToken;
     const accessToken: string = await VolunteerApi.getAppAccessToken();
-    const directLogin = await HttpRequest.request<VolunteerLoginResponse>(
+    const proxyLogin = await HttpRequest.request<VolunteerLoginResponse>(
       `${VolunteerApi.VOLUNTEER_BASE}/login/mobile`, 'POST',
-      { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } }
+      { headers: { token: accessToken, Accept: 'application/json' } }
     );
-    if (VolunteerApi.isExpired(directLogin.data.code, directLogin.response.responseCode) && retryAppAuth) {
+    if (VolunteerApi.isExpired(proxyLogin.data.code, proxyLogin.response.responseCode) && retryAppAuth) {
       const storage = AppStorage.getInstance();
       await storage.setAppAuthAccessToken('');
       await ApiService.loginAppAuthFromSavedCredentials(storage);
       return VolunteerApi.login(true, false);
     }
-    let volunteerToken: string = VolunteerApi.extractToken(directLogin.data.data);
-    if (VolunteerApi.isSuccess(directLogin.data.code) && volunteerToken.length > 0) {
+    let volunteerToken: string = VolunteerApi.extractToken(proxyLogin.data.data);
+    if (VolunteerApi.isSuccess(proxyLogin.data.code) && volunteerToken.length > 0) {
       VolunteerApi.volunteerToken = volunteerToken;
       return volunteerToken;
     }
 
-    // 兼容仍要求中转 appToken 的旧志愿后端。
+    // 兼容仍要求中转 appToken 的旧志愿后端。旧链路只作为代理登录失败时的回退。
     const tokenResult = await HttpRequest.get<AppTokenResponse>(
       `${VolunteerApi.APP_BASE}/auth/volunteer-app-token`,
       { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' }
     );
     const appToken: string = tokenResult.data.data || '';
     if (tokenResult.data.code !== 200 || appToken.length === 0) {
-      throw new Error(directLogin.data.msg || directLogin.data.message || tokenResult.data.message || '无法获取志愿者登录凭证');
+      throw new Error(proxyLogin.data.msg || proxyLogin.data.message || tokenResult.data.message || '无法获取志愿者登录凭证');
     }
     const legacyLogin = await HttpRequest.request<VolunteerLoginResponse>(
-      `${VolunteerApi.VOLUNTEER_BASE}/login/mobile`, 'POST',
+      `${VolunteerApi.VOLUNTEER_UPSTREAM_BASE}/login/mobile`, 'POST',
       { headers: { token: appToken, Accept: 'application/json' } }
     );
     volunteerToken = VolunteerApi.extractToken(legacyLogin.data.data);
     if (volunteerToken.length === 0) {
-      throw new Error(legacyLogin.data.msg || legacyLogin.data.message || '志愿者系统登录失败');
+      throw new Error(proxyLogin.data.msg || proxyLogin.data.message ||
+        legacyLogin.data.msg || legacyLogin.data.message || '志愿者系统登录失败');
     }
     VolunteerApi.volunteerToken = volunteerToken;
     return volunteerToken;
