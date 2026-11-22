@@ -73,7 +73,7 @@ struct AIAssistantPage {
           ListItem() {
             Column() {
               Image($r('app.media.ai_mascot'))
-                .width('94%').objectFit(ImageFit.Contain).margin({ top: 4 })
+                .width('78%').objectFit(ImageFit.Contain).margin({ top: 0 })
               Text('有什么校园问题想问？')
                 .fontSize(24).fontWeight(FontWeight.Bold).fontColor('#222222').margin({ top: 10 })
               Text('以下内容由AI生成，可能存在错误，仅供参考。')
@@ -83,22 +83,22 @@ struct AIAssistantPage {
                 Text('✦').fontSize(22).fontColor('#1EC98D').margin({ right: 10, top: 1 })
                 Text('我可以帮你回答课表、考试、空教室、图书馆、校历、校园公告等问题。')
                   .fontSize(15).fontColor('#3D5A50').lineHeight(22).layoutWeight(1)
-              }.width('100%').padding(16).backgroundColor('#EAF8F2').borderRadius(16).margin({ top: 20 })
+              }.width('100%').padding(14).backgroundColor('#EAF8F2').borderRadius(16).margin({ top: 16 })
               .alignItems(VerticalAlign.Top)
 
               Row() {
                 Column().width(4).height(18).backgroundColor('#1EC98D').borderRadius(2).margin({ right: 8 })
                 Text('试试这些问题：').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#333333')
-              }.width('100%').margin({ top: 22, bottom: 12 })
+              }.width('100%').margin({ top: 16, bottom: 10 })
 
               Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween }) {
                 ForEach(AI_SUGGESTIONS, (item: AiSuggestion) => {
                   Row() {
-                    Text(item.icon).fontSize(18).margin({ right: 8 })
-                    Text(item.text).fontSize(15).fontColor('#333333').maxLines(1)
+                    Text(item.icon).fontSize(16).margin({ right: 6 })
+                    Text(item.text).fontSize(14).fontColor('#333333').maxLines(2).lineHeight(19)
                       .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
                   }
-                  .width('48%').height(48).padding({ left: 12, right: 10 })
+                  .width('48%').height(52).padding({ left: 10, right: 8 })
                   .backgroundColor('#F1FAF5').borderRadius(12).margin({ bottom: 10 })
                   .onClick(() => { this.question = item.text; this.ask(); })
                 }, (item: AiSuggestion) => item.text)
