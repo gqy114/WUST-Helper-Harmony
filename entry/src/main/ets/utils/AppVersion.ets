@@ -22,9 +22,9 @@ export class AppVersion {
     }
   }
 
-  /** 页面展示用：v1.0.2；读不到时退回 1.0.2。 */
+  /** 页面展示用：v1.0.5；读不到时退回 1.0.5。 */
   static label(): string {
     const name = AppVersion.versionName();
-    return `v${name || '1.0.2'}`;
+    return `v${name || '1.0.5'}`;
   }
 }
