@@ -5,8 +5,9 @@ import { CampusCatApi } from '../../net/CampusCatApi';
 import { AppStorage } from '../../store/AppStorage';
 import common from '@ohos.app.ability.common';
 import { CommunityImageService } from '../../utils/CommunityImageService';
+import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
-interface PublishParams { tag?: string; label?: string; }
+interface PublishParams { tag?: string; label?: string; returnPageKey?: string; }
 interface LostFoundExtra { type: string; address: string; }
 interface TeamExtra { type: string; }
 
@@ -33,6 +34,7 @@ struct CampusPublishPage {
   @State private selectedImages: string[] = [];
   @State private selectionStart: number = 0;
   @State private selectionEnd: number = 0;
+  private returnPageKey: string = '';
   private savedSelectionStart: number = 0;
   private savedSelectionEnd: number = 0;
   private editorController: RichEditorController = new RichEditorController();
@@ -43,6 +45,7 @@ struct CampusPublishPage {
     this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE_WITH_CARET);
     const params = router.getParams() as PublishParams;
     if (params) {
+      this.returnPageKey = params.returnPageKey || '';
       this.tag = params.tag || 'wall';
       this.label = this.pageTitle(params.label || '');
     }
@@ -85,8 +88,7 @@ struct CampusPublishPage {
       }
       const images = await CommunityImageService.uploadAll(getContext(this) as common.Context, this.selectedImages, 'wall');
       await CampusWallApi.publish(this.title.trim(), this.content.trim(), publishTag, extra, images);
-      promptAction.showToast({ message: '发布成功', duration: 1200 });
-      router.back();
+      this.finishPublish();
     } catch {
       promptAction.showToast({ message: '发布失败，请检查登录状态后重试', duration: 1500 });
     } finally {
@@ -109,13 +111,20 @@ struct CampusPublishPage {
     try {
       const images = await CommunityImageService.uploadAll(getContext(this) as common.Context, this.selectedImages, 'cat');
       await CampusCatApi.publish(this.title.trim(), this.escapeHtml(this.content.trim()), this.catTags, images);
-      promptAction.showToast({ message: '发布成功', duration: 1200 });
-      router.back();
+      this.finishPublish();
     } catch {
       promptAction.showToast({ message: '发布失败，请稍后重试', duration: 1500 });
     } finally {
       this.submitting = false;
     }
+  }
+
+  private finishPublish(): void {
+    if (this.returnPageKey) {
+      CommunityNavigationStore.getInstance().markListPublished(this.returnPageKey);
+    }
+    promptAction.showToast({ message: '发布成功', duration: 1200 });
+    router.back();
   }
 
   private async chooseImages(): Promise<void> {

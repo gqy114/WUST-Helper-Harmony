@@ -6,7 +6,7 @@ export struct CommunityPostImagePreview {
 
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
-      CommunityPostImage({ src: this.images[0] || '' })
+      CommunityPostImage({ src: this.images[0] || '', thumbnail: true })
       if (this.images.length > 1) {
         Text(`共 ${this.images.length} 张`)
           .fontSize(15)

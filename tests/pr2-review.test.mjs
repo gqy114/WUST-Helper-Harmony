@@ -44,8 +44,24 @@ async function createBooks(routes) {
     throw new Error(`Unexpected import: ${name}`);
   });
   await books.evaluate();
-  return { calls, books: books.namespace.SecondHandBookApi };
+  return { calls, wall: wall.namespace.CampusWallApi, books: books.namespace.SecondHandBookApi };
 }
+
+test('社区列表把 HTTP 失败和后端错误交给页面处理，不伪装成空列表', async () => {
+  const httpFailure = await createBooks(() => response(401, { code: 401, message: '登录已失效' }));
+  await assert.rejects(() => httpFailure.wall.list(1, 'wall'), /HTTP 401/);
+
+  const businessFailure = await createBooks(() => response(200, { code: 401, message: '登录已失效' }));
+  await assert.rejects(() => businessFailure.wall.list(1, 'wall'), /登录已失效/);
+
+  const malformed = await createBooks(() => response(200, { code: 200 }));
+  await assert.rejects(() => malformed.wall.list(1, 'wall'), /空响应/);
+});
+
+test('社区服务返回成功的空数组时仍保留空列表语义', async () => {
+  const { wall } = await createBooks(() => response(200, { code: 200, data: [] }));
+  assert.deepEqual(await wall.list(1, 'wall'), []);
+});
 
 // ---------------------------------------------------------------------------
 // 问题 3：详情接口只返回部分字段时，不能丢弃列表里已有的商品字段。
