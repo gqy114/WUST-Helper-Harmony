@@ -8,17 +8,17 @@ interface AiChatMessage {
 }
 
 interface AiSuggestion {
-  icon: string;
+  icon: Resource;
   text: string;
 }
 
 const AI_SUGGESTIONS: AiSuggestion[] = [
-  { icon: '📅', text: '这周课表' },
-  { icon: '🎓', text: '什么时间考试' },
-  { icon: '📍', text: '今天有哪些空教室' },
-  { icon: '📢', text: '最近有什么公告' },
-  { icon: '📖', text: '借阅证什么时候到期' },
-  { icon: '🗓️', text: '校历在哪看' }
+  { icon: $r('app.media.ai_ic_calendar'), text: '这周课表' },
+  { icon: $r('app.media.ai_ic_exam'), text: '什么时间考试' },
+  { icon: $r('app.media.ai_ic_classroom'), text: '今天有哪些空教室' },
+  { icon: $r('app.media.ai_ic_notice'), text: '最近有什么公告' },
+  { icon: $r('app.media.ai_ic_borrow'), text: '借阅证什么时候到期' },
+  { icon: $r('app.media.ai_ic_school_calendar'), text: '校历在哪看' }
 ];
 
 @Entry @Component
@@ -94,7 +94,7 @@ struct AIAssistantPage {
               Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween }) {
                 ForEach(AI_SUGGESTIONS, (item: AiSuggestion) => {
                   Row() {
-                    Text(item.icon).fontSize(16).margin({ right: 6 })
+                    Image(item.icon).width(20).height(20).objectFit(ImageFit.Contain).margin({ right: 8 })
                     Text(item.text).fontSize(14).fontColor('#333333').maxLines(2).lineHeight(19)
                       .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
                   }

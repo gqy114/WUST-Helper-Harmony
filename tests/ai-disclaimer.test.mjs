@@ -29,3 +29,12 @@ test('空状态包含吉祥物、能力说明和推荐问题', async () => {
   }
   assert.match(source, /this\.question = item\.text; this\.ask\(\);/, '推荐问题不能直接发起提问');
 });
+
+test('推荐问题使用图标而不是 emoji', async () => {
+  const source = await page();
+  for (const icon of ['ai_ic_calendar', 'ai_ic_exam', 'ai_ic_classroom', 'ai_ic_notice', 'ai_ic_borrow', 'ai_ic_school_calendar']) {
+    assert.match(source, new RegExp(`app\\.media\\.${icon}`), `缺少图标资源：${icon}`);
+  }
+  assert.match(source, /Image\(item\.icon\)/, '推荐问题没有渲染图标');
+  assert.doesNotMatch(source, /📅|🎓|📍|📢|📖|🗓️/, '仍在使用 emoji');
+});
