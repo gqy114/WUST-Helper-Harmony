@@ -979,31 +979,33 @@ export struct CoursePage {
       .height(48)
 
       Column() {
-        WeekSelector({
-          currentWeek: this.currentWeek,
-          actualCurrentWeek: this.actualCurrentWeek,
-          totalWeeks: this.store.totalWeeks,
-          courseList: this.allCourseList,
-          onWeekSelect: (week: number) => {
-            console.info('CoursePage', `onWeekSelect: ${week}`);
-            this.currentWeek = week;
-            this.store.setCurrentWeek(week);
-            this.updateWeekDates();
-            this.refreshKey = this.refreshKey + 1;
-            this.applyOnlyThisWeekFilter();
-            let la: CourseData | null = null;
-            for (let i = 0; i < this.courseList.length; i++) {
-              if (this.courseList[i].courseName === '线性代数') {
-                la = this.courseList[i];
-                break;
+        if (this.selectorHeight > 0) {
+          WeekSelector({
+            currentWeek: this.currentWeek,
+            actualCurrentWeek: this.actualCurrentWeek,
+            totalWeeks: this.store.totalWeeks,
+            courseList: this.allCourseList,
+            onWeekSelect: (week: number) => {
+              console.info('CoursePage', `onWeekSelect: ${week}`);
+              this.currentWeek = week;
+              this.store.setCurrentWeek(week);
+              this.updateWeekDates();
+              this.refreshKey = this.refreshKey + 1;
+              this.applyOnlyThisWeekFilter();
+              let la: CourseData | null = null;
+              for (let i = 0; i < this.courseList.length; i++) {
+                if (this.courseList[i].courseName === '线性代数') {
+                  la = this.courseList[i];
+                  break;
+                }
+              }
+              if (la !== null) {
+                const r = isCourseInWeek(la, week);
+                console.info('CoursePage', `onWeekSelect week=${week} 线性代数 inWeek=${r} weekRanges=${la.weekRanges}`);
               }
             }
-            if (la !== null) {
-              const r = isCourseInWeek(la, week);
-              console.info('CoursePage', `onWeekSelect week=${week} 线性代数 inWeek=${r} weekRanges=${la.weekRanges}`);
-            }
-          }
-        })
+          })
+        }
       }
       .width('100%')
       .height(this.selectorHeight)

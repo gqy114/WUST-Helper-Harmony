@@ -15,6 +15,8 @@ const WEEK_NUMBERS: number[] = [
 ];
 const DOT_ROWS: number[] = [0, 1, 2, 3, 4, 5];
 const DAY_COLUMNS: number[] = [0, 1, 2, 3, 4, 5, 6];
+const WEEK_ITEM_WIDTH: number = 56;
+const WEEK_ITEM_GAP: number = 8;
 
 // 取自 Android 解包 colors.xml：colorTab / white_with_alpha_80 / colorBlock / colorTabViewDefault / colorTabText。
 const COLOR_PANEL = '#EBFDF0';
@@ -27,14 +29,20 @@ const COLOR_TEXT = '#768486';
 export struct WeekSelector {
   /** 当前选中教学周，1 起。 */
   @Prop currentWeek: number = 1;
-  /** 真实本周，用于“（本周）”标记，不跟随选中周移动。 */
+  /** 真实本周，用于展开时定位和显示“（本周）”标记。 */
   @Prop actualCurrentWeek: number = 1;
   /** 总教学周数。 */
-  private totalWeeks: number = 25;
+  @Prop totalWeeks: number = 25;
   /** 全部课程，不过滤周次，用于计算每周是否有课。 */
   @Prop courseList: CourseData[] = [];
   /** 选择教学周回调。 */
   private onWeekSelect?: (week: number) => void;
+
+  private initialWeekOffset(): number {
+    const lastWeek = Math.min(this.totalWeeks, WEEK_NUMBERS.length);
+    const week = Math.max(1, Math.min(this.actualCurrentWeek, lastWeek));
+    return (week - 1) * (WEEK_ITEM_WIDTH + WEEK_ITEM_GAP);
+  }
 
   private hasCourseInSlot(week: number, row: number, col: number): boolean {
     const startPeriod = row * 2 + 1;
@@ -81,7 +89,7 @@ export struct WeekSelector {
           .margin({ top: 6 })
       }
     }
-    .width(56)
+    .width(WEEK_ITEM_WIDTH)
     .height(92)
     .justifyContent(FlexAlign.Start)
     .alignItems(HorizontalAlign.Center)
@@ -97,7 +105,7 @@ export struct WeekSelector {
 
   build() {
     Scroll() {
-      Row({ space: 8 }) {
+      Row({ space: WEEK_ITEM_GAP }) {
         ForEach(WEEK_NUMBERS.filter((week: number) => week <= this.totalWeeks), (week: number) => {
           this.weekItem(week)
         }, (week: number) => `week-${week}`)
@@ -105,6 +113,7 @@ export struct WeekSelector {
       .padding({ left: 8, right: 8 })
     }
     .scrollable(ScrollDirection.Horizontal)
+    .initialOffset({ xOffset: this.initialWeekOffset(), yOffset: 0 })
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
     .friction(0.8)
