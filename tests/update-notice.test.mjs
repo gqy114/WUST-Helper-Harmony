@@ -21,8 +21,13 @@ test('反馈公告不会被当成检查更新弹窗', () => {
 });
 
 test('其他平台的更新公告不会在鸿蒙端误报', () => {
-  assert.equal(isUpdateNotice({ title: 'IOS更新通知', context: '请更新到新版本', platform: 1 }), false);
+  assert.equal(isUpdateNotice({ title: '新版本 1.0.5 更新通知', context: '请更新安装包', platform: 1 }), false);
   assert.equal(isUpdateNotice({ title: '安卓更新通知', context: '请安装新版', platform: 'android' }), false);
+});
+
+test('普通通知里的日期和活动截止时间不会被识别成版本号', () => {
+  assert.equal(isUpdateNotice({ title: '关于校园网维护的通知', context: '维护时间 2026.11.22 08:00-12:00', platform: 0 }), false);
+  assert.equal(isUpdateNotice({ title: '校园歌手大赛', context: '报名截止 12.01', platform: 0 }), false);
 });
 
 test('带版本号的鸿蒙更新公告可以打开更新弹窗', () => {
