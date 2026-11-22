@@ -1,9 +1,12 @@
 import { HttpRequest } from './HttpRequest';
 import { AppStorage } from '../store/AppStorage';
+export interface CampusMentionUser { studentId?: string; displayName?: string; realName?: string; nickname?: string; name?: string; id?: string | number; }
+
 export interface CampusWallReply {
   id?: number; studentId?: string; displayName?: string; realName?: string; avatarUrl?: string;
   college?: string; major?: string; content?: string; createdAt?: string; images?: string[];
   redFlowers?: number; accepted?: boolean; isAccepted?: boolean; is_accepted?: boolean;
+  mentionUsers?: CampusMentionUser[];
 }
 export interface CampusWallBookTrade {
   id?: number; listingId?: number; bookId?: number;
@@ -42,6 +45,7 @@ export interface CampusWallPost {
   isResolved?: boolean;
   acceptedReplyId?: number | string;
   accepted_reply_id?: number | string;
+  mentionUsers?: CampusMentionUser[];
   type?: string;
   category?: string;
   noticeType?: string;
@@ -124,6 +128,7 @@ export interface CampusWallNotificationActor {
 export interface CampusWallNotification {
   id?: number; eventType?: string; targetType?: string; targetId?: number; postId?: number; createdAt?: string;
   readAt?: string; actor?: CampusWallNotificationActor; postTitle?: string; postTag?: string; content?: string;
+  mentionUsers?: CampusMentionUser[];
 }
 export interface CampusWallNotificationPage { items: CampusWallNotification[]; latestId: number; unreadCount: number; }
 export function decodeHtmlEntities(value: string): string {

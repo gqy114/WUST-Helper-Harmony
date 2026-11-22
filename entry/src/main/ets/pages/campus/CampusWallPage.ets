@@ -3,6 +3,7 @@ import { AppStorage } from '../../store/AppStorage';
 import { promptAction } from '@kit.ArkUI';
 import { CampusWallApi, CampusWallPost, campusWallRelativeTime } from '../../net/CampusWallApi';
 import { CampusRichText } from '../../components/CampusRichText';
+import { formatMentionText } from '../../utils/MentionText';
 import { CommunityPostImagePreview } from '../../components/CommunityPostImagePreview';
 import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
@@ -204,7 +205,7 @@ struct CampusWallPage {
         else { ForEach(this.visiblePosts(), (post: CampusWallPost) => ListItem() { Column() {
           Row() { if (post.avatarUrl) { Image(post.avatarUrl).width(42).height(42).borderRadius(21).objectFit(ImageFit.Cover).margin({ right: 12 }); } else { Image($r('app.media.ic_default_avatar')).width(42).height(42).borderRadius(21).objectFit(ImageFit.Cover).margin({ right: 12 }); } Column() { Text(post.displayName || post.realName || '同学').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#655C86').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }); Text(post.college || post.major || '').fontSize(12).fontColor('#888888').margin({ top: 2 }).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }); }.alignItems(HorizontalAlign.Start).layoutWeight(1); Text((post.replyCount || 0) > 0 ? `${post.replyCount} 个回复` : '暂无回复').fontSize(13).fontColor('#777777').backgroundColor('#F1F2F4').borderRadius(20).padding({ left: 13, right: 13, top: 6, bottom: 6 }); }.width('100%');
           if (post.title) { CampusRichText({ content: post.title, fontSize: 18, textColor: '#222222', baseBold: true, lineHeight: 26 }); }
-          CampusRichText({ content: post.content || '', fontSize: 15, textColor: '#333333', lineHeight: 24 }); if (post.images && post.images.length > 0) { CommunityPostImagePreview({ images: post.images }).margin({ top: 12 }); }
+          CampusRichText({ content: formatMentionText(post.content || '', post.mentionUsers), fontSize: 15, textColor: '#333333', lineHeight: 24 }); if (post.images && post.images.length > 0) { CommunityPostImagePreview({ images: post.images }).margin({ top: 12 }); }
           Text(campusWallRelativeTime(post.createdAt)).fontSize(13).fontColor('#AAAAAA').margin({ top: 8 });
           Flex({ wrap: FlexWrap.Wrap }) {
             ForEach(WALL_REACTIONS, (option: WallReactionOption) => {
