@@ -70,13 +70,16 @@ test('社区详情页用 List 承载内容，避免内容不足一屏时被 Scro
   }
 });
 
-test('二手书筛选面板可滚动且有高度上限，选项和按钮都能点到', async () => {
+test('二手书筛选面板改为独立弹层，选项可滚动且按钮固定可见', async () => {
   const page = await src('pages/campus/SecondHandBookPage.ets');
-  const block = page.slice(page.indexOf('if (this.filterOpen)'), page.indexOf('if (this.searching)'));
+  const block = page.slice(page.indexOf('筛选面板改成覆盖'), page.indexOf('if (this.majorPickerOpen)'));
   assert.match(block, /Scroll\(\) \{/, '筛选面板没有放进可滚动容器');
-  assert.match(block, /constraintSize\(\{ maxHeight: '55%' \}\)/, '筛选面板没有高度上限');
+  assert.match(block, /\.height\('62%'\)/, '筛选面板没有固定高度');
+  assert.match(block, /\.layoutWeight\(1\)\.scrollBar\(BarState\.Auto\)/, '选项区不能独立滚动');
+  assert.match(block, /Divider\(\)\.height\(0\.5\)/, '底部按钮区没有分隔');
   assert.match(block, /Text\('取消'\)/, '取消按钮缺失');
   assert.match(block, /Text\('确定'\)/, '确定按钮缺失');
+  assert.match(block, /backgroundColor\('#66000000'\)/, '弹层没有遮罩');
 });
 
 test('回复时 @ 使用学号，展示时再转成昵称', async () => {
