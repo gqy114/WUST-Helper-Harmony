@@ -37,6 +37,8 @@ struct WebPage {
   @State private loading: boolean = true;
   @State private progress: number = 0;
   @State private errorText: string = '';
+  // 先把页面框架画出来，转场结束后再创建 Web，避免首帧被 Web 初始化拖慢。
+  @State private webReady: boolean = false;
   private webController: webview.WebviewController = new webview.WebviewController();
 
   aboutToAppear(): void {
@@ -47,6 +49,7 @@ struct WebPage {
       this.pageUrl = rawUrl.trim();
     }
     console.info(TAG, `load url: ${rawUrl}`);
+    setTimeout(() => { this.webReady = true; }, 80);
   }
 
   /** 把 ArkWeb 错误码翻译成人话：证书问题提示得比“错误码 -200”清楚。 */
@@ -155,6 +158,13 @@ struct WebPage {
           Button('返回').fontSize(14).fontColor(Color.White)
             .backgroundColor('#1ec98d').borderRadius(6).margin({ top: 16 })
             .onClick(() => { router.back(); })
+        }
+        .width('100%').layoutWeight(1)
+        .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+      } else if (!this.webReady) {
+        Column() {
+          LoadingProgress().width(36).height(36).color('#1ec98d')
+          Text('正在打开页面…').fontSize(13).fontColor('#999999').margin({ top: 10 })
         }
         .width('100%').layoutWeight(1)
         .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
