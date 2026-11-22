@@ -138,7 +138,7 @@ export function decodeHtmlEntities(value: string): string {
   return result;
 }
 interface WallData { posts?: CampusWallPost[]; list?: CampusWallPost[]; }
-interface WallResponse { code?: number; data?: WallData | CampusWallPost[]; }
+interface WallResponse { code?: number; message?: string; msg?: string; data?: WallData | CampusWallPost[]; }
 interface WallDetailResponse { code?: number; data?: CampusWallPost; }
 interface FlowerRankingResponse { code?: number; message?: string; data?: CampusRedFlowerRanking; }
 interface ReactionData { added?: boolean; }
@@ -194,7 +194,21 @@ export class CampusWallApi {
     const aliases: string[] = tag === 'lost' ? ['lost', 'found', 'lost_found'] : tag === 'team' ? ['team', 'match', 'competition'] : tag === 'help' ? ['help', 'ask'] : [tag];
     for (const currentTag of aliases) {
       const response = await HttpRequest.get<WallResponse>(`https://lyzyy.love:8081/api/v1/campus-wall/posts?page=${page}&tag=${encodeURIComponent(currentTag)}`, headers);
-      const data = response.data.data;
+      const responseCode = response.response.responseCode;
+      if (responseCode < 200 || responseCode >= 300) {
+        if (responseCode === 404 && aliases.length > 1) continue;
+        throw new Error(`校园社区请求失败（HTTP ${responseCode}）`);
+      }
+      const body = response.data;
+      const code = body?.code;
+      if (code !== undefined && code !== 0 && code !== 200 && code !== 10000 && code !== 11000) {
+        if (code === 404 && aliases.length > 1) continue;
+        throw new Error(body.message || body.msg || `校园社区请求失败（${code}）`);
+      }
+      const data = body?.data;
+      if (data === undefined || data === null) {
+        throw new Error('校园社区返回了空响应');
+      }
       const items: CampusWallPost[] = Array.isArray(data) ? data : (data?.posts || data?.list || []);
       if (items.length > 0 || aliases.length === 1) return items.map((post: CampusWallPost) => CampusWallApi.normalizePost(post));
     }
