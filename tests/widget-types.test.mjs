@@ -22,6 +22,27 @@ test('EntryFormAbility 按 form 名称映射四种模式', async () => {
   assert.match(ability, /initialMode = 'quick'/, '没有设置快捷功能模式');
 });
 
+test('设置页的四个按钮打开对应的系统卡片和默认尺寸', async () => {
+  const page = await src('entry/src/main/ets/pages/profile/WidgetSettingsPage.ets');
+  const { forms } = JSON.parse(await src('entry/src/main/resources/base/profile/form_config.json'));
+  const buttons = new Map([
+    ['添加倒计时卡片', 'wust_widget'],
+    ['添加周课表卡片', 'wust_weekly'],
+    ['添加日课表卡片', 'wust_daily'],
+    ['添加快捷功能卡片', 'wust_quick'],
+  ]);
+  for (const [label, name] of buttons) {
+    const form = forms.find((entry) => entry.name === name);
+    assert.ok(form, `缺少卡片配置 ${name}`);
+    const click = page.split(`Button('${label}')`)[1]?.split("Button('")[0];
+    const dimension = form.defaultDimension.replace('*', '_');
+    assert.ok(click?.includes(`this.openAddWidget('${name}', formInfo.FormDimension.Dimension_${dimension})`));
+  }
+  assert.match(page, /'ohos\.extra\.param\.key\.form_name': formName/);
+  assert.match(page, /'ohos\.extra\.param\.key\.form_dimension': dimension/);
+  assert.match(page, /'ohos\.extra\.param\.key\.module_name': 'entry'/);
+});
+
 test('快捷功能卡片渲染入口并支持点击跳转', async () => {
   const card = await src('entry/src/main/ets/widget/WidgetCard.ets');
   assert.match(card, /Quick機能|快捷功能/, '缺少快捷功能标题');

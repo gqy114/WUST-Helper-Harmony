@@ -4,7 +4,7 @@
  * 与 EntryFormAbility 共用 WidgetPrefs / WidgetData：
  *  - 设置：切换卡片内容类型、编辑倒计时、同步考试倒计时
  *  - 刷新：重新生成数据并刷新所有已添加的卡片
- *  - 添加：打开系统小组件管理页
+ *  - 添加：在系统小组件管理页打开指定卡片
  *  - 外观：自定义背景（选图 + 2:1 裁剪）、主题（滚轮选择）、背景不透明度
  */
 import { promptAction, router } from '@kit.ArkUI';
@@ -236,18 +236,23 @@ struct WidgetSettingsPage {
     await this.refreshWidgets(false);
   }
 
-  private openAddWidget(): void {
+  private openAddWidget(formName: string, dimension: formInfo.FormDimension): void {
     try {
       formProvider.openFormManager({
         bundleName: BUNDLE_NAME,
         moduleName: 'entry',
-        abilityName: 'EntryFormAbility'
+        abilityName: 'EntryFormAbility',
+        parameters: {
+          'ohos.extra.param.key.form_name': formName,
+          'ohos.extra.param.key.form_dimension': dimension,
+          'ohos.extra.param.key.module_name': 'entry'
+        }
       });
       // 管理页关闭后用户可能已经添加了卡片，延迟同步一次数量。
       setTimeout(() => this.refreshPublishedCount(), 1500);
     } catch (error) {
       console.warn(TAG, `open form manager failed: ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '当前系统不支持小组件管理页，请长按桌面空白处添加', duration: 2600 });
+      promptAction.showToast({ message: '无法打开卡片添加页，请长按桌面空白处手动添加', duration: 2600 });
     }
   }
 
@@ -578,24 +583,24 @@ struct WidgetSettingsPage {
               Button('添加倒计时卡片')
                 .layoutWeight(1).height(46).fontSize(15).fontColor(Color.White)
                 .backgroundColor('#20C997').borderRadius(10)
-                .onClick(() => this.openAddWidget())
+                .onClick(() => this.openAddWidget('wust_widget', formInfo.FormDimension.Dimension_2_4))
               Button('添加周课表卡片')
                 .layoutWeight(1).height(46).fontSize(15).fontColor(Color.White)
                 .backgroundColor('#2F80ED').borderRadius(10)
                 .margin({ left: 10 })
-                .onClick(() => this.openAddWidget())
+                .onClick(() => this.openAddWidget('wust_weekly', formInfo.FormDimension.Dimension_4_4))
             }.width('100%').margin({ top: 16 })
 
             Row() {
               Button('添加日课表卡片')
                 .layoutWeight(1).height(46).fontSize(15).fontColor(Color.White)
                 .backgroundColor('#F2994A').borderRadius(10)
-                .onClick(() => this.openAddWidget())
+                .onClick(() => this.openAddWidget('wust_daily', formInfo.FormDimension.Dimension_2_4))
               Button('添加快捷功能卡片')
                 .layoutWeight(1).height(46).fontSize(15).fontColor(Color.White)
                 .backgroundColor('#9B51E0').borderRadius(10)
                 .margin({ left: 10 })
-                .onClick(() => this.openAddWidget())
+                .onClick(() => this.openAddWidget('wust_quick', formInfo.FormDimension.Dimension_4_4))
             }.width('100%').margin({ top: 10 })
 
             Text('倒计时').fontSize(15).fontWeight(FontWeight.Medium).fontColor('#A7ABB3')
@@ -799,7 +804,7 @@ struct WidgetSettingsPage {
             .width('100%').textAlign(TextAlign.Center).margin({ bottom: 18 })
           Text('1. 倒计时卡片展示教务同步的考试安排；多场考试时按小时轮换。')
             .fontSize(15).fontColor('#777777').lineHeight(24).width('100%').margin({ bottom: 14 })
-          Text('2. 点击“添加小组件到桌面”可打开系统小组件管理页，选择 4×2 卡片。')
+          Text('2. 点击对应的添加按钮，在系统卡片页面选择“添加至桌面”。')
             .fontSize(15).fontColor('#777777').lineHeight(24).width('100%').margin({ bottom: 14 })
           Text('3. 自定义背景会按卡片比例裁剪；不透明度只影响背景图片，不影响文字。')
             .fontSize(15).fontColor('#777777').lineHeight(24).width('100%').margin({ bottom: 20 })
