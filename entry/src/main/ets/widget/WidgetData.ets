@@ -5,7 +5,7 @@
  * formBindingData 注入。设置页修改偏好后也调用这里重新生成数据并刷新卡片。
  */
 import { AppStorage } from '../store/AppStorage';
-import { CourseData, isCourseInWeek } from '../model/CourseModel';
+import { CourseData, getCourseColor, isCourseInWeek, PERIOD_COUNT } from '../model/CourseModel';
 
 export const WIDGET_MODE_COUNTDOWN: string = 'countdown';
 export const WIDGET_MODE_DAILY: string = 'daily';
@@ -57,6 +57,18 @@ export interface WidgetSnapshot {
   textColor: string;
   subColor: string;
   updatedAt: string;
+  weeklyCourses?: string;
+}
+
+export interface WeeklyWidgetCourse {
+  name: string;
+  location: string;
+  color: string;
+  day: number;
+  start: number;
+  end: number;
+  lane: number;
+  lanes: number;
 }
 
 const WEEKDAY_NAMES: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -312,7 +324,7 @@ export class WidgetData {
     const subtitle = picked.length > 0
       ? (weekly ? `本周 ${picked.length} 节课` : `今天 ${picked.length} 节课`)
       : (weekly ? '本周没有课程了' : '今天没有课程了');
-    return {
+    const snapshot: WidgetSnapshot = {
       mode: mode,
       title: title,
       subtitle: subtitle,
@@ -332,6 +344,42 @@ export class WidgetData {
       subColor: '',
       updatedAt: WidgetData.formatDate(today)
     };
+    if (weekly) {
+      snapshot.weeklyCourses = JSON.stringify(WidgetData.weeklyGrid(picked));
+    }
+    return snapshot;
+  }
+
+  private static weeklyGrid(courses: CourseData[]): WeeklyWidgetCourse[] {
+    const grid: WeeklyWidgetCourse[] = [];
+    let groupStart = 0;
+    let groupEnd = 0;
+    let day = 0;
+    const laneEnds: number[] = [];
+    for (const course of courses) {
+      if (course.dayOfWeek < 1 || course.dayOfWeek > 7 || course.startPeriod < 1 ||
+        course.endPeriod < course.startPeriod || course.startPeriod > PERIOD_COUNT) continue;
+      if (course.dayOfWeek !== day || course.startPeriod > groupEnd) {
+        day = course.dayOfWeek;
+        groupStart = grid.length;
+        groupEnd = 0;
+        laneEnds.length = 0;
+      }
+      let lane = laneEnds.findIndex((end: number) => end < course.startPeriod);
+      if (lane < 0) lane = laneEnds.length;
+      const end = Math.min(course.endPeriod, PERIOD_COUNT);
+      laneEnds[lane] = end;
+      groupEnd = Math.max(groupEnd, end);
+      grid.push({
+        name: course.courseName, location: course.location || '',
+        color: course.color || getCourseColor(grid.length),
+        day: day, start: course.startPeriod, end: end, lane: lane, lanes: laneEnds.length
+      });
+      for (let i = groupStart; i < grid.length; i++) {
+        grid[i].lanes = laneEnds.length;
+      }
+    }
+    return grid;
   }
 
   /**
