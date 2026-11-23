@@ -7,6 +7,7 @@ import { AppStorage as PreferenceStorage } from '../../store/AppStorage';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
 import { LaunchPrefetchService } from '../../service/LaunchPrefetchService';
 import { CourseApi } from '../../net/CourseApi';
+import { DynamicScheduleApi } from '../../net/DynamicScheduleApi';
 import { CourseStore } from '../../store/CourseStore';
 import { WeekSelector } from '../../components/WeekSelector';
 import { CourseCalendar } from '../../components/CourseCalendar';
@@ -16,9 +17,6 @@ import { SemesterPicker } from '../../components/SemesterPicker';
 import { WeekAdjustPicker } from '../../components/WeekAdjustPicker';
 import { CourseData, isCourseInWeek, getTimeSlotsByCampus, ScheduleSettings, DEFAULT_SETTINGS } from '../../model/CourseModel';
 import { router, promptAction } from '@kit.ArkUI';
-import { scanBarcode, scanCore } from '@kit.ScanKit';
-import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
-import common from '@ohos.app.ability.common';
 
 const TAG = 'CoursePage';
 
@@ -416,6 +414,10 @@ export struct CoursePage {
   private async fetchCourses(retried: boolean = false): Promise<void> {
     try {
       const s = PreferenceStorage.getInstance();
+      if (await s.getCurrentArchiveId() !== 'mine') {
+        await this.loadCurrentArchiveCourses();
+        return;
+      }
       const token = await s.getToken();
       if (!token) {
         this.showCachedCourses();
@@ -459,6 +461,7 @@ export struct CoursePage {
           ? (undergradResult.data ?? []) : null;
       }
 
+      if (await s.getCurrentArchiveId() !== 'mine') return;
       if (responseCode === 10000 || responseCode === 200 || responseCode === 0) {
         const list: CourseData[] = resp ? resp : [];
         const savedCourses = await s.getCurrentCourses();
@@ -555,10 +558,11 @@ export struct CoursePage {
 
   private async loadCurrentArchiveCourses(): Promise<boolean> {
     const currentCourses = await PreferenceStorage.getInstance().getCurrentCourses();
-    if (!currentCourses || currentCourses.length === 0) {
+    if (currentCourses.length === 0 && await PreferenceStorage.getInstance().getCurrentArchiveId() === 'mine') {
       return false;
     }
     this.store.setCourses(currentCourses);
+    this.errorMsg = '';
     // 必须用 store 里重新上过色的列表：本地存档没有 color 字段，
     // 直接用原数组会让所有课程都落到默认绿色。
     this.allCourseList = [...this.store.courses];
@@ -610,31 +614,8 @@ export struct CoursePage {
     console.info(TAG, `updateWeekDates: week=${this.currentWeek}, dates=${JSON.stringify(this.weekDates)}, month=${this.monthLabel}`);
   }
 
-  private async startScan(): Promise<void> {
-    try {
-      const context = getContext(this) as common.UIAbilityContext;
-      const atManager = abilityAccessCtrl.createAtManager();
-      const permissionResult = await atManager.requestPermissionsFromUser(context, [
-        'ohos.permission.CAMERA'
-      ]);
-      if (!permissionResult.authResults || permissionResult.authResults[0] !== 0) {
-        promptAction.showToast({ message: '需要相机权限才能扫码', duration: 1500 });
-        return;
-      }
-      const options: scanBarcode.ScanOptions = {
-        scanTypes: [scanCore.ScanType.ALL],
-        enableMultiMode: false,
-        enableAlbum: true
-      };
-      const result = await scanBarcode.startScanForResult(context, options);
-      console.info('CoursePage', `扫码结果: ${JSON.stringify(result)}`);
-      if (result.originalValue) {
-        promptAction.showToast({ message: `扫码结果: ${result.originalValue}`, duration: 2000 });
-      }
-    } catch (err) {
-      console.error('CoursePage', `扫码失败: ${JSON.stringify(err)}`);
-      promptAction.showToast({ message: '扫码已取消', duration: 1500 });
-    }
+  private startScan(): void {
+    router.pushUrl({ url: 'pages/course/CourseArchivePage', params: { scanOnOpen: true } });
   }
 
   /** 周切换回调 */
@@ -643,6 +624,20 @@ export struct CoursePage {
     this.currentWeek = week;
     this.updateWeekDates();
     console.info(TAG, `week changed to ${week}`);
+  }
+
+  private async refreshSharedArchive(archiveId: string): Promise<void> {
+    const storage = PreferenceStorage.getInstance();
+    const accountEpoch = storage.getSessionEpoch();
+    const archive = await DynamicScheduleApi.getSharedSchedule(archiveId);
+    const archives = await storage.getCourseArchives();
+    if (await storage.getCurrentArchiveId() !== archiveId || storage.getSessionEpoch() !== accountEpoch) return;
+    const updated = archives.map(item => item.id === archive.id ? archive : item);
+    await storage.setCourseArchives(updated, accountEpoch);
+    if (await storage.getCurrentArchiveId() !== archiveId || storage.getSessionEpoch() !== accountEpoch) return;
+    await storage.setCurrentArchiveCourses(archiveId, archive.courses);
+    AppStorage.setOrCreate('courseArchives', updated);
+    await this.loadCurrentArchiveCourses();
   }
 
   /** 右上角刷新课表 */
@@ -659,6 +654,7 @@ export struct CoursePage {
     });
 
     setTimeout(async () => {
+      let message = '刷新成功';
       if (this.isUseMockData) {
         this.store.setCourses(mockCourseList);
         this.allCourseList = [...mockCourseList];
@@ -668,9 +664,19 @@ export struct CoursePage {
         this.refreshKey = this.refreshKey + 1;
         console.info('CoursePage', 'mock data refreshed');
       } else {
-        await this.fetchCourses();
-        this.refreshKey = this.refreshKey + 1;
-        console.info('CoursePage', 'api data refreshed');
+        try {
+          const archiveId = await PreferenceStorage.getInstance().getCurrentArchiveId();
+          if (archiveId.startsWith('shared_')) {
+            await this.refreshSharedArchive(archiveId);
+          } else if (archiveId === 'mine') {
+            await this.fetchCourses();
+          } else {
+            await this.loadCurrentArchiveCourses();
+          }
+          this.refreshKey = this.refreshKey + 1;
+        } catch (error) {
+          message = (error as Error).message || '刷新共享课表失败，请稍后重试';
+        }
       }
 
       if (this.refreshTimer !== -1) {
@@ -680,8 +686,8 @@ export struct CoursePage {
       this.refreshRotate = 0;
       this.isRefreshing = false;
 
-      promptAction.showToast({ message: '刷新成功', duration: 1500 });
-      console.info('CoursePage', 'refresh success');
+      promptAction.showToast({ message, duration: 1500 });
+
     }, 800);
   }
 

@@ -476,8 +476,10 @@ export class AppStorage {
     return this.parseArchives(raw);
   }
 
-  async setCourseArchives(value: CourseArchive[]): Promise<void> {
-    return this.putStr(await this.archiveKey('courseArchives'), JSON.stringify(value));
+  async setCourseArchives(value: CourseArchive[], expectedEpoch: number = this.sessionEpoch): Promise<void> {
+    const key = await this.archiveKey('courseArchives');
+    if (this.sessionEpoch !== expectedEpoch) return;
+    await this.putStr(key, JSON.stringify(value));
   }
 
   async getCurrentArchiveId(): Promise<string> {
