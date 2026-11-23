@@ -13,11 +13,16 @@ async function loadWidget() {
   const storage = new SyntheticModule(['AppStorage'], function () {
     this.setExport('AppStorage', { getInstance: () => ({}) });
   });
-  const model = new SyntheticModule(['CourseData', 'isCourseInWeek', 'getCourseColor', 'PERIOD_COUNT'], function () {
+  const model = new SyntheticModule(['CourseData', 'isCourseInWeek', 'getCourseColor', 'PERIOD_COUNT', 'TIME_SLOTS'], function () {
     this.setExport('CourseData', undefined);
     this.setExport('isCourseInWeek', (course) => course.weekRanges !== '1-2');
     this.setExport('getCourseColor', () => '#2196f3');
     this.setExport('PERIOD_COUNT', 12);
+    this.setExport('TIME_SLOTS', [
+      { start: '08:20', end: '10:00', startPeriod: 1, endPeriod: 2 },
+      { start: '10:20', end: '12:00', startPeriod: 3, endPeriod: 4 },
+      { start: '14:00', end: '15:40', startPeriod: 5, endPeriod: 6 },
+    ]);
   });
   const widget = new SourceTextModule(transform(await source('../entry/src/main/ets/widget/WidgetData.ets')));
   await widget.link((name) => {
@@ -46,6 +51,31 @@ test('四门课程：四行全部显示，不应被截断', async () => {
   assert.match(snapshot.line0, /课程1/);
   assert.match(snapshot.line3, /课程4/, `第四门应显示，实际 line3=${snapshot.line3}`);
   assert.doesNotMatch(snapshot.line0 + snapshot.line3, /还有/);
+});
+
+test('日课表从最近课程开始按节次循环，只包含当天本周课程', async () => {
+  const WidgetData = await loadWidget();
+  const template = makeCourses(1)[0];
+  const courses = [1, 3, 5].map((startPeriod) => ({
+    ...template, courseName: `课${startPeriod}`, startPeriod, endPeriod: startPeriod + 1,
+    location: '教一楼', teacher: '王老师',
+  }));
+  courses.push({ ...courses[0], courseName: '其他星期', dayOfWeek: 2 });
+  courses.push({ ...courses[0], courseName: '其他周', weekRanges: '1-2' });
+  const at = (hour, minute) => WidgetData.courseSnapshot(courses, 13, 'daily', '#123456',
+    new Date(2026, 10, 23, hour, minute));
+  const order = (snapshot) => JSON.parse(snapshot.dailyCourses).map((course) => course.name);
+  assert.deepEqual(order(at(7, 0)), ['课1', '课3', '课5']);
+  assert.deepEqual(order(at(10, 10)), ['课3', '课5', '课1']);
+  assert.deepEqual(order(at(11, 0)), ['课3', '课5', '课1']);
+  assert.deepEqual(order(at(18, 0)), ['课5', '课1', '课3']);
+  const snapshot = at(11, 0);
+  assert.equal(snapshot.title, '11月23日');
+  assert.equal(snapshot.dailyWeekday, '第13周 周一');
+  assert.deepEqual(JSON.parse(snapshot.dailyCourses)[0], {
+    name: '课3', start: '10:20', end: '12:00', details: '教一楼 · 王老师',
+  });
+  assert.deepEqual(JSON.parse(WidgetData.courseSnapshot([], 13, 'daily', '#123456').dailyCourses), []);
 });
 
 test('周课表网格保留完整周次、周日、晚课和同节次不同课程', async () => {

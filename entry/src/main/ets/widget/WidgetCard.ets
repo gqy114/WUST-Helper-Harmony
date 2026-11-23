@@ -5,6 +5,7 @@
  * 卡片内部只做展示，不访问网络，也不读写 Preferences。
  */
 import { WeeklyWidgetGrid } from './WeeklyWidgetGrid';
+import { DailyWidgetCarousel } from './DailyWidgetCarousel';
 
 const LINE_COUNT = 4;
 
@@ -29,6 +30,8 @@ struct WidgetCard {
   @LocalStorageProp('textColor') textColor: string = '#111111';
   @LocalStorageProp('subColor') subColor: string = '#666666';
   @LocalStorageProp('weeklyCourses') weeklyCourses: string = '';
+  @LocalStorageProp('dailyCourses') dailyCourses: string = '';
+  @LocalStorageProp('dailyWeekday') dailyWeekday: string = '';
 
   private lineAt(index: number): string {
     if (index === 0) return this.line0;
@@ -265,13 +268,30 @@ struct WidgetCard {
           WeeklyWidgetGrid({ courses: this.weeklyCourses, subtitle: this.subtitle,
             textColor: this.textColor, subColor: this.subColor })
             .layoutWeight(1)
+        } else if (this.mode === 'daily') {
+          DailyWidgetCarousel({
+            dateText: this.title,
+            weekText: this.dailyWeekday,
+            courses: this.dailyCourses,
+            emptyText: this.subtitle,
+            accent: this.accent,
+            textColor: this.textColor,
+            subColor: this.subColor,
+            onSettings: () => {
+              postCardAction(this, { action: 'router', abilityName: 'EntryAbility',
+                params: { widgetRoute: 'pages/profile/WidgetSettingsPage' } });
+            },
+            onRefresh: () => {
+              postCardAction(this, { action: 'message', params: { action: 'refresh' } });
+            }
+          })
         } else {
           this.courseContent()
         }
       }
       .width('100%')
       .height('100%')
-      .padding(this.mode === 'weekly' ? 8 : 16)
+      .padding(this.mode === 'weekly' || this.mode === 'daily' ? 8 : 16)
       .justifyContent(FlexAlign.Center)
     }
     .width('100%')
