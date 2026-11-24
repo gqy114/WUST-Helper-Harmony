@@ -118,6 +118,12 @@ export struct CoursePage {
   private async resolveSemesterStart(): Promise<void> {
     const s = PreferenceStorage.getInstance();
     try {
+      // 当前查看的是共享档案时，优先使用该档案的开学日期，重启后也不能退回自己的学期。
+      const archiveId = (await s.getCurrentArchiveId()).trim();
+      if (archiveId.length > 0 && archiveId !== 'mine') {
+        const archiveStart = (await s.getSettingString('archiveTermStartDate', '')).trim();
+        if (this.applyTermStartDateFromString(archiveStart)) return;
+      }
       const cached = await s.getTermStartDate();
       if (this.applyTermStartDateFromString(cached)) {
         console.info(TAG, `resolveSemesterStart from cache: ${cached}`);
