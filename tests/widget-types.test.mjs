@@ -100,3 +100,11 @@ test('快捷入口兼容 want.parameters.params 嵌套参数，旧卡片内部�
   const config = await src('entry/src/main/resources/base/profile/form_config.json');
   assert.match(config, /"name": "wust_widget"/, '旧卡片内部名称 wust_widget 被改名，会导致升级后旧卡片消失');
 });
+
+test('桌面卡片直达设置后返回走应用启动页，有上一页时仍正常返回', async () => {
+  const page = await src('entry/src/main/ets/pages/profile/WidgetSettingsPage.ets');
+  assert.match(page, /if \(Number\(router\.getLength\(\)\) > 1\) \{\s*router\.back\(\)/);
+  assert.match(page, /router\.replaceUrl\(\{ url: 'pages\/splash\/LaunchPage' \}\)/);
+  assert.match(page, /onBackPress\(\): boolean \{\s*if \(Number\(router\.getLength\(\)\) > 1\) return false;\s*this\.leaveSettings\(\);\s*return true;/);
+  assert.match(page, /accessibilityText\('返回'\)\.onClick\(\(\) => this\.leaveSettings\(\)\)/);
+});

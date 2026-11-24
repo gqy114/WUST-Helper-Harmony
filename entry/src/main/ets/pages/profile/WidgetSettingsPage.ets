@@ -71,6 +71,7 @@ struct WidgetSettingsPage {
   @State private cropOffsetX: number = 0;
   @State private cropOffsetY: number = 0;
   @State private cropperBusy: boolean = false;
+  private leavingRoot: boolean = false;
   private cropStartOffsetX: number = 0;
   private cropStartOffsetY: number = 0;
   // 考试同步串行执行：旧学期保存尚未结束时，新学期同步会排在它后面。
@@ -86,6 +87,27 @@ struct WidgetSettingsPage {
     }
     this.loadSettings();
     this.refreshPublishedCount();
+  }
+
+  private leaveSettings(): void {
+    if (Number(router.getLength()) > 1) {
+      router.back();
+      return;
+    }
+    // 桌面卡片冷启动时直接加载设置页，此时路由栈没有上一页。
+    if (this.leavingRoot) return;
+    this.leavingRoot = true;
+    router.replaceUrl({ url: 'pages/splash/LaunchPage' }).catch((error: Error) => {
+      this.leavingRoot = false;
+      console.warn(TAG, 'return from widget settings failed', error.message);
+      promptAction.showToast({ message: '暂时无法返回，请重试' });
+    });
+  }
+
+  onBackPress(): boolean {
+    if (Number(router.getLength()) > 1) return false;
+    this.leaveSettings();
+    return true;
   }
 
   private async loadSettings(): Promise<void> {
@@ -559,7 +581,7 @@ struct WidgetSettingsPage {
     Stack({ alignContent: Alignment.Center }) {
       Column() {
         Row() {
-          Image($r('app.media.ic_arrow_left')).width(27).height(27).fillColor('#222222').onClick(() => router.back())
+          Image($r('app.media.ic_arrow_left')).width(27).height(27).fillColor('#222222').accessibilityText('返回').onClick(() => this.leaveSettings())
           Text('小组件设置').fontSize(25).fontWeight(FontWeight.Bold).fontColor('#222222').margin({ left: 17 })
           Blank()
           Image($r('app.media.help')).width(29).height(29).fillColor('#777777')
