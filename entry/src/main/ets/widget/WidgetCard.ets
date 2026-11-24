@@ -25,7 +25,7 @@ struct WidgetCard {
   @LocalStorageProp('line3') line3: string = '';
   @LocalStorageProp('countdownSlides') countdownSlides: string = '';
   @LocalStorageProp('countdownCompact') countdownCompact: boolean = false;
-  @LocalStorageProp('accent') accent: string = '#EC5A3C';
+  @LocalStorageProp('accent') accent: string = '#61A5FA';
   @LocalStorageProp('bg') bg: string = '';
   @LocalStorageProp('bgOpacity') bgOpacity: number = 0.7;
   @LocalStorageProp('cardBg') cardBg: string = '#FFFFFF';
@@ -108,7 +108,7 @@ struct WidgetCard {
     .layoutWeight(1)
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(QUICK_TILE_BLUE)
+    .backgroundColor(this.accent)
     .borderRadius(11)
     .accessibilityText(label)
     .onClick(() => {
@@ -147,7 +147,7 @@ struct WidgetCard {
         .height('100%')
         .padding({ left: 9, right: 7 })
         .alignItems(VerticalAlign.Center)
-        .backgroundColor(QUICK_TILE_BLUE)
+        .backgroundColor(this.accent)
         .borderRadius(11)
         .accessibilityText('电量 ' + this.title + ' ' + this.subtitle)
         .onClick(() => {

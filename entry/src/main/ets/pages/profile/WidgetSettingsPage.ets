@@ -53,7 +53,7 @@ struct WidgetSettingsPage {
   @State private countdowns: WidgetCountdownItem[] = [];
   @State private examCountdowns: WidgetCountdownItem[] = [];
   @State private snapshot: WidgetSnapshot | null = null;
-  @State private accent: string = '#EC5A3C';
+  @State private accent: string = '#61A5FA';
   @State private publishedCount: number = 0;
   @State private busy: boolean = false;
 
