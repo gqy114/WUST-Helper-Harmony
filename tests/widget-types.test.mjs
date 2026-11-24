@@ -103,9 +103,11 @@ test('快捷入口兼容 want.parameters.params 嵌套参数，旧卡片内部�
 
 test('快捷功能按钮使用与 App 图标一致的蓝色', async () => {
   const card = await src('entry/src/main/ets/widget/WidgetCard.ets');
-  assert.match(card, /const QUICK_TILE_BG: string = '#61A5FA';/, '缺少快捷按钮蓝色常量');
+  assert.match(card, /backgroundColor\(this\.accent\)/, '快捷按钮没有跟随强调色');
+  const data = await src('entry/src/main/ets/widget/WidgetData.ets');
+  assert.match(data, /toUpperCase\(\) === '#EC5A3C'/, '旧橙红强调色没有迁移');
   const block = card.slice(card.indexOf('private quickTile'), card.indexOf('private quickContent'));
-  assert.match(block, /backgroundColor\(QUICK_TILE_BG\)/, '快捷按钮没有使用蓝色背景');
+  assert.match(block, /backgroundColor\(this\.accent\)/, '快捷按钮没有使用统一强调色');
 });
 
 test('小组件默认强调色统一为 logo 蓝色，不再使用橙红', async () => {
@@ -113,7 +115,9 @@ test('小组件默认强调色统一为 logo 蓝色，不再使用橙红', async
     'entry/src/main/ets/widget/WidgetCard.ets', 'entry/src/main/ets/widget/WidgetData.ets',
     'entry/src/main/ets/pages/profile/WidgetSettingsPage.ets']) {
     const source = await src(path);
-    assert.doesNotMatch(source, /#EC5A3C/, `${path} 仍保留橙红色`);
+    if (!path.endsWith('WidgetData.ets')) {
+      assert.doesNotMatch(source, /#EC5A3C/, `${path} 仍保留橙红色`);
+    }
     assert.match(source, /#61A5FA/, `${path} 没有改为 logo 蓝色`);
   }
 });

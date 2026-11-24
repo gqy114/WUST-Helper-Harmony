@@ -111,7 +111,7 @@ struct WidgetCard {
     .layoutWeight(1)
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(QUICK_TILE_BG)
+    .backgroundColor(this.accent)
     .borderRadius(12)
     .margin(4)
     .onClick(() => {
