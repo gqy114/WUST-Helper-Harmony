@@ -82,7 +82,7 @@ struct InfoSettingsPage {
     this.classes = (await storage.getClasses()) || '未获取班级';
     // 页面打开时刷新一次教务资料，保证展示的是后端当前信息。
     let token = await storage.getToken();
-    console.info('InfoSettingsPage', `tokenLen=${token.length} studentId=${this.studentId}`);
+    console.info('InfoSettingsPage', 'load profile start');
     const savedStudentId = await storage.getStudentId();
     const savedPassword = await storage.getPassword();
     const isGraduate = await storage.getIsGraduate();
@@ -106,7 +106,7 @@ struct InfoSettingsPage {
         if (!token) return;
         const response = await UserApi.getUserInfo(token, savedStudentId);
         const data = response.data;
-        console.info('InfoSettingsPage', `apply data=${JSON.stringify(data)}`);
+        console.info('InfoSettingsPage', `apply profile fields=${Object.keys(data).length}`);
         if (data) {
         const realName = data.stuName || data.name || '';
         const studentId = data.stuNum || data.studentNumber || data.studentId || '';
