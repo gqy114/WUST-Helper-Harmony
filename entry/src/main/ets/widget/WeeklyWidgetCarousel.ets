@@ -12,6 +12,8 @@ export struct WeeklyWidgetCarousel {
   @Prop textColor: string = '#111111';
   @Prop subColor: string = '#666666';
   @State private pages: WeeklyWidgetPages = { grids: [], weekGridIndexes: [] };
+  @State private locked: boolean = false;
+  @State private displayIndex: number = 0;
   private swiperController: SwiperController = new SwiperController();
   // 滑到非本周后 30 秒自动回到本周；每次滑动都会重新计时。
   private returnTimer: number = -1;
@@ -36,15 +38,8 @@ export struct WeeklyWidgetCarousel {
     }
   }
 
-  private onPageChanged(index: number): void {
-    // 自动回本周触发的 onChange 不重新计时，也不打断“常驻本周”。
-    if (this.autoReturning) {
-      this.autoReturning = false;
-      this.clearReturnTimer();
-      return;
-    }
+  private startAutoReturn(): void {
     this.clearReturnTimer();
-    if (index === this.currentPageIndex()) return;
     this.returnTimer = setTimeout(() => {
       this.returnTimer = -1;
       this.autoReturning = true;
@@ -56,18 +51,52 @@ export struct WeeklyWidgetCarousel {
     }, 30000);
   }
 
+  private toggleLock(): void {
+    this.locked = !this.locked;
+    if (this.locked) {
+      // 锁定后常驻当前非本周课表，不再自动回本周。
+      this.clearReturnTimer();
+    } else if (this.displayIndex !== this.currentPageIndex()) {
+      this.startAutoReturn();
+    }
+  }
+
+  private onPageChanged(index: number): void {
+    this.displayIndex = index;
+    // 自动回本周触发的 onChange 不重新计时，也不打断“常驻本周”。
+    if (this.autoReturning) {
+      this.autoReturning = false;
+      this.clearReturnTimer();
+      return;
+    }
+    if (this.locked) return;
+    this.clearReturnTimer();
+    if (index === this.currentPageIndex()) return;
+    this.startAutoReturn();
+  }
+
   private loadPages(): void {
     try {
       this.pages = JSON.parse(this.pagesJson) as WeeklyWidgetPages;
     } catch {
       this.pages = { grids: [], weekGridIndexes: [] };
     }
+    this.displayIndex = this.currentPageIndex();
   }
 
   @Builder
   private weekContent(title: string, courses: string, emptyText: string) {
     Column() {
-      Text(title).fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.textColor).width('100%')
+      Row({ space: 6 }) {
+        Text(title).fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.textColor).layoutWeight(1)
+        // 只有手动滑到非本周后才显示锁按钮；再滑回本周自动隐藏。
+        if (this.displayIndex !== this.currentPageIndex()) {
+          Image($r('app.media.ic_widget_lock')).width(20).height(20).objectFit(ImageFit.Contain)
+            .fillColor(this.locked ? '#61A5FA' : this.subColor)
+            .accessibilityText(this.locked ? '取消锁定当前周课表' : '锁定当前周课表')
+            .onClick(() => this.toggleLock())
+        }
+      }.width('100%')
       WeeklyWidgetGrid({
         courses: courses, campus: this.campus, subtitle: emptyText, textColor: this.textColor, subColor: this.subColor
       }).layoutWeight(1)
