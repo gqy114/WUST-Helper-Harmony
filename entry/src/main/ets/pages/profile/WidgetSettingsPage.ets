@@ -15,6 +15,7 @@ import { image } from '@kit.ImageKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { AppStorage } from '../../store/AppStorage';
 import { CountdownApi, CountdownItem } from '../../net/CountdownApi';
+import { WeeklyWidgetGrid } from '../../widget/WeeklyWidgetGrid';
 import {
   WidgetCountdownItem,
   WidgetData,
@@ -499,45 +500,57 @@ struct WidgetSettingsPage {
         .width('100%')
         .height(36)
 
-        Row() {
-          Column() {
-            Text(this.snapshot?.title ?? '考试倒计时')
-              .fontSize(19).fontWeight(FontWeight.Bold).fontColor(this.themeColors()[1])
-              .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
-            if (this.selectedTab === 0) {
-              Text(this.snapshot?.subtitle ?? '还没有考试安排')
-                .fontSize(13).fontColor(this.accent).margin({ top: 6 }).width('100%')
-              Text(this.snapshot?.line0 ?? '')
-                .fontSize(12).fontColor(this.themeColors()[2]).margin({ top: 6 }).width('100%')
-            }
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-
-          if (this.selectedTab === 0) {
+        if (this.selectedTab === 2) {
+          Text(this.snapshot?.title ?? '周课表').fontSize(16).fontWeight(FontWeight.Bold)
+            .fontColor(this.themeColors()[1]).width('100%')
+          WeeklyWidgetGrid({
+            courses: this.snapshot?.weeklyCourses ?? '',
+            campus: this.snapshot?.campus ?? '黄家湖校区',
+            subtitle: this.snapshot?.subtitle ?? '正在加载数据…',
+            textColor: this.themeColors()[1],
+            subColor: this.themeColors()[2]
+          }).layoutWeight(1)
+        } else {
+          Row() {
             Column() {
-              Text(this.snapshot?.days && this.snapshot.days.length > 0 ? this.snapshot.days : '—')
-                .fontSize(46).fontWeight(FontWeight.Bold).fontColor(this.accent)
-              Text('天').fontSize(12).fontColor(this.themeColors()[2])
+              Text(this.snapshot?.title ?? '考试倒计时')
+                .fontSize(19).fontWeight(FontWeight.Bold).fontColor(this.themeColors()[1])
+                .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+              if (this.selectedTab === 0) {
+                Text(this.snapshot?.subtitle ?? '还没有考试安排')
+                  .fontSize(13).fontColor(this.accent).margin({ top: 6 }).width('100%')
+                Text(this.snapshot?.line0 ?? '')
+                  .fontSize(12).fontColor(this.themeColors()[2]).margin({ top: 6 }).width('100%')
+              }
             }
-            .width(84)
-            .alignItems(HorizontalAlign.Center)
-          }
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .alignItems(VerticalAlign.Center)
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
 
-        if (this.selectedTab !== 0) {
-          Column() {
-            Text(this.snapshot?.line0 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%')
-            Text(this.snapshot?.line1 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
-            Text(this.snapshot?.line2 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
-            Text(this.snapshot?.line3 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
+            if (this.selectedTab === 0) {
+              Column() {
+                Text(this.snapshot?.days && this.snapshot.days.length > 0 ? this.snapshot.days : '—')
+                  .fontSize(46).fontWeight(FontWeight.Bold).fontColor(this.accent)
+                Text('天').fontSize(12).fontColor(this.themeColors()[2])
+              }
+              .width(84)
+              .alignItems(HorizontalAlign.Center)
+            }
           }
           .width('100%')
-          .alignItems(HorizontalAlign.Start)
-          .margin({ top: 6 })
+          .layoutWeight(1)
+          .alignItems(VerticalAlign.Center)
+
+          if (this.selectedTab === 1) {
+            Column() {
+              Text(this.snapshot?.line0 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%')
+              Text(this.snapshot?.line1 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
+              Text(this.snapshot?.line2 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
+              Text(this.snapshot?.line3 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+            .margin({ top: 6 })
+          }
         }
       }
       .width('100%')
@@ -545,7 +558,7 @@ struct WidgetSettingsPage {
       .padding(16)
     }
     .width('100%')
-    .aspectRatio(2)
+    .aspectRatio(this.selectedTab === 2 ? 1 : 2)
     .borderRadius(14)
     .clip(true)
     .border({ width: 1, color: '#E4E4E4' })

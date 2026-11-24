@@ -83,6 +83,7 @@ export struct CoursePage {
   }
 
   private async initializeWeek(): Promise<void> {
+    this.currentCampus = await PreferenceStorage.getInstance().getSettingString('courseCampus', '黄家湖校区');
     // 课表首屏不能被非关键的学期起始日网络请求阻塞。先用缓存/默认值完成渲染，
     // 课表恢复后再刷新起始日并校正当前周。
     const autoWeek = this.calcCurrentWeek();
@@ -1125,6 +1126,7 @@ export struct CoursePage {
         },
         onConfirm: (campus: string) => {
           this.currentCampus = campus;
+          PreferenceStorage.getInstance().setSettingString('courseCampus', campus);
           this.showCampusPicker = false;
           promptAction.showToast({ message: `已切换到${campus}`, duration: 1500 });
         }
