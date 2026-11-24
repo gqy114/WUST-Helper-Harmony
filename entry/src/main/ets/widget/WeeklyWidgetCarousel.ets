@@ -83,8 +83,13 @@ export struct WeeklyWidgetCarousel {
       this.pages = { grids: [], weekGridIndexes: [] };
     }
     if (!this.initialized) {
-      this.displayIndex = this.currentPageIndex();
-      this.initialized = true;
+      // 首次添加卡片可能先收到空 pages，等真正拿到周数据后再定位到本周。
+      if (this.pages.weekGridIndexes.length > 0) {
+        this.displayIndex = this.currentPageIndex();
+        this.initialized = true;
+      } else {
+        this.displayIndex = 0;
+      }
     } else {
       // 数据刷新时保留用户当前停留的周，避免锁定页被重置回本周。
       this.displayIndex = Math.max(0, Math.min(this.displayIndex, this.pages.weekGridIndexes.length - 1));
