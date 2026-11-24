@@ -183,3 +183,9 @@ test('快捷按钮在浅蓝底上使用深色文字保证可读性', async () =>
   assert.match(block, /fontColor\('#123A66'\)/, '快捷按钮文字不是深色');
   assert.doesNotMatch(block, /fontColor\(Color\.White\)/, '快捷按钮仍是白字');
 });
+
+test('房间名和电量数字在浅蓝底上使用深色文字', async () => {
+  const card = await source('../entry/src/main/ets/widget/WidgetCard.ets');
+  assert.match(card, /Text\(this\.title\)\.fontSize\(11\)\.fontColor\('#123A66'\)/, '房间名不是深色');
+  assert.match(card, /Text\(this\.subtitle\)\.fontSize\(18\)\.fontWeight\(FontWeight\.Medium\)\.fontColor\('#123A66'\)/, '电量数字不是深色');
+});

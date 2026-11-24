@@ -137,9 +137,9 @@ struct WidgetCard {
         Row({ space: 8 }) {
           Image($r('app.media.quick_widget_electricity')).width(25).height(25).objectFit(ImageFit.Contain)
           Column({ space: 2 }) {
-            Text(this.title).fontSize(11).fontColor(Color.White).maxLines(1)
+            Text(this.title).fontSize(11).fontColor('#123A66').maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
-            Text(this.subtitle).fontSize(18).fontWeight(FontWeight.Medium).fontColor(Color.White)
+            Text(this.subtitle).fontSize(18).fontWeight(FontWeight.Medium).fontColor('#123A66')
               .maxLines(1).minFontSize(12).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
           }.layoutWeight(1).alignItems(HorizontalAlign.Start)
         }
