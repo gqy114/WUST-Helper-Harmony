@@ -108,7 +108,8 @@ export struct WeeklyWidgetCarousel {
       Swiper(this.swiperController) {
         ForEach(this.pages.weekGridIndexes, (gridIndex: number, index: number) => {
           this.weekContent('第' + (index + 1) + '周', this.pages.grids[this.pages.weekGridIndexes[index]], '本周没有课程')
-        }, (gridIndex: number, index: number) => String(index))
+        }, (gridIndex: number, index: number) =>
+          `${index}-${gridIndex}-${this.pages.grids[this.pages.weekGridIndexes[index]] || ''}`)
       }
       .index(this.currentPageIndex())
       .onChange((index: number) => this.onPageChanged(index))

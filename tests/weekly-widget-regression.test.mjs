@@ -35,3 +35,9 @@ test('周课表滑到非本周后 30 秒自动回到本周', async () => {
   assert.match(carousel, /onChange\(\(index: number\) => this\.onPageChanged\(index\)\)/, '没有监听滑动');
   assert.match(carousel, /clearTimeout/, '再次滑动时没有重置计时');
 });
+
+test('周课表刷新后按内容重建页面，避免复用旧课程', async () => {
+  const carousel = await source('widget/WeeklyWidgetCarousel.ets');
+  assert.ok(carousel.includes('${index}-${gridIndex}-${this.pages.grids['), '页面 key 没有包含课程内容');
+  assert.ok(!carousel.includes('=> String(index))'), '仍在用固定 index 作为 key');
+});
