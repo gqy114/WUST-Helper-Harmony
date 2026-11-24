@@ -82,8 +82,9 @@ test('导入期间切换档案会丢弃旧导入，且切换档案会更新学�
   assert.match(page, /const importEpoch = this\.archiveEpoch;/, '没有记录导入开始时的档案代次');
   assert.match(page, /if \(importEpoch !== this\.archiveEpoch\)/, '切换档案后没有丢弃旧导入');
   assert.match(page, /private termStartForSemester\(semester: string\): string/, '缺少按学期计算开学日期');
-  assert.match(page, /await storage\.setSemester\(archive\.semester\)/, '切换档案没有更新学期');
-  assert.match(page, /await storage\.setTermStartDate\(termStart\)/, '切换档案没有更新开学日期');
+  assert.match(page, /setSettingString\('archiveSemester', archive\.semester\)/, '切换档案没有记录档案学期');
+  assert.doesNotMatch(page, /storage\.setSemester\(archive\.semester\)/, '切换档案不应覆盖 App 当前学期');
+  assert.match(page, /setSettingString\('archiveTermStartDate', termStart\)/, '切换档案没有记录档案开学日期');
   const course = await readFile(new URL('../entry/src/main/ets/pages/course/CoursePage.ets', import.meta.url), 'utf8');
-  assert.match(course, /getTermStartDate\(\)/, '课表页没有读取档案开学日期');
+  assert.match(course, /getSettingString\('archiveTermStartDate'/, '课表页没有读取档案开学日期');
 });

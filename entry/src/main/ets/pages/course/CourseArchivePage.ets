@@ -72,14 +72,18 @@ struct CourseArchivePage {
       };
       this.archives = this.archives.map((item: CourseArchive) => item.id === 'mine' ? mine : item);
       await storage.setCourseArchives(this.archives);
+      await storage.setSettingString('archiveSemester', semester);
+      const ownStart = (await storage.getTermStartDate()).trim();
+      if (ownStart) await storage.setSettingString('archiveTermStartDate', ownStart);
     }
 
     await storage.setCurrentArchiveId(archive.id);
     await storage.setCurrentArchiveCourses(archive.id, archive.courses);
-    await storage.setSemester(archive.semester);
-    await storage.setSelectSemester(archive.semester);
+    // 只记录档案自己的学期/开学日期，不覆盖 App 的当前学期，
+    // 否则空教室、成绩等其它功能会按别人的旧学期查询。
+    await storage.setSettingString('archiveSemester', archive.semester);
     const termStart = archive.termStartDate || this.termStartForSemester(archive.semester);
-    if (termStart) await storage.setTermStartDate(termStart);
+    if (termStart) await storage.setSettingString('archiveTermStartDate', termStart);
     this.currentArchiveId = archive.id;
     AppStorage.setOrCreate('currentArchiveId', archive.id);
     AppStorage.setOrCreate('currentCourses', archive.courses);

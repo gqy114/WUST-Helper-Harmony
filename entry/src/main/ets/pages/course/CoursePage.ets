@@ -80,8 +80,10 @@ export struct CoursePage {
 
   private async onCourseDataVersionChanged(): Promise<void> {
     await this.loadCurrentArchiveCourses();
-    // 切换档案可能换了学期：同步该档案的开学日期，避免表头日期仍按原学期计算。
-    const cached = await PreferenceStorage.getInstance().getTermStartDate();
+    // 切换档案可能换了学期：优先使用档案自己的开学日期，但不改 App 当前学期。
+    const storage = PreferenceStorage.getInstance();
+    const archiveStart = (await storage.getSettingString('archiveTermStartDate', '')).trim();
+    const cached = archiveStart.length > 0 ? archiveStart : await storage.getTermStartDate();
     if (this.applyTermStartDateFromString(cached)) {
       this.updateWeekDates();
       this.refreshKey = this.refreshKey + 1;
