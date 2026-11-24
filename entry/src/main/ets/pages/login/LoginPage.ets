@@ -292,8 +292,8 @@ struct LoginPage {
           resp = await ApiService.loginUndergrad(sid, pwd);
         }
       }
-      this.clearLoginTimer();
       if (attempt !== this.loginAttempt) return;
+      this.clearLoginTimer();
 
       if (!this.isGraduate) {
         const undergradData = resp.data as TokenDataContent | undefined;
@@ -368,6 +368,7 @@ struct LoginPage {
         this.handleLoginFail(sid, resp?.msg ?? '\u767b\u5f55\u5931\u8d25');
       }
     } catch {
+      if (attempt !== this.loginAttempt) return;
       this.clearLoginTimer();
       this.hideLoading();
       this.isLoggingIn = false;
