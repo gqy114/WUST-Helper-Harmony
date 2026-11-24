@@ -80,7 +80,7 @@ test('倒计时卡片展示考试倒计时，多场每 20 秒轮换', async () =
   assert.match(card, /@LocalStorageProp\('countdownSlides'\)/, '卡片缺少倒计时轮换数据');
   const carousel = await source('entry/src/main/ets/widget/CountdownWidgetCarousel.ets');
   assert.match(carousel, /ROTATION_INTERVAL_MS: number = 20000/);
-  assert.match(carousel, /\.autoPlay\(this\.entries\(\)\.length > 1\)/);
+  assert.match(carousel, /\.autoPlay\(!this\.locked && this\.entries\(\)\.length > 1\)/);
   assert.match(carousel, /this\.counter\('开始天数'/);
   assert.match(carousel, /this\.counter\('剩余天数'/);
   assert.match(card, /@LocalStorageProp\('bgOpacity'\)/, '卡片缺少背景不透明度');
