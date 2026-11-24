@@ -28,19 +28,23 @@ test('all stages use one pinned HTTPS backend and the correct payloads', async (
   mock.response = ok({ recovery_id: 'session', image_base64: 'image' });
   await api.captcha();
   mock.response = ok({ masked_phone: '***' });
-  await api.identity('session', '123', 'name', 'identity', 'image-code');
+  await api.identity('session', '123', 'image-code');
+  mock.response = ok({ recovery_id: 'session', image_base64: 'sms-image' });
+  await api.smsCaptcha('session');
   mock.response = ok({ cooldown_seconds: 60 });
-  await api.sendCode('session');
+  await api.sendCode('session', '13800000000', 'sms-code');
   mock.response = ok({ verified: true });
   await api.verify('session', 'sms');
   mock.response = ok({ success: true });
   await api.reset('session', 'new-password');
-  assert.deepEqual(mock.calls.map(c => c.url.split('/').at(-1)), ['captcha', 'identityAuth', 'sendCode', 'verify', 'reset']);
-  assert.ok(mock.calls.every(c => c.url.startsWith('https://lyzyy.love:8081/UnderGraduate/Support/passwordRecovery/')));
-  assert.equal(mock.calls[0].options.pinBackend, true);
+  assert.deepEqual(mock.calls.map(c => c.url.split('/').at(-1)), ['captcha', 'identityAuth', 'smsCaptcha', 'sendCode', 'verify', 'reset']);
+  assert.ok(mock.calls.every(c => c.url.startsWith('https://port.happylandmc.cc:52145/UnderGraduate/Support/passwordRecovery/')));
+  assert.ok(mock.calls[0].url.includes('/captcha'));
   assert.ok(mock.calls.slice(1).every(c => c.pinned));
-  assert.deepEqual(mock.calls[1].body, { recovery_id: 'session', user_id: '123', user_name: 'name', id_card: 'identity', captcha_code: 'image-code' });
-  assert.deepEqual(mock.calls[4].body, { recovery_id: 'session', new_password: 'new-password' });
+  assert.deepEqual(mock.calls[1].body, { recovery_id: 'session', user_id: '123', captcha_code: 'image-code' });
+  assert.deepEqual(mock.calls[2].body, { recovery_id: 'session' });
+  assert.deepEqual(mock.calls[3].body, { recovery_id: 'session', phone: '13800000000', captcha_code: 'sms-code' });
+  assert.deepEqual(mock.calls[5].body, { recovery_id: 'session', new_password: 'new-password' });
 });
 
 test('HTTP and business failures and incomplete success responses do not advance the process', async () => {
@@ -76,9 +80,11 @@ async function pageHarness(options = {}) {
   };
   const context = createContext({ Error, Date, Math, setInterval: () => 1, clearInterval: () => {},
     PreferencesStorage: { getInstance: () => storage }, promptAction: { showToast: e => events.push(['toast', e.message]) },
+  PasswordRecoveryError: class extends Error { constructor(message, code) { super(message); this.code = code; } },
     PasswordRecoveryApi: {
       captcha: async () => ({ recovery_id: 'session', image_base64: 'iVBORw0KGgo=' }),
       identity: async () => ({ account: '123', masked_phone: '138****0000' }),
+    smsCaptcha: async () => ({ recovery_id: 'session', image_base64: 'iVBORw0KGgo=' }),
       sendCode: async () => 60,
       verify: async () => {},
       reset: async (id, password) => { events.push(['reset', id, password]); if (mock.resetFails) throw Error('timeout'); }
@@ -97,12 +103,12 @@ test('identity, SMS, and new password flow advances only after each successful s
   await page.loadCaptcha();
   assert.equal(page.stage, 0);
   assert.match(page.captchaImage, /^data:image\/png;base64,/);
-  page.realName = '测试';
-  page.idCard = 'test-identity';
   page.captchaCode = 'abcd';
   await page.verifyIdentity();
   assert.equal(page.stage, 1);
-  assert.equal(page.idCard, '');
+  assert.equal(page.captchaImage, '');
+  page.phone = '13800000000';
+  page.smsCaptchaCode = 'ab12';
   await page.sendSms();
   assert.equal(page.cooldown, 60);
   page.smsCode = '123456';
