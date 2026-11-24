@@ -1,0 +1,108 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: ['**']
+  schedule:
+    - cron: '30 18 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: pr-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  node-tests:
+    name: Node regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run tests
+        working-directory: tests
+        run: node --experimental-vm-modules --test
+
+  # 叠加 PR：依赖分支（base）更新时，pull_request 事件不会重新触发。
+  # 这里在 push 到任意分支时，找出以该分支为 base 的开放 PR，
+  # 分别检出 GitHub 的 pull/<n>/merge 合并结果并跑测试，尽早发现叠加回归。
+  stacked-pr-tests:
+    name: Stacked PR tests
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Test dependent PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          branch="${GITHUB_REF_NAME}"
+          prs=$(gh pr list --base "$branch" --state open --json number --jq '.[].number')
+          if [ -z "$prs" ]; then
+            echo "No open PRs based on $branch"
+            exit 0
+          fi
+          for n in $prs; do
+            echo "::group::PR #$n merge result"
+            if git fetch origin "pull/$n/merge:pr-merge-$n"; then
+              git checkout "pr-merge-$n"
+              (cd tests && node --experimental-vm-modules --test)
+            else
+              echo "::warning::PR #$n has no merge ref (conflict?)"
+            fi
+            echo "::endgroup::"
+          done
+
+  # DevEco 未签名构建：需要一台装有 DevEco SDK 的 self-hosted runner。
+  # 在仓库 Variables 中设置 ENABLE_DEVECO_BUILD=true 后启用，并配置：
+  # DEVECO_SDK_HOME、DEVECO_NODE_PATH、OHPM_PATH、HVIGORW_PATH。
+  harmony-unsigned-build:
+    name: HarmonyOS unsigned HAP
+    if: ${{ vars.ENABLE_DEVECO_BUILD == 'true' }}
+    runs-on: [self-hosted, windows, x64, harmonyos]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          & "${{ vars.OHPM_PATH }}" install
+      - name: Remove signing config for unsigned build
+        shell: pwsh
+        run: |
+          $path = 'build-profile.json5'
+          $json = Get-Content $path -Raw | ConvertFrom-Json
+          $json.app.PSObject.Properties.Remove('signingConfigs')
+          $json.app.products[0].PSObject.Properties.Remove('signingConfig')
+          $json | ConvertTo-Json -Depth 20 | Set-Content $path -Encoding utf8
+      - name: Build release HAP (unsigned)
+        shell: pwsh
+        env:
+          DEVECO_SDK_HOME: ${{ vars.DEVECO_SDK_HOME }}
+        run: |
+          $env:PATH = "${{ vars.DEVECO_NODE_PATH }};" + $env:PATH
+          & "${{ vars.HVIGORW_PATH }}" --mode module -p product=default -p buildMode=release assembleHap --no-daemon
+      - name: Upload unsigned HAP
+        uses: actions/upload-artifact@v4
+        with:
+          name: harmony-unsigned-hap
+          path: entry/build/**/outputs/**/*.hap
+          if-no-files-found: error
