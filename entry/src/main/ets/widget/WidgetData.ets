@@ -100,8 +100,8 @@ export class WidgetPrefs {
   }
 
   static async getAccent(storage: AppStorage): Promise<string> {
-    const accent = await storage.getSettingString(ACCENT_KEY, '#EC5A3C');
-    return accent.length > 0 ? accent : '#EC5A3C';
+    const accent = await storage.getSettingString(ACCENT_KEY, '#61A5FA');
+    return accent.length > 0 ? accent : '#61A5FA';
   }
 
   static async setAccent(storage: AppStorage, accent: string): Promise<void> {

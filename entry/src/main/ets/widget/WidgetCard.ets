@@ -24,7 +24,7 @@ struct WidgetCard {
   @LocalStorageProp('line3') line3: string = '';
   @LocalStorageProp('days') days: string = '';
   @LocalStorageProp('detail') detail: string = '';
-  @LocalStorageProp('accent') accent: string = '#EC5A3C';
+  @LocalStorageProp('accent') accent: string = '#61A5FA';
   @LocalStorageProp('bg') bg: string = '';
   @LocalStorageProp('bgOpacity') bgOpacity: number = 0.7;
   @LocalStorageProp('cardBg') cardBg: string = '#FFFFFF';

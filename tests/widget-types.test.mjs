@@ -105,3 +105,13 @@ test('快捷功能按钮使用与 App 图标一致的蓝色', async () => {
   const block = card.slice(card.indexOf('private quickTile'), card.indexOf('private quickContent'));
   assert.match(block, /backgroundColor\(QUICK_TILE_BG\)/, '快捷按钮没有使用蓝色背景');
 });
+
+test('小组件默认强调色统一为 logo 蓝色，不再使用橙红', async () => {
+  for (const path of ['entry/src/main/ets/entryformability/EntryFormAbility.ets',
+    'entry/src/main/ets/widget/WidgetCard.ets', 'entry/src/main/ets/widget/WidgetData.ets',
+    'entry/src/main/ets/pages/profile/WidgetSettingsPage.ets']) {
+    const source = await src(path);
+    assert.doesNotMatch(source, /#EC5A3C/, `${path} 仍保留橙红色`);
+    assert.match(source, /#61A5FA/, `${path} 没有改为 logo 蓝色`);
+  }
+});
