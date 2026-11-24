@@ -4,6 +4,8 @@
  * 数据由 EntryFormAbility 通过 formBindingData 注入，
  * 卡片内部只做展示，不访问网络，也不读写 Preferences。
  */
+import { WeeklyWidgetGrid } from './WeeklyWidgetGrid';
+
 const LINE_COUNT = 4;
 
 let widgetStorage: LocalStorage = new LocalStorage();
@@ -26,6 +28,8 @@ struct WidgetCard {
   @LocalStorageProp('cardBg') cardBg: string = '#FFFFFF';
   @LocalStorageProp('textColor') textColor: string = '#111111';
   @LocalStorageProp('subColor') subColor: string = '#666666';
+  @LocalStorageProp('campus') campus: string = '黄家湖校区';
+  @LocalStorageProp('weeklyCourses') weeklyCourses: string = '';
 
   private lineAt(index: number): string {
     if (index === 0) return this.line0;
@@ -257,13 +261,18 @@ struct WidgetCard {
           this.quickContent()
         } else if (this.mode === 'countdown') {
           this.countdownContent()
+        } else if (this.mode === 'weekly') {
+          Text(this.title).fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.textColor).width('100%')
+          WeeklyWidgetGrid({ courses: this.weeklyCourses, campus: this.campus, subtitle: this.subtitle,
+            textColor: this.textColor, subColor: this.subColor })
+            .layoutWeight(1)
         } else {
           this.courseContent()
         }
       }
       .width('100%')
       .height('100%')
-      .padding(16)
+      .padding(this.mode === 'weekly' ? 8 : 16)
       .justifyContent(FlexAlign.Center)
     }
     .width('100%')
