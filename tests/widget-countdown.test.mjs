@@ -69,15 +69,20 @@ test('主题使用滚轮选择器，支持跟随系统/简洁白/主题黑', asy
   assert.match(data, /'#1C1C1E', '#FFFFFF'/, '缺少深色配色');
 });
 
-test('倒计时卡片展示考试倒计时，多场按小时轮换', async () => {
+test('倒计时卡片展示考试倒计时，多场每 20 秒轮换', async () => {
   const data = await source('entry/src/main/ets/widget/WidgetData.ets');
   assert.match(data, /getExamCountdowns/, '没有读取考试倒计时');
-  assert.match(data, /Math\.floor\(Date\.now\(\) \/ \(60 \* 60 \* 1000\)\) % total/, '没有按小时轮换');
+
   const page = await source('entry/src/main/ets/pages/profile/WidgetSettingsPage.ets');
   assert.match(page, /CountdownApi\.listExams\(term\)/, '没有同步考试安排');
   assert.match(page, /detailParts\.push\(exam\.location\)/, '考试地点没有进入详情');
   const card = await source('entry/src/main/ets/widget/WidgetCard.ets');
-  assert.match(card, /@LocalStorageProp\('days'\)/, '卡片缺少天数');
+  assert.match(card, /@LocalStorageProp\('countdownSlides'\)/, '卡片缺少倒计时轮换数据');
+  const carousel = await source('entry/src/main/ets/widget/CountdownWidgetCarousel.ets');
+  assert.match(carousel, /ROTATION_INTERVAL_MS: number = 20000/);
+  assert.match(carousel, /\.autoPlay\(this\.entries\(\)\.length > 1\)/);
+  assert.match(carousel, /this\.counter\('开始天数'/);
+  assert.match(carousel, /this\.counter\('剩余天数'/);
   assert.match(card, /@LocalStorageProp\('bgOpacity'\)/, '卡片缺少背景不透明度');
   assert.match(card, /\.opacity\(this\.bgOpacity\)/, '卡片背景没有应用不透明度');
 });

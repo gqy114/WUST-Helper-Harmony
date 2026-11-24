@@ -3,9 +3,11 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import router from '@ohos.router';
 import { StorageUtil } from '../utils/StorageUtil';
-import { AppStorage } from '../store/AppStorage';
+import { AppStorage as PreferencesStorage } from '../store/AppStorage';
 
 const DOMAIN = 0x0000;
+const COUNTDOWN_SETTINGS = 'pages/profile/WidgetSettingsPage';
+const ADD_COUNTDOWN_ROUTE = COUNTDOWN_SETTINGS + '?addCountdown';
 const IMAGE_DATA_CACHE_BYTES: number = 16 * 1024 * 1024;
 
 export default class EntryAbility extends UIAbility {
@@ -58,6 +60,10 @@ export default class EntryAbility extends UIAbility {
     }
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
     this.widgetRoute = this.widgetRouteFromWant(want);
+    if (this.widgetRoute === ADD_COUNTDOWN_ROUTE) {
+      AppStorage.setOrCreate('addCountdownOnLaunch', true);
+      this.widgetRoute = COUNTDOWN_SETTINGS;
+    }
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -96,7 +102,8 @@ export default class EntryAbility extends UIAbility {
         return;
       }
     }
-    router.pushUrl({ url: route }).catch((error: Error) => {
+    const addCountdown = route === ADD_COUNTDOWN_ROUTE;
+    router.pushUrl({ url: addCountdown ? COUNTDOWN_SETTINGS : route, params: { addCountdown } }).catch((error: Error) => {
       if (requestId !== this.routeRequestId) {
         return;
       }
@@ -141,11 +148,11 @@ export default class EntryAbility extends UIAbility {
 
     Promise.all([
       StorageUtil.init(this.context),
-      AppStorage.getInstance().init(this.context),
+      PreferencesStorage.getInstance().init(this.context),
     ]).then(async () => {
       // 在课表刷新之前迁移旧版实验课，避免刷新把只存在课表里的实验课覆盖掉。
       try {
-        await AppStorage.getInstance().migrateLegacyExperimentsIfNeeded();
+        await PreferencesStorage.getInstance().migrateLegacyExperimentsIfNeeded();
       } catch (migrationError) {
         hilog.warn(DOMAIN, 'testTag', 'Failed to migrate legacy experiments: %{public}s',
           JSON.stringify(migrationError));
