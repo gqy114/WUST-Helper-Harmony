@@ -140,7 +140,8 @@ struct PasswordRecoveryPage {
       await this.loadSmsCaptcha();
     } catch (error) {
       this.handleRecoveryError(error as Error, '账号核对失败');
-      // 账号核对失败需要换第一张图重新开始。
+      // 账号核对失败需要换第一张图重新开始；先释放 busy，否则 loadCaptcha 会直接返回。
+      this.busy = false;
       await this.loadCaptcha();
     } finally { this.busy = false; }
   }
@@ -242,6 +243,11 @@ struct PasswordRecoveryPage {
       this.resultMessage = '密码修改成功，请使用新密码重新登录教务系统。';
     } catch (error) {
       if (error instanceof PasswordRecoveryError && error.code > 0) {
+        if (error.code === 410) {
+          // 会话过期：回到第一步并自动换新图，不能卡在设置密码页。
+          this.handleRecoveryError(error as Error, '会话已过期');
+          return;
+        }
         // 密码规则不通过等业务错误：留在设置页，允许修改后重试。
         promptAction.showToast({ message: error.message || '密码修改失败', duration: 2400 });
         this.busy = false;
