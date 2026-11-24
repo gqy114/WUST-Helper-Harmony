@@ -76,3 +76,14 @@ test('快速连切两个共享档案时只允许第一个切换，避免覆盖�
   assert.match(page, /if \(this\.switching\) return;/, '切换时没有拦截并发点击');
   assert.match(page, /finally \{\s*this\.switching = false;/, '切换结束后没有释放互斥');
 });
+
+test('导入期间切换档案会丢弃旧导入，且切换档案会更新学期与开学日期', async () => {
+  const page = await readFile(new URL('../entry/src/main/ets/pages/course/CourseArchivePage.ets', import.meta.url), 'utf8');
+  assert.match(page, /const importEpoch = this\.archiveEpoch;/, '没有记录导入开始时的档案代次');
+  assert.match(page, /if \(importEpoch !== this\.archiveEpoch\)/, '切换档案后没有丢弃旧导入');
+  assert.match(page, /private termStartForSemester\(semester: string\): string/, '缺少按学期计算开学日期');
+  assert.match(page, /await storage\.setSemester\(archive\.semester\)/, '切换档案没有更新学期');
+  assert.match(page, /await storage\.setTermStartDate\(termStart\)/, '切换档案没有更新开学日期');
+  const course = await readFile(new URL('../entry/src/main/ets/pages/course/CoursePage.ets', import.meta.url), 'utf8');
+  assert.match(course, /getTermStartDate\(\)/, '课表页没有读取档案开学日期');
+});

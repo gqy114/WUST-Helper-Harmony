@@ -21,6 +21,21 @@ struct CourseArchivePage {
   private scanOpened: boolean = false;
   // 连点两个档案时只允许第一个切换生效，避免把共享课表当成“我的课表”存回去。
   private switching: boolean = false;
+  // 每次手动切换档案递增；导入过程中切过档案，旧导入结果必须丢弃。
+  private archiveEpoch: number = 0;
+
+  private termStartForSemester(semester: string): string {
+    const parts = semester.split('-');
+    if (parts.length < 3) return '';
+    const year = Number(parts[0]);
+    const term = parts[2].trim();
+    if (!year) return '';
+    const start = term === '1' ? new Date(year, 8, 1) : new Date(year + 1, 1, 15);
+    while (start.getDay() !== 1) start.setDate(start.getDate() + 1);
+    const mm = (start.getMonth() + 1).toString().padStart(2, '0');
+    const dd = start.getDate().toString().padStart(2, '0');
+    return `${start.getFullYear()}-${mm}-${dd}`;
+  }
 
   async aboutToAppear(): Promise<void> {
     this.active = true;
@@ -45,13 +60,15 @@ struct CourseArchivePage {
   private async switchArchive(archive: CourseArchive): Promise<void> {
     if (this.switching) return;
     this.switching = true;
+    this.archiveEpoch++;
     const storage = PreferencesStorage.getInstance();
     try {
     if (this.currentArchiveId === 'mine') {
       const myCourses = await storage.getCurrentCourses();
       const semester = await storage.getSemester();
       const mine: CourseArchive = {
-        id: 'mine', name: '我的课表', semester, courses: myCourses, isMine: true
+        id: 'mine', name: '我的课表', semester, termStartDate: await storage.getTermStartDate(),
+        courses: myCourses, isMine: true
       };
       this.archives = this.archives.map((item: CourseArchive) => item.id === 'mine' ? mine : item);
       await storage.setCourseArchives(this.archives);
@@ -59,6 +76,10 @@ struct CourseArchivePage {
 
     await storage.setCurrentArchiveId(archive.id);
     await storage.setCurrentArchiveCourses(archive.id, archive.courses);
+    await storage.setSemester(archive.semester);
+    await storage.setSelectSemester(archive.semester);
+    const termStart = archive.termStartDate || this.termStartForSemester(archive.semester);
+    if (termStart) await storage.setTermStartDate(termStart);
     this.currentArchiveId = archive.id;
     AppStorage.setOrCreate('currentArchiveId', archive.id);
     AppStorage.setOrCreate('currentCourses', archive.courses);
@@ -155,6 +176,8 @@ struct CourseArchivePage {
     this.importing = true;
     const storage = PreferencesStorage.getInstance();
     const accountEpoch = storage.getSessionEpoch();
+    // 导入期间用户可能切换到别的档案；记录代次，写回前校验。
+    const importEpoch = this.archiveEpoch;
     try {
       const context = getContext(this) as common.UIAbilityContext;
       const permission = await abilityAccessCtrl.createAtManager().requestPermissionsFromUser(context,
@@ -206,14 +229,24 @@ struct CourseArchivePage {
         promptAction.showToast({ message: '这不是有效的课表二维码' });
         return;
       }
+      if (!archive.termStartDate) archive.termStartDate = this.termStartForSemester(archive.semester);
       if (!this.active || accountEpoch !== storage.getSessionEpoch()) return;
+      if (importEpoch !== this.archiveEpoch) {
+        promptAction.showToast({ message: '档案已切换，请重新扫码导入', duration: 1800 });
+        return;
+      }
       const archives = await storage.getCourseArchives();
       if (!this.active || accountEpoch !== storage.getSessionEpoch()) return;
+      if (importEpoch !== this.archiveEpoch) {
+        promptAction.showToast({ message: '档案已切换，请重新扫码导入', duration: 1800 });
+        return;
+      }
       const next = archives.filter((item: CourseArchive) => item.id !== archive?.id);
       if (next.length === 0) next.push(getDefaultArchive());
       next.push(archive);
       await storage.setCourseArchives(next, accountEpoch);
       if (!this.active || accountEpoch !== storage.getSessionEpoch()) return;
+      if (importEpoch !== this.archiveEpoch) return;
       this.archives = next;
       AppStorage.setOrCreate<CourseArchive[]>('courseArchives', next);
       promptAction.showToast({ message: '已添加课表，可在档案中切换显示' });

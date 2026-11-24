@@ -78,8 +78,14 @@ export struct CoursePage {
     this.initializeWeek();
   }
 
-  private onCourseDataVersionChanged(): void {
-    this.loadCurrentArchiveCourses();
+  private async onCourseDataVersionChanged(): Promise<void> {
+    await this.loadCurrentArchiveCourses();
+    // 切换档案可能换了学期：同步该档案的开学日期，避免表头日期仍按原学期计算。
+    const cached = await PreferenceStorage.getInstance().getTermStartDate();
+    if (this.applyTermStartDateFromString(cached)) {
+      this.updateWeekDates();
+      this.refreshKey = this.refreshKey + 1;
+    }
   }
 
   private async initializeWeek(): Promise<void> {
