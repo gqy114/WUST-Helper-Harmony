@@ -14,7 +14,8 @@ test('倒计时和日课表锁定后停止自动轮换，仍可手动滑动', as
   }
   const countdown = await source('CountdownWidgetCarousel.ets');
   assert.match(countdown, /this\.lockIcon\(15\)/, '2*2 倒计时的锁图标没有缩小');
-  assert.match(countdown, /remainingDays/, '锁定后没有处理倒计时结束');
+  assert.match(countdown, /isSlideEnded/, '锁定后没有按日期判断倒计时结束');
+  assert.doesNotMatch(countdown, /remainingDays/, '仍按剩余天数 0 提前跳过当天考试');
 });
 
 test('周课表只在非本周显示锁，锁定后不再 30 秒回本周', async () => {

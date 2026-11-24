@@ -30,9 +30,14 @@ export struct CountdownWidgetCarousel {
     }
   }
 
-  private remainingDays(slide: WidgetCountdownSlide): number {
-    const value = Number(slide.remaining);
-    return isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
+  /** 只有倒计时日期已经过去才算结束；当天显示 0 天时仍应保留当前考试。 */
+  private isSlideEnded(slide: WidgetCountdownSlide): boolean {
+    const match = /(\d{4})\D+(\d{1,2})\D+(\d{1,2})/.exec(slide.date || '');
+    if (!match) return false;
+    const today = new Date();
+    const eventDay = Number(match[1]) * 10000 + Number(match[2]) * 100 + Number(match[3]);
+    const todayDay = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
+    return eventDay < todayDay;
   }
 
   /** 锁定时当前倒计时已经结束，自动切到下一个还没结束的倒计时。 */
@@ -41,9 +46,9 @@ export struct CountdownWidgetCarousel {
     const list = this.entries();
     if (list.length === 0) return;
     const index = Math.min(this.slideIndex, list.length - 1);
-    if (this.remainingDays(list[index]) > 0) return;
+    if (!this.isSlideEnded(list[index])) return;
     for (let i = 0; i < list.length; i++) {
-      if (this.remainingDays(list[i]) > 0) {
+      if (!this.isSlideEnded(list[i])) {
         this.slideIndex = i;
         try { this.swiperController.changeIndex(i, true); } catch (error) {}
         return;
