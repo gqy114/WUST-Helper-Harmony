@@ -103,7 +103,7 @@ struct WidgetCard {
   private quickTile(label: string, icon: Resource, route: string) {
     Column({ space: 3 }) {
       Image(icon).width(24).height(24).objectFit(ImageFit.Contain)
-      Text(label).fontSize(11).fontColor(Color.White).maxLines(1).minFontSize(9)
+      Text(label).fontSize(11).fontColor('#123A66').maxLines(1).minFontSize(9)
     }
     .layoutWeight(1)
     .height('100%')

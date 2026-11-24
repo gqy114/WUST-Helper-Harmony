@@ -176,3 +176,10 @@ test('快捷功能电量显示真实零值，缺少读数时显示占位', async
   assert.equal((await snapshot([{ name: '1630 房间' }])).subtitle, '—');
   assert.equal((await snapshot([])).title, '未绑定房间');
 });
+
+test('快捷按钮在浅蓝底上使用深色文字保证可读性', async () => {
+  const card = await source('../entry/src/main/ets/widget/WidgetCard.ets');
+  const block = card.slice(card.indexOf('private quickTile'), card.indexOf('private quickContent'));
+  assert.match(block, /fontColor\('#123A66'\)/, '快捷按钮文字不是深色');
+  assert.doesNotMatch(block, /fontColor\(Color\.White\)/, '快捷按钮仍是白字');
+});
