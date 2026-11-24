@@ -4,7 +4,7 @@
  * 数据由 EntryFormAbility 通过 formBindingData 注入，
  * 卡片内部只做展示，不访问网络，也不读写 Preferences。
  */
-import { WeeklyWidgetGrid } from './WeeklyWidgetGrid';
+import { WeeklyWidgetCarousel } from './WeeklyWidgetCarousel';
 import { DailyWidgetCarousel } from './DailyWidgetCarousel';
 import { CountdownWidgetCarousel } from './CountdownWidgetCarousel';
 
@@ -31,6 +31,8 @@ struct WidgetCard {
   @LocalStorageProp('textColor') textColor: string = '#111111';
   @LocalStorageProp('subColor') subColor: string = '#666666';
   @LocalStorageProp('campus') campus: string = '黄家湖校区';
+  @LocalStorageProp('weeklyPages') weeklyPages: string = '';
+  @LocalStorageProp('weeklyCurrentWeek') weeklyCurrentWeek: number = 1;
   @LocalStorageProp('weeklyCourses') weeklyCourses: string = '';
   @LocalStorageProp('dailyCourses') dailyCourses: string = '';
   @LocalStorageProp('dailyWeekday') dailyWeekday: string = '';
@@ -224,9 +226,11 @@ struct WidgetCard {
             }
           })
         } else if (this.mode === 'weekly') {
-          Text(this.title).fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.textColor).width('100%')
-          WeeklyWidgetGrid({ courses: this.weeklyCourses, campus: this.campus, subtitle: this.subtitle,
-            textColor: this.textColor, subColor: this.subColor })
+          WeeklyWidgetCarousel({
+            pagesJson: this.weeklyPages, currentWeek: this.weeklyCurrentWeek,
+            title: this.title, courses: this.weeklyCourses, campus: this.campus, subtitle: this.subtitle,
+            textColor: this.textColor, subColor: this.subColor
+          })
             .layoutWeight(1)
         } else if (this.mode === 'daily') {
           DailyWidgetCarousel({

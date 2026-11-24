@@ -15,7 +15,7 @@ import { image } from '@kit.ImageKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { AppStorage as PreferencesStorage } from '../../store/AppStorage';
 import { CountdownApi, CountdownItem } from '../../net/CountdownApi';
-import { WeeklyWidgetGrid } from '../../widget/WeeklyWidgetGrid';
+import { WeeklyWidgetCarousel } from '../../widget/WeeklyWidgetCarousel';
 import { DailyWidgetCarousel } from '../../widget/DailyWidgetCarousel';
 import { CountdownWidgetCarousel } from '../../widget/CountdownWidgetCarousel';
 import {
@@ -544,9 +544,10 @@ struct WidgetSettingsPage {
             onRefresh: () => { this.refreshWidgets(true); }
           })
         } else if (this.selectedTab === 2) {
-          Text(this.snapshot?.title ?? '周课表').fontSize(16).fontWeight(FontWeight.Bold)
-            .fontColor(this.themeColors()[1]).width('100%')
-          WeeklyWidgetGrid({
+          WeeklyWidgetCarousel({
+            pagesJson: this.snapshot?.weeklyPages ?? '',
+            currentWeek: this.snapshot?.weeklyCurrentWeek ?? 1,
+            title: this.snapshot?.title ?? '周课表',
             courses: this.snapshot?.weeklyCourses ?? '',
             campus: this.snapshot?.campus ?? '黄家湖校区',
             subtitle: this.snapshot?.subtitle ?? '正在加载数据…',

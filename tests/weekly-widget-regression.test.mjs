@@ -13,8 +13,8 @@ test('周课卡片的桌面与预览都使用已保存的校区', async () => {
   ]);
   assert.match(page, /setSettingString\('courseCampus', campus\)/);
   assert.match(data, /getSettingString\('courseCampus'/);
-  assert.match(card, /WeeklyWidgetGrid\(\{[^}]*campus: this\.campus/);
-  assert.match(settings, /WeeklyWidgetGrid\(\{[^}]*campus: this\.snapshot\?\.campus/);
+  assert.match(card, /WeeklyWidgetCarousel\(\{[^}]*campus: this\.campus/);
+  assert.match(settings, /WeeklyWidgetCarousel\(\{[^}]*campus: this\.snapshot\?\.campus/);
   assert.match(grid, /ForEach\(getTimeSlotsByCampus\(this\.campus\)/);
   assert.equal(getTimeSlotsByCampus('青山校区')[0].start, '08:00');
   assert.equal(getTimeSlotsByCampus('黄家湖校区')[0].start, '08:20');

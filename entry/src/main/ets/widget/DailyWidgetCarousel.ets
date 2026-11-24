@@ -59,7 +59,7 @@ export struct DailyWidgetCarousel {
         .autoPlay(this.entries().length > 1)
         .loop(this.entries().length > 1)
         .interval(ROTATION_INTERVAL_MS)
-        .disableSwipe(true)
+        .vertical(true)
         .indicator(false)
         .width('100%')
         .layoutWeight(1)

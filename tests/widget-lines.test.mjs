@@ -126,3 +126,20 @@ test('考试当日考完仍显示 0 天，隔天移出轮换，保留日期时�
   assert.deepEqual(JSON.parse(snapshot(new Date(2026, 10, 25)).countdownSlides).map(s => s.title), ['明天考试']);
   assert.deepEqual(JSON.parse(snapshot(new Date(2026, 10, 26)).countdownSlides), []);
 });
+
+test('周课表以本周为默认滑页，前后周各自显示课程并共用相同网格', async () => {
+  const WidgetData = await loadWidget();
+  const [template] = makeCourses(1);
+  const snapshot = WidgetData.courseSnapshot([
+    { ...template, courseName: '上周课程', weekRanges: '12' },
+    { ...template, courseName: '本周之后课程', weekRanges: '13-14' },
+  ], 13, 'weekly', '#123456');
+  const { grids, weekGridIndexes } = JSON.parse(snapshot.weeklyPages);
+  const names = (week) => JSON.parse(grids[weekGridIndexes[week - 1]]).map(c => c.name);
+  assert.equal(snapshot.weeklyCurrentWeek, 13);
+  assert.deepEqual(names(12), ['上周课程']);
+  assert.deepEqual(names(13), ['本周之后课程']);
+  assert.deepEqual(names(15), []);
+  assert.equal(weekGridIndexes[12], weekGridIndexes[13]);
+  assert.equal(weekGridIndexes.length, 25);
+});

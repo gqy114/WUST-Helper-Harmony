@@ -5,7 +5,7 @@
  * formBindingData 注入。设置页修改偏好后也调用这里重新生成数据并刷新卡片。
  */
 import { AppStorage } from '../store/AppStorage';
-import { CourseData, getCourseColor, isCourseInWeek, PERIOD_COUNT, getTimeSlotsByCampus } from '../model/CourseModel';
+import { CourseData, getCourseColor, isCourseInWeek, PERIOD_COUNT, TOTAL_WEEKS, getTimeSlotsByCampus } from '../model/CourseModel';
 
 export const WIDGET_MODE_COUNTDOWN: string = 'countdown';
 export const WIDGET_MODE_DAILY: string = 'daily';
@@ -66,10 +66,17 @@ export interface WidgetSnapshot {
   subColor: string;
   updatedAt: string;
   weeklyCourses?: string;
+  weeklyPages?: string;
+  weeklyCurrentWeek?: number;
   campus?: string;
   dailyCourses?: string;
   dailyWeekday?: string;
   countdownSlides?: string;
+}
+
+export interface WeeklyWidgetPages {
+  grids: string[];
+  weekGridIndexes: number[];
 }
 
 export interface DailyWidgetCourse {
@@ -359,7 +366,10 @@ export class WidgetData {
       updatedAt: WidgetData.formatDate(today)
     };
     if (weekly) {
-      snapshot.weeklyCourses = JSON.stringify(WidgetData.weeklyGrid(picked));
+      const pages = WidgetData.weeklyPages(courses);
+      snapshot.weeklyCourses = pages.grids[pages.weekGridIndexes[week - 1]] ?? '';
+      snapshot.weeklyPages = JSON.stringify(pages);
+      snapshot.weeklyCurrentWeek = week;
     } else {
       snapshot.dailyCourses = JSON.stringify(WidgetData.dailyCarousel(picked, today, campus));
       snapshot.dailyWeekday = `第${week}周 ${WEEKDAY_NAMES[today.getDay()]}`;
@@ -403,6 +413,24 @@ export class WidgetData {
       });
     }
     return items.slice(first).concat(items.slice(0, first));
+  }
+
+  private static weeklyPages(courses: CourseData[]): WeeklyWidgetPages {
+    const sorted = [...courses].sort((left, right) =>
+      left.dayOfWeek - right.dayOfWeek || left.startPeriod - right.startPeriod);
+    const grids: string[] = [];
+    const weekGridIndexes: number[] = [];
+    // 相同的周课表共用一份网格数据。
+    for (let week = 1; week <= TOTAL_WEEKS; week++) {
+      const grid = JSON.stringify(WidgetData.weeklyGrid(sorted.filter(course => isCourseInWeek(course, week))));
+      let gridIndex = grids.indexOf(grid);
+      if (gridIndex < 0) {
+        gridIndex = grids.length;
+        grids.push(grid);
+      }
+      weekGridIndexes.push(gridIndex);
+    }
+    return { grids, weekGridIndexes };
   }
 
   private static weeklyGrid(courses: CourseData[]): WeeklyWidgetCourse[] {
