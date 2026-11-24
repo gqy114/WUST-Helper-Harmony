@@ -103,8 +103,7 @@ export default class EntryAbility extends UIAbility {
       }
     }
     const addCountdown = route === ADD_COUNTDOWN_ROUTE;
-    router.pushUrl({ url: addCountdown ? COUNTDOWN_SETTINGS : route, params: { addCountdown } })
-      .catch((error: Error) => {
+    router.pushUrl({ url: addCountdown ? COUNTDOWN_SETTINGS : route, params: { addCountdown } }).catch((error: Error) => {
       if (requestId !== this.routeRequestId) {
         return;
       }
