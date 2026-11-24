@@ -18,7 +18,7 @@ import { HomeBanner, HomeContentApi, HomeNotice } from '../../net/HomeContentApi
 import { BannerImageLoader } from '../../utils/BannerImageLoader';
 import { image } from '@kit.ImageKit';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
-import { CampusWallApi, CampusWallPost } from '../../net/CampusWallApi';
+import { CampusWallApi } from '../../net/CampusWallApi';
 
 // ═══════════════════════════════════════════════ 常量 ═══════════════════════════════════════════════
 
@@ -125,11 +125,13 @@ struct MainPage {
   private teachingRetryTimer: number = -1;
   private communityBadgeTimer: number = -1;
   private communityBadgesLoading: boolean = false;
-  private campusWallLatestId: number = 0;
-  private campusLostLatestId: number = 0;
-  private campusTeamLatestId: number = 0;
-  private campusHelpLatestId: number = 0;
-  private campusBookLatestId: number = 0;
+  private communityBadgeRefreshPending: boolean = false;
+  private communityBadgeAccount: string = '';
+  private communityPostsPolledAt: number = 0;
+  private communityMessagesPolledAt: number = 0;
+  private communityMessageRevision: number = 0;
+  private communityCheckedAt: Map<string, number> = new Map();
+  private communitySeenRevision: Map<string, number> = new Map();
 
   // ═══════════════════════════════════════════════ 生命周期 ═══════════════════════════════════════════════
 
@@ -142,7 +144,6 @@ struct MainPage {
     this.loadHomeContent();
     this.updateCatState();
     this.startTeachingSessionRetry();
-    this.startCommunityBadgeRefresh();
     console.info(TAG, `[module-debug] toolList.length=${toolList.length}`);
     console.info(TAG, `[module-debug] campusWallItem.title=${campusWallItem.title}, desc=${campusWallItem.desc}, route=${campusWallItem.route}`);
   }
@@ -166,7 +167,7 @@ struct MainPage {
     this.loadToolLayout();
     this.refreshCatEasterEgg();
     this.verifyLoginState();
-    this.loadCommunityBadges();
+    this.startCommunityBadgeRefresh();
     // 断网恢复后返回首页 / 切回首页时：只对还没拿到图的 banner 重试一次。
     if (this.homeBanners.length > 0 &&
       this.homeBanners.some((banner: HomeBanner) => !this.bannerPixels.has(this.bannerKey(banner)))) {
@@ -180,6 +181,10 @@ struct MainPage {
       clearInterval(this.teachingRetryTimer);
       this.teachingRetryTimer = -1;
     }
+    this.onPageHide();
+  }
+
+  onPageHide(): void {
     if (this.communityBadgeTimer !== -1) {
       clearInterval(this.communityBadgeTimer);
       this.communityBadgeTimer = -1;
@@ -198,61 +203,129 @@ struct MainPage {
   }
 
   private startCommunityBadgeRefresh(): void {
-    this.loadCommunityBadges();
-    if (this.communityBadgeTimer !== -1) return;
-    this.communityBadgeTimer = setInterval(() => this.loadCommunityBadges(), 60_000);
+    if (this.communityBadgeTimer === -1) {
+      this.communityBadgeTimer = setInterval(() => this.loadCommunityBadges(), 60_000);
+    }
+    if (this.communityBadgesLoading) this.communityBadgeRefreshPending = true;
+    else this.loadCommunityBadges();
   }
 
   private async loadCommunityBadges(): Promise<void> {
     if (this.communityBadgesLoading) return;
     this.communityBadgesLoading = true;
+    const storage = AppStorage.getInstance();
+    const epoch = storage.getSessionEpoch();
     try {
-      await Promise.all([
-        this.loadCommunityPostBadge('wall', 'wall'),
-        this.loadCommunityPostBadge('lost', 'lost'),
-        this.loadCommunityPostBadge('team', 'team'),
-        this.loadCommunityPostBadge('help', 'help'),
-        this.loadCommunityPostBadge('book', 'book_trade'),
-        this.loadCommunityMessageBadge()
-      ]);
+      const account = (await storage.getStudentId()).trim();
+      const active = !!account && await storage.getIsLogin();
+      if (storage.getSessionEpoch() !== epoch) return;
+      const badgeAccount = active ? account : '';
+      if (badgeAccount !== this.communityBadgeAccount) {
+        this.communityBadgeAccount = badgeAccount;
+        this.communityCheckedAt.clear();
+        this.communitySeenRevision.clear();
+        this.communityPostsPolledAt = 0;
+        this.communityMessagesPolledAt = 0;
+        for (const key of ['wall', 'lost', 'team', 'help', 'book']) this.setCommunityUnread(key, 0);
+        this.communityMessageUnread = 0;
+      }
+      if (!active || this.communityBadgeTimer === -1) return;
+      const now = Date.now();
+      if (now - this.communityPostsPolledAt < 60_000) return;
+      this.communityPostsPolledAt = now;
+      // 优先请求聚合接口，一次拿齐五个板块 + 通知未读数。
+      try {
+        const sinceWall = await storage.getSettingNumber(this.communitySeenKey(account, 'wall'), 0);
+        const sinceLost = await storage.getSettingNumber(this.communitySeenKey(account, 'lost'), 0);
+        const sinceTeam = await storage.getSettingNumber(this.communitySeenKey(account, 'team'), 0);
+        const sinceHelp = await storage.getSettingNumber(this.communitySeenKey(account, 'help'), 0);
+        const sinceBook = await storage.getSettingNumber(this.communitySeenKey(account, 'book'), 0);
+        const result = await CampusWallApi.badges(sinceWall, sinceLost, sinceTeam, sinceHelp, sinceBook);
+        if (!await this.isCommunityAccountCurrent(account, epoch)) return;
+        const sinceMap: Map<string, number> = new Map();
+        sinceMap.set('wall', sinceWall);
+        sinceMap.set('lost', sinceLost);
+        sinceMap.set('team', sinceTeam);
+        sinceMap.set('help', sinceHelp);
+        sinceMap.set('book', sinceBook);
+        const countMap: Map<string, number> = new Map();
+        countMap.set('wall', result.wall);
+        countMap.set('lost', result.lost);
+        countMap.set('team', result.team);
+        countMap.set('help', result.help);
+        countMap.set('book', result.book);
+        for (const key of ['wall', 'lost', 'team', 'help', 'book']) {
+          const since = sinceMap.get(key) ?? 0;
+          this.communityCheckedAt.set(key, result.checkedAt);
+          // 首次成功取数时，用服务端时间建立账号自己的已读基线。
+          if (since <= 0) await storage.setSettingNumber(this.communitySeenKey(account, key), result.checkedAt);
+          this.setCommunityUnread(key, since > 0 ? (countMap.get(key) ?? 0) : 0);
+        }
+        this.communityMessageUnread = result.messages;
+        this.communityMessagesPolledAt = now;
+        return;
+      } catch (error) {
+        // 新接口尚未部署时回退到旧的分板块接口。
+        console.warn(TAG, 'community badges aggregate unavailable, fallback');
+      }
+      const requests: Promise<void>[] = [];
+      for (const key of ['wall', 'lost', 'team', 'help', 'book']) {
+        requests.push(this.loadCommunityPostBadge(account, epoch, key));
+      }
+      if (now - this.communityMessagesPolledAt >= 60_000) {
+        this.communityMessagesPolledAt = now;
+        requests.push(this.loadCommunityMessageBadge(account, epoch));
+      }
+      await Promise.all(requests);
     } finally {
       this.communityBadgesLoading = false;
+      if (this.communityBadgeRefreshPending) {
+        this.communityBadgeRefreshPending = false;
+        if (this.communityBadgeTimer !== -1) this.loadCommunityBadges();
+      }
     }
   }
 
-  private async loadCommunityPostBadge(key: string, tag: string): Promise<void> {
+  private async isCommunityAccountCurrent(account: string, epoch: number): Promise<boolean> {
+    const storage = AppStorage.getInstance();
+    return (await storage.getStudentId()).trim() === account && await storage.getIsLogin() &&
+      storage.getSessionEpoch() === epoch;
+  }
+
+  private communitySeenKey(account: string, key: string): string {
+    return 'communityBadgeSeenAt_' + encodeURIComponent(account) + '_' + key;
+  }
+
+  private async loadCommunityPostBadge(account: string, epoch: number, key: string): Promise<void> {
+    const storage = AppStorage.getInstance();
+    const revision = this.communitySeenRevision.get(key) ?? 0;
     try {
-      const posts: CampusWallPost[] = await CampusWallApi.list(1, tag);
-      let latestId = 0;
-      for (const post of posts) latestId = Math.max(latestId, post.id || 0);
-      this.setCommunityLatestId(key, latestId);
-
-      const storage = AppStorage.getInstance();
-      const storageKey = `communityLastSeen_${key}`;
-      const lastSeenId = await storage.getSettingNumber(storageKey, 0);
-      // 首次启用功能时建立基线，避免把所有历史帖子都误报为新帖。
-      if (lastSeenId <= 0) {
-        if (latestId > 0) await storage.setSettingNumber(storageKey, latestId);
-        this.setCommunityUnread(key, 0);
-        return;
+      const storageKey = this.communitySeenKey(account, key);
+      const since = await storage.getSettingNumber(storageKey, 0);
+      const result = await CampusWallApi.postUnreadCount(this.communityTag(key), since > 0 ? since : Date.now());
+      if (!await this.isCommunityAccountCurrent(account, epoch) ||
+        (this.communitySeenRevision.get(key) ?? 0) !== revision) return;
+      this.communityCheckedAt.set(key, result.checkedAt);
+      // 首次成功取数时，用服务端时间建立账号自己的已读基线。
+      if (since <= 0) await storage.setSettingNumber(storageKey, result.checkedAt);
+      if (await this.isCommunityAccountCurrent(account, epoch) &&
+        (this.communitySeenRevision.get(key) ?? 0) === revision) {
+        this.setCommunityUnread(key, since > 0 ? result.count : 0);
       }
-
-      let unread = 0;
-      for (const post of posts) {
-        if ((post.id || 0) > lastSeenId) unread++;
-      }
-      this.setCommunityUnread(key, unread);
-    } catch (error) {
-      console.warn(TAG, `load ${key} badge failed: ${JSON.stringify(error)}`);
+    } catch {
+      console.warn(TAG, 'community post count unavailable: ' + key);
     }
   }
 
-  private async loadCommunityMessageBadge(): Promise<void> {
+  private async loadCommunityMessageBadge(account: string, epoch: number): Promise<void> {
+    const revision = this.communityMessageRevision;
     try {
-      const page = await CampusWallApi.notifications(0, 1);
-      this.communityMessageUnread = Math.max(0, page.unreadCount || 0);
-    } catch (error) {
-      console.warn(TAG, `load community message badge failed: ${JSON.stringify(error)}`);
+      const result = await CampusWallApi.notificationUnreadCount();
+      if (await this.isCommunityAccountCurrent(account, epoch) && this.communityMessageRevision === revision) {
+        this.communityMessageUnread = result.count;
+      }
+    } catch {
+      console.warn(TAG, 'community notification count unavailable');
     }
   }
 
@@ -265,23 +338,6 @@ struct MainPage {
     else if (key === 'book') this.campusBookUnread = value;
   }
 
-  private setCommunityLatestId(key: string, id: number): void {
-    if (key === 'wall') this.campusWallLatestId = id;
-    else if (key === 'lost') this.campusLostLatestId = id;
-    else if (key === 'team') this.campusTeamLatestId = id;
-    else if (key === 'help') this.campusHelpLatestId = id;
-    else if (key === 'book') this.campusBookLatestId = id;
-  }
-
-  private communityLatestId(key: string): number {
-    if (key === 'wall') return this.campusWallLatestId;
-    if (key === 'lost') return this.campusLostLatestId;
-    if (key === 'team') return this.campusTeamLatestId;
-    if (key === 'help') return this.campusHelpLatestId;
-    if (key === 'book') return this.campusBookLatestId;
-    return 0;
-  }
-
   private communityKey(title: string): string {
     if (title === '校园墙') return 'wall';
     if (title === '失物招领') return 'lost';
@@ -292,6 +348,7 @@ struct MainPage {
   }
 
   private communityTag(key: string): string {
+    if (key === 'lost') return 'lost_found';
     if (key === 'book') return 'book_trade';
     return key;
   }
@@ -313,19 +370,19 @@ struct MainPage {
   private async markCommunitySeen(item: CardItem): Promise<void> {
     const key = this.communityKey(item.title);
     if (!key) return;
+    const account = this.communityBadgeAccount;
+    const checkedAt = this.communityCheckedAt.get(key) ?? 0;
     this.setCommunityUnread(key, 0);
+    if (!account || checkedAt <= 0) return;
+    this.communitySeenRevision.set(key, (this.communitySeenRevision.get(key) ?? 0) + 1);
+    const storage = AppStorage.getInstance();
+    const epoch = storage.getSessionEpoch();
     try {
-      let latestId = this.communityLatestId(key);
-      if (latestId <= 0) {
-        const posts = await CampusWallApi.list(1, this.communityTag(key));
-        for (const post of posts) latestId = Math.max(latestId, post.id || 0);
-        this.setCommunityLatestId(key, latestId);
+      if (await this.isCommunityAccountCurrent(account, epoch)) {
+        await storage.setSettingNumber(this.communitySeenKey(account, key), checkedAt);
       }
-      if (latestId > 0) {
-        await AppStorage.getInstance().setSettingNumber(`communityLastSeen_${key}`, latestId);
-      }
-    } catch (error) {
-      console.warn(TAG, `mark ${key} seen failed: ${JSON.stringify(error)}`);
+    } catch {
+      console.warn(TAG, 'mark community seen failed: ' + key);
     }
   }
 
@@ -335,6 +392,8 @@ struct MainPage {
   }
 
   private openCommunityMessages(): void {
+    this.communityMessageRevision++;
+    this.communityMessagesPolledAt = 0;
     this.communityMessageUnread = 0;
     router.pushUrl({ url: 'pages/campus/CommunityNotificationsPage' });
   }
