@@ -705,6 +705,12 @@ export class AppStorage {
   }
 
   private async readCurrentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {
+    if (archiveId.startsWith('shared_')) {
+      const archives = await this.getCourseArchives();
+      const shared = archives.find(archive => archive.id === archiveId);
+      const experiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
+      return this.mergePhysicalExperiments(shared?.courses ?? [], experiments);
+    }
     const current = await this.getStoredCourses('currentCourses');
     // 别人的课表只用自己的数据：绝不把自己的实验课合进去。
     if (archiveId !== 'mine') {

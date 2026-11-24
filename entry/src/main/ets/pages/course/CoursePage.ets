@@ -563,13 +563,7 @@ export struct CoursePage {
   private async loadCurrentArchiveCourses(): Promise<boolean> {
     const storage = PreferenceStorage.getInstance();
     const archiveId = await storage.getCurrentArchiveId();
-    let currentCourses: CourseData[];
-    if (archiveId.startsWith('shared_')) {
-      const archives = await storage.getCourseArchives();
-      currentCourses = archives.find(archive => archive.id === archiveId)?.courses ?? [];
-    } else {
-      currentCourses = await storage.getCurrentCourses();
-    }
+    const currentCourses = await storage.getCurrentCourses();
     if (await storage.getCurrentArchiveId() !== archiveId) return false;
     if (currentCourses.length === 0 && archiveId === 'mine') {
       return false;
