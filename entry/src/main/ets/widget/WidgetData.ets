@@ -40,7 +40,7 @@ export interface WidgetCountdownSlide {
   remaining: string;
 }
 
-interface QuickRoomPref { id?: string; name?: string; remaining?: string; unit?: string; }
+interface QuickRoomPref { id?: string; name?: string; remaining?: string | number; unit?: string; }
 
 export interface WidgetSnapshot {
   mode: string;
@@ -471,15 +471,16 @@ export class WidgetData {
    */
   /** 快捷功能卡片：电量数据来自本机缓存，其余入口是固定路由。 */
   private static async quickSnapshot(storage: AppStorage, accent: string): Promise<WidgetSnapshot> {
-    let roomLabel = '快捷功能';
-    let valueText = '校园生活 一手掌握';
+    let roomLabel = '未绑定房间';
+    let valueText = '—';
     try {
       const raw = await storage.getSettingString('electricityRooms', '');
-      const rooms = JSON.parse(raw) as QuickRoomPref[];
+      const rooms = JSON.parse(raw || '[]') as QuickRoomPref[];
       if (Array.isArray(rooms) && rooms.length > 0) {
         const room = rooms[0];
-        roomLabel = (room.name || room.id || '我的寝室').trim();
-        valueText = `${(room.remaining || '--')}${(room.unit || '度')}`;
+        roomLabel = (room.name || '').trim() || (room.id || '').trim() || '我的寝室';
+        const remaining = String(room.remaining ?? '').trim();
+        valueText = remaining ? remaining + ((room.unit || '').trim() || '度') : '—';
       }
     } catch (error) {
       console.warn('WidgetData', `read electricity failed: ${JSON.stringify(error)}`);

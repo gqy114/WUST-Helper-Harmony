@@ -164,3 +164,15 @@ test('周课表以本周为默认滑页，前后周各自显示课程并共用�
   assert.equal(weekGridIndexes[12], weekGridIndexes[13]);
   assert.equal(weekGridIndexes.length, 25);
 });
+
+test('快捷功能电量显示真实零值，缺少读数时显示占位', async () => {
+  const WidgetData = await loadWidget();
+  const snapshot = (rooms) => WidgetData.build({
+    getSettingString: async (key, fallback) => key === 'electricityRooms' ? JSON.stringify(rooms) : fallback,
+  }, false, 'quick');
+  const zero = await snapshot([{ name: '1630 房间', remaining: 0 }]);
+  assert.equal(zero.title, '1630 房间');
+  assert.equal(zero.subtitle, '0度');
+  assert.equal((await snapshot([{ name: '1630 房间' }])).subtitle, '—');
+  assert.equal((await snapshot([])).title, '未绑定房间');
+});
