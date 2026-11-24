@@ -468,8 +468,12 @@ export struct CoursePage {
         for (let i = 0; i < savedCourses.length; i++) {
           if (savedCourses[i].isPhysicalExperiment) list.push(savedCourses[i]);
         }
+        await s.setCurrentCourses(list, undefined, 'mine');
+        if (await s.getCurrentArchiveId() !== 'mine') {
+          await this.loadCurrentArchiveCourses();
+          return;
+        }
         this.store.setCourses(list);
-        await s.setCurrentCourses(this.store.courses);
         const colored = this.store.courses;
         this.allCourseList = Array.isArray(colored) ? [...colored] : [...list];
         this.applyOnlyThisWeekFilter();
@@ -557,8 +561,17 @@ export struct CoursePage {
   }
 
   private async loadCurrentArchiveCourses(): Promise<boolean> {
-    const currentCourses = await PreferenceStorage.getInstance().getCurrentCourses();
-    if (currentCourses.length === 0 && await PreferenceStorage.getInstance().getCurrentArchiveId() === 'mine') {
+    const storage = PreferenceStorage.getInstance();
+    const archiveId = await storage.getCurrentArchiveId();
+    let currentCourses: CourseData[];
+    if (archiveId.startsWith('shared_')) {
+      const archives = await storage.getCourseArchives();
+      currentCourses = archives.find(archive => archive.id === archiveId)?.courses ?? [];
+    } else {
+      currentCourses = await storage.getCurrentCourses();
+    }
+    if (await storage.getCurrentArchiveId() !== archiveId) return false;
+    if (currentCourses.length === 0 && archiveId === 'mine') {
       return false;
     }
     this.store.setCourses(currentCourses);
@@ -788,7 +801,7 @@ export struct CoursePage {
       return;
     }
     if (index === 1) {
-      this.showSemesterPicker = true;
+      this.openSemesterPicker();
       return;
     }
     if (index === 2) {
@@ -829,8 +842,17 @@ export struct CoursePage {
     this.fetchCourses().finally(() => { this.loading = false; });
   }
 
+  private async openSemesterPicker(): Promise<void> {
+    if (await PreferenceStorage.getInstance().getCurrentArchiveId() !== 'mine') {
+      promptAction.showToast({ message: '导入的课表按分享学期显示，请先切回我的课表再切换学期' });
+      return;
+    }
+    this.showSemesterPicker = true;
+  }
+
   /** 保存所选学期并重新请求该学期课表。 */
   private async switchSemester(semester: string): Promise<void> {
+    if (await PreferenceStorage.getInstance().getCurrentArchiveId() !== 'mine') return;
     if (!semester || semester === this.store.semester) {
       this.currentSemester = semester || this.currentSemester;
       return;

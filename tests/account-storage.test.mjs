@@ -176,3 +176,15 @@ test('未登录时不认领旧档案', async () => {
   const claimed = await storage.getCourseArchives();
   assert.equal(claimed.length, 1, '登录后由当前账号认领');
 });
+
+test('共享课表启用时，个人课表写入无法覆盖已选档案的课程', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  await storage.setCurrentArchiveId('shared_example');
+  await storage.setCurrentArchiveCourses('shared_example', courses('共享课程'));
+  const originalMarker = storage.getCourseCacheMarker();
+  await storage.setCurrentCourses(courses('本人课程'), 'prefetch', 'mine');
+  assert.equal(await storage.getCurrentArchiveId(), 'shared_example');
+  assert.equal((await storage.getCurrentCourses())[0].courseName, '共享课程');
+  assert.equal(storage.getCourseCacheMarker(), originalMarker);
+});

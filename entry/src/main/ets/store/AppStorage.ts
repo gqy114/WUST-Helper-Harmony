@@ -730,13 +730,14 @@ export class AppStorage {
     return run;
   }
 
-  async setCurrentCourses(value: CourseData[], marker?: string): Promise<void> {
+  async setCurrentCourses(value: CourseData[], marker?: string, expectedArchive: string = ''): Promise<void> {
     // 写入是异步的：期间若切换账号/学期，就放弃这次写入，
     // 避免旧请求的结果覆盖新账号刚保存的课表。
     const epochAtStart = this.sessionEpoch;
     return this.enqueueCourseWrite(async () => {
       if (this.sessionEpoch !== epochAtStart) return;
       const archiveId = await this.getCurrentArchiveId();
+      if (expectedArchive && archiveId !== expectedArchive) return;
       const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
       const incomingExperiments: CourseData[] = [];
       for (let i = 0; i < value.length; i++) {
@@ -745,6 +746,8 @@ export class AppStorage {
       const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
       if (this.sessionEpoch !== epochAtStart) return;
       await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId);
+      if (this.sessionEpoch !== epochAtStart) return;
+      if (expectedArchive && await this.getCurrentArchiveId() !== expectedArchive) return;
       if (this.sessionEpoch !== epochAtStart) return;
       const merged = this.mergePhysicalExperiments(value, experiments);
       // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
