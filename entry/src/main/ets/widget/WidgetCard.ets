@@ -9,7 +9,7 @@ import { DailyWidgetCarousel } from './DailyWidgetCarousel';
 import { CountdownWidgetCarousel } from './CountdownWidgetCarousel';
 
 const LINE_COUNT = 4;
-const QUICK_TILE_BLUE = '#2664C6';
+const QUICK_TILE_BLUE = '#61A5FA';
 
 let widgetStorage: LocalStorage = new LocalStorage();
 
