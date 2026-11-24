@@ -41,3 +41,10 @@ test('周课表刷新后按内容重建页面，避免复用旧课程', async ()
   assert.ok(carousel.includes('${index}-${gridIndex}-${this.pages.grids['), '页面 key 没有包含课程内容');
   assert.ok(!carousel.includes('=> String(index))'), '仍在用固定 index 作为 key');
 });
+
+test('周课表刷新后保留当前停留页，不把锁定页重置回本周', async () => {
+  const carousel = await source('widget/WeeklyWidgetCarousel.ets');
+  assert.match(carousel, /private initialized: boolean = false;/, '缺少首次加载标记');
+  assert.match(carousel, /this\.displayIndex = Math\.max\(0, Math\.min\(this\.displayIndex/, '刷新时没有保留当前页');
+  assert.match(carousel, /\.index\(this\.displayIndex\)/, 'Swiper 没有绑定保留后的页码');
+});

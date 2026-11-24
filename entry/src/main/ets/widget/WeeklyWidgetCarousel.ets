@@ -14,6 +14,7 @@ export struct WeeklyWidgetCarousel {
   @State private pages: WeeklyWidgetPages = { grids: [], weekGridIndexes: [] };
   @State private locked: boolean = false;
   @State private displayIndex: number = 0;
+  private initialized: boolean = false;
   private swiperController: SwiperController = new SwiperController();
   // 滑到非本周后 30 秒自动回到本周；每次滑动都会重新计时。
   private returnTimer: number = -1;
@@ -81,7 +82,13 @@ export struct WeeklyWidgetCarousel {
     } catch {
       this.pages = { grids: [], weekGridIndexes: [] };
     }
-    this.displayIndex = this.currentPageIndex();
+    if (!this.initialized) {
+      this.displayIndex = this.currentPageIndex();
+      this.initialized = true;
+    } else {
+      // 数据刷新时保留用户当前停留的周，避免锁定页被重置回本周。
+      this.displayIndex = Math.max(0, Math.min(this.displayIndex, this.pages.weekGridIndexes.length - 1));
+    }
   }
 
   @Builder
@@ -111,7 +118,7 @@ export struct WeeklyWidgetCarousel {
         }, (gridIndex: number, index: number) =>
           `${index}-${gridIndex}-${this.pages.grids[this.pages.weekGridIndexes[index]] || ''}`)
       }
-      .index(this.currentPageIndex())
+      .index(this.displayIndex)
       .onChange((index: number) => this.onPageChanged(index))
       .vertical(true)
       .loop(false)
