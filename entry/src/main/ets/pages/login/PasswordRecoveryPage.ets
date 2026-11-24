@@ -102,6 +102,8 @@ struct PasswordRecoveryPage {
     this.smsCode = '';
     this.newPassword = '';
     this.confirmPassword = '';
+    // 正在处理的请求会先释放 busy，否则 loadCaptcha 会直接返回，页面停在空白第一步。
+    this.busy = false;
     this.loadCaptcha();
   }
 
