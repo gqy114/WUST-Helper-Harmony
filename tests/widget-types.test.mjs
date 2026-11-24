@@ -129,3 +129,10 @@ test('桌面卡片直达设置后返回走应用启动页，有上一页时仍�
   assert.match(page, /onBackPress\(\): boolean \{\s*if \(Number\(router\.getLength\(\)\) > 1\) return false;\s*this\.leaveSettings\(\);\s*return true;/);
   assert.match(page, /accessibilityText\('返回'\)\.onClick\(\(\) => this\.leaveSettings\(\)\)/);
 });
+
+test('深色模式下快捷按钮仍使用深色文字保证对比度', async () => {
+  const card = await src('entry/src/main/ets/widget/WidgetCard.ets');
+  const block = card.slice(card.indexOf('private quickTile'), card.indexOf('private quickContent'));
+  assert.match(block, /fontColor\('#123A66'\)/, '快捷按钮文字不是固定深色');
+  assert.doesNotMatch(block, /fontColor\(this\.textColor\)/, '深色模式会再次变成白字');
+});

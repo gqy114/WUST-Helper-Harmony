@@ -104,7 +104,7 @@ struct WidgetCard {
       Text(label)
         .fontSize(12)
         .fontWeight(FontWeight.Medium)
-        .fontColor(this.textColor)
+        .fontColor('#123A66')
         .maxLines(2)
         .textAlign(TextAlign.Center)
     }
