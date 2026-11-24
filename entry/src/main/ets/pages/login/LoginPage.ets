@@ -313,10 +313,11 @@ struct LoginPage {
             const tdata = resp.data as TokenDataContent;
             if (tdata.token) {
               await s.setToken(tdata.token);
-              await s.setIsLogin(true);
+
               await s.setTokenUpdateTime(Date.now());
               await s.setTokenLastUseTime(Date.now());
               await s.setStudentId(sid);
+              await s.setIsLogin(true);
               await s.setPassword(pwd);
               await StorageUtil.saveLoginInfo(tdata.token, sid, sid);
               console.info(TAG, 'login token saved: ' + tdata.token);
@@ -456,8 +457,8 @@ struct LoginPage {
     await s.setTokenUpdateTime(now);
     await s.setTokenLastUseTime(now);
     await s.setMessage(msg);
-    await s.setIsLogin(true);
     await s.setStudentId(sid);
+    await s.setIsLogin(true);
     await s.setPassword(pwd);
     await s.setSelectSemester(this.semesterStr);
     await s.setSemester(this.semesterStr);

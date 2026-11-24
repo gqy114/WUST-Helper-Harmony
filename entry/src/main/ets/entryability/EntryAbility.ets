@@ -1,6 +1,8 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { formBindingData, formProvider } from '@kit.FormKit';
+import { WidgetData, WIDGET_MODE_QUICK } from '../widget/WidgetData';
 import router from '@ohos.router';
 import { StorageUtil } from '../utils/StorageUtil';
 import { AppStorage as PreferencesStorage } from '../store/AppStorage';
@@ -13,6 +15,7 @@ const IMAGE_DATA_CACHE_BYTES: number = 16 * 1024 * 1024;
 export default class EntryAbility extends UIAbility {
   // 快捷功能卡片点击后要直达的页面；为空时仍走开屏页。
   private widgetRoute: string = '';
+  private electricityRefresh: Promise<void> = Promise.resolve();
   // 每次新的快捷入口请求都会递增；旧请求的延迟重试据此作废，避免把页面跳回旧页面。
   private routeRequestId: number = 0;
 
@@ -53,6 +56,11 @@ export default class EntryAbility extends UIAbility {
   }
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    PreferencesStorage.getInstance().onElectricityRoomsChanged = () => {
+      this.electricityRefresh = this.electricityRefresh.then(() => this.refreshElectricityCards()).catch(() => {
+        hilog.warn(DOMAIN, 'EntryAbility', 'Could not refresh electricity cards');
+      });
+    };
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
@@ -118,7 +126,20 @@ export default class EntryAbility extends UIAbility {
     });
   }
 
+  private async refreshElectricityCards(): Promise<void> {
+    const forms = (await formProvider.getPublishedRunningFormInfos()).filter(form => form.formName === 'wust_quick');
+    if (forms.length === 0) return;
+    const storage = PreferencesStorage.getInstance();
+    const epoch = storage.getSessionEpoch();
+    const dark = this.context.config?.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+    const snapshot = await WidgetData.build(storage, dark, WIDGET_MODE_QUICK);
+    if (storage.getSessionEpoch() !== epoch) return;
+    const data = formBindingData.createFormBindingData(snapshot);
+    await Promise.all(forms.map(form => formProvider.updateForm(form.formId, data)));
+  }
+
   onDestroy(): void {
+    PreferencesStorage.getInstance().onElectricityRoomsChanged = undefined;
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 

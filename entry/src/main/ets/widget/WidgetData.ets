@@ -446,7 +446,7 @@ export class WidgetData {
     let roomLabel = '快捷功能';
     let valueText = '校园生活 一手掌握';
     try {
-      const raw = await storage.getSettingString('electricityRooms', '');
+      const raw = await storage.getElectricityRoomsCache();
       const rooms = JSON.parse(raw) as QuickRoomPref[];
       if (Array.isArray(rooms) && rooms.length > 0) {
         const room = rooms[0];

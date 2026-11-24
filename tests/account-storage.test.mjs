@@ -176,3 +176,29 @@ test('未登录时不认领旧档案', async () => {
   const claimed = await storage.getCourseArchives();
   assert.equal(claimed.length, 1, '登录后由当前账号认领');
 });
+
+test('电表缓存隔离账号，旧全局缓存和切号在途写入都不会泄露给新账号', async () => {
+  const { storage } = await createStorage();
+  await storage.setSettingString('electricityRooms', '[{"id":"legacy"}]');
+  await storage.setStudentId('A');
+  await storage.setIsLogin(true);
+  assert.equal(await storage.getElectricityRoomsCache(), '');
+  const firstSession = storage.getSessionEpoch();
+  const cached = '[{"id":"A-room","remaining":"12"}]';
+  assert.equal(await storage.setElectricityRoomsCache('A', firstSession, cached), true);
+  assert.equal(await storage.getElectricityRoomsCache(), cached);
+
+  await storage.setStudentId('B');
+  assert.equal(await storage.getElectricityRoomsCache(), '');
+  assert.equal(await storage.setElectricityRoomsCache('A', firstSession, '[{"id":"late-A"}]'), false);
+  assert.equal(await storage.getElectricityRoomsCache(), '');
+  const secondSession = storage.getSessionEpoch();
+  assert.equal(await storage.setElectricityRoomsCache('B', secondSession, '[{"id":"B-room"}]'), true);
+
+  await storage.setIsLogin(false);
+  assert.equal(await storage.getElectricityRoomsCache(), '');
+  await storage.setIsLogin(true);
+  assert.equal(await storage.setElectricityRoomsCache('B', secondSession, '[]'), false);
+  await storage.setStudentId('A');
+  assert.equal(await storage.getElectricityRoomsCache(), cached);
+});
