@@ -1,4 +1,4 @@
-import { CourseTimeSlot, DAY_LABELS, PERIOD_COUNT, TIME_SLOTS } from '../model/CourseModel';
+import { CourseTimeSlot, DAY_LABELS, PERIOD_COUNT, getTimeSlotsByCampus } from '../model/CourseModel';
 import { WeeklyWidgetCourse } from './WidgetData';
 
 const TIME_COLUMN = 12;
@@ -8,6 +8,7 @@ const DAY_WIDTH = (100 - TIME_COLUMN) / DAY_LABELS.length;
 @Component
 export struct WeeklyWidgetGrid {
   @Prop courses: string = '';
+  @Prop campus: string = '黄家湖校区';
   @Prop subtitle: string = '';
   @Prop textColor: string = '#111111';
   @Prop subColor: string = '#666666';
@@ -32,7 +33,7 @@ export struct WeeklyWidgetGrid {
 
       Stack({ alignContent: Alignment.TopStart }) {
         Column() {
-          ForEach(TIME_SLOTS, (slot: CourseTimeSlot) => {
+          ForEach(getTimeSlotsByCampus(this.campus), (slot: CourseTimeSlot) => {
             Row() {
               Column() {
                 Text(slot.start).fontSize(8).fontColor(this.subColor).maxLines(1).minFontSize(6)
@@ -56,7 +57,7 @@ export struct WeeklyWidgetGrid {
             y: `${(course.start - 1) * 100 / PERIOD_COUNT}%`
           })
           .backgroundColor(course.color).borderRadius(4).clip(true)
-        }, (course: WeeklyWidgetCourse) => `${course.day}-${course.start}-${course.end}-${course.lane}-${course.name}`)
+        }, (course: WeeklyWidgetCourse) => `${course.day}-${course.start}-${course.end}-${course.lane}-${course.lanes}-${course.name}-${course.location}-${course.color}`)
 
         if (this.courseBlocks().length === 0) {
           Text(this.subtitle).fontSize(12).fontColor(this.subColor).textAlign(TextAlign.Center)

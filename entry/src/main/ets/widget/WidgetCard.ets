@@ -28,6 +28,7 @@ struct WidgetCard {
   @LocalStorageProp('cardBg') cardBg: string = '#FFFFFF';
   @LocalStorageProp('textColor') textColor: string = '#111111';
   @LocalStorageProp('subColor') subColor: string = '#666666';
+  @LocalStorageProp('campus') campus: string = '黄家湖校区';
   @LocalStorageProp('weeklyCourses') weeklyCourses: string = '';
 
   private lineAt(index: number): string {
@@ -262,7 +263,7 @@ struct WidgetCard {
           this.countdownContent()
         } else if (this.mode === 'weekly') {
           Text(this.title).fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.textColor).width('100%')
-          WeeklyWidgetGrid({ courses: this.weeklyCourses, subtitle: this.subtitle,
+          WeeklyWidgetGrid({ courses: this.weeklyCourses, campus: this.campus, subtitle: this.subtitle,
             textColor: this.textColor, subColor: this.subColor })
             .layoutWeight(1)
         } else {

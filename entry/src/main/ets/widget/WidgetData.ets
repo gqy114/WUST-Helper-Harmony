@@ -58,6 +58,7 @@ export interface WidgetSnapshot {
   subColor: string;
   updatedAt: string;
   weeklyCourses?: string;
+  campus?: string;
 }
 
 export interface WeeklyWidgetCourse {
@@ -453,6 +454,7 @@ export class WidgetData {
       }
       const week = await WidgetData.currentWeek(storage);
       snapshot = WidgetData.courseSnapshot(courses, week, mode, accent);
+      snapshot.campus = await storage.getSettingString('courseCampus', '黄家湖校区');
     }
     snapshot.bg = bg;
     snapshot.bgOpacity = bgOpacity;
