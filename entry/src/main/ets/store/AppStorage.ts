@@ -796,7 +796,9 @@ export class AppStorage {
    */
   async removePhysicalExperimentCourses(): Promise<number> {
     return this.enqueueCourseWrite(async () => {
-      const current = await this.getStoredCourses('currentCourses');
+      const archiveId = await this.getCurrentArchiveId();
+      const current = archiveId.startsWith('shared_') ? await this.readCurrentCoursesUnlocked(archiveId)
+        : await this.getStoredCourses('currentCourses');
       const remaining: CourseData[] = [];
       let removed = 0;
       for (let i = 0; i < current.length; i++) {
@@ -808,7 +810,6 @@ export class AppStorage {
       }
       if (removed === 0) return 0;
       this.courseCacheMarker = `remove_experiments_${Date.now()}`;
-      const archiveId = await this.getCurrentArchiveId();
       // 只清当前档案的实验课缓存；在别人的课表里删除，不能动「我的课表」。
       await this.putStr(await this.physicalExperimentKey(archiveId), '[]');
       // 同时清掉旧版全局缓存，避免下次读取把已删除的实验课重新迁移回来。

@@ -215,6 +215,7 @@ test('共享档案读取本档案的实验，刷新共享课程不丢失实验�
   assert.deepEqual(await names(), ['刷新后的共享课程', '导入的实验']);
   await storage.setCurrentArchiveCourses(id, courses('刷新后的共享课程'));
   assert.deepEqual(await names(), ['刷新后的共享课程', '导入的实验']);
-  await storage.removePhysicalExperimentCourses();
+  await storage.resetCourseCache();
+  assert.equal(await storage.removePhysicalExperimentCourses(), 1);
   assert.deepEqual(await names(), ['刷新后的共享课程']);
 });
