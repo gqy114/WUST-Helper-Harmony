@@ -5,7 +5,7 @@
  * formBindingData 注入。设置页修改偏好后也调用这里重新生成数据并刷新卡片。
  */
 import { AppStorage } from '../store/AppStorage';
-import { CourseData, getCourseColor, isCourseInWeek, PERIOD_COUNT, TIME_SLOTS } from '../model/CourseModel';
+import { CourseData, getCourseColor, isCourseInWeek, PERIOD_COUNT, getTimeSlotsByCampus } from '../model/CourseModel';
 
 export const WIDGET_MODE_COUNTDOWN: string = 'countdown';
 export const WIDGET_MODE_DAILY: string = 'daily';
@@ -58,6 +58,7 @@ export interface WidgetSnapshot {
   subColor: string;
   updatedAt: string;
   weeklyCourses?: string;
+  campus?: string;
   dailyCourses?: string;
   dailyWeekday?: string;
 }
@@ -300,7 +301,7 @@ export class WidgetData {
   }
 
   private static courseSnapshot(courses: CourseData[], week: number, mode: string, accent: string,
-    today: Date = new Date()): WidgetSnapshot {
+    today: Date = new Date(), campus: string = '黄家湖校区'): WidgetSnapshot {
     const dayOfWeek = today.getDay() === 0 ? 7 : today.getDay();
     const weekly = mode === WIDGET_MODE_WEEKLY;
     const picked: CourseData[] = [];
@@ -356,7 +357,7 @@ export class WidgetData {
     if (weekly) {
       snapshot.weeklyCourses = JSON.stringify(WidgetData.weeklyGrid(picked));
     } else {
-      snapshot.dailyCourses = JSON.stringify(WidgetData.dailyCarousel(picked, today));
+      snapshot.dailyCourses = JSON.stringify(WidgetData.dailyCarousel(picked, today, campus));
       snapshot.dailyWeekday = `第${week}周 ${WEEKDAY_NAMES[today.getDay()]}`;
     }
     return snapshot;
@@ -367,16 +368,17 @@ export class WidgetData {
     return Number(parts[0]) * 60 + Number(parts[1]);
   }
 
-  private static dailyCarousel(courses: CourseData[], today: Date): DailyWidgetCourse[] {
+  private static dailyCarousel(courses: CourseData[], today: Date, campus: string): DailyWidgetCourse[] {
     const items: DailyWidgetCourse[] = [];
+    const slots = getTimeSlotsByCampus(campus);
     const now = today.getHours() * 60 + today.getMinutes();
     let first = 0;
     let closest = Number.POSITIVE_INFINITY;
     let closestIsPast = true;
     for (const course of courses) {
-      const firstSlot = TIME_SLOTS.find((slot) =>
+      const firstSlot = slots.find((slot) =>
         course.startPeriod >= slot.startPeriod && course.startPeriod <= slot.endPeriod);
-      const lastSlot = TIME_SLOTS.find((slot) =>
+      const lastSlot = slots.find((slot) =>
         course.endPeriod >= slot.startPeriod && course.endPeriod <= slot.endPeriod);
       if (!firstSlot || !lastSlot || course.endPeriod < course.startPeriod) continue;
 
@@ -501,7 +503,9 @@ export class WidgetData {
         courses = [];
       }
       const week = await WidgetData.currentWeek(storage);
-      snapshot = WidgetData.courseSnapshot(courses, week, mode, accent);
+      const campus = await storage.getSettingString('courseCampus', '黄家湖校区');
+      snapshot = WidgetData.courseSnapshot(courses, week, mode, accent, new Date(), campus);
+      snapshot.campus = campus;
     }
     snapshot.bg = bg;
     snapshot.bgOpacity = bgOpacity;

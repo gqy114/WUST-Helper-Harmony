@@ -520,6 +520,7 @@ struct WidgetSettingsPage {
             .fontColor(this.themeColors()[1]).width('100%')
           WeeklyWidgetGrid({
             courses: this.snapshot?.weeklyCourses ?? '',
+            campus: this.snapshot?.campus ?? '黄家湖校区',
             subtitle: this.snapshot?.subtitle ?? '正在加载数据…',
             textColor: this.themeColors()[1],
             subColor: this.themeColors()[2]
