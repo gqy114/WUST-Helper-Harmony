@@ -1,6 +1,7 @@
 import { HttpRequest } from './HttpRequest';
 import { AppStorage } from '../store/AppStorage';
 import { ApiService } from './ApiService';
+import { DeviceAuthRestore } from './DeviceAuthRestore';
 
 interface AppTokenResponse {
   code: number;
@@ -171,7 +172,7 @@ export class VolunteerApi {
     const storage = AppStorage.getInstance();
     let token: string = (await storage.getAppAuthAccessToken()).trim();
     if (token.length === 0) {
-      await ApiService.loginAppAuthFromSavedCredentials(storage);
+      await DeviceAuthRestore.restore(storage);
       token = (await storage.getAppAuthAccessToken()).trim();
     }
     if (token.length === 0) throw new Error('登录状态已失效，请重新登录');
@@ -188,7 +189,7 @@ export class VolunteerApi {
     if (VolunteerApi.isExpired(proxyLogin.data.code, proxyLogin.response.responseCode) && retryAppAuth) {
       const storage = AppStorage.getInstance();
       await storage.setAppAuthAccessToken('');
-      await ApiService.loginAppAuthFromSavedCredentials(storage);
+      await DeviceAuthRestore.restore(storage);
       return VolunteerApi.login(true, false);
     }
     let volunteerToken: string = VolunteerApi.extractToken(proxyLogin.data.data);

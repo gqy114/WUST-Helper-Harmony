@@ -32,6 +32,7 @@ async function loadPageData(records, summary = {}) {
       { getInstance: () => ({ getAppAuthAccessToken: async () => 'app-test-token' }) },
     ],
     './ApiService': ['ApiService', {}],
+  './DeviceAuthRestore': ['DeviceAuthRestore', { restore: async () => {} }],
   };
   const context = createContext({ console });
   const module = new SourceTextModule(apiCode, { context });

@@ -12,12 +12,13 @@ import netConnection from '@ohos.net.connection';
 import { AppStorage } from '../../store/AppStorage';
 import { CourseStore } from '../../store/CourseStore';
 import { ApiService } from '../../net/ApiService';
+import { DeviceAppAuth, DeviceLoginData, UndergradDeviceLogin } from '../../net/UndergradDeviceLogin';
 import { RouterUtil } from '../../utils/RouterUtil';
 import { StorageUtil } from '../../utils/StorageUtil';
 import { common } from '@kit.AbilityKit'
 import { router } from '@kit.ArkUI';
 
-import { TokenDataContent, GraduateLoginDataContent } from '../../model/BaseResponse';
+import { BaseResponse, TokenDataContent, GraduateLoginDataContent } from '../../model/BaseResponse';
 // ═══════════════════════════════════════════════ 常量 ═══════════════════════════════════════════════
 
 const TAG = 'LoginPage';
@@ -264,9 +265,30 @@ struct LoginPage {
     this.startLoginTimer(this.isGraduate ? 60000 : TIMEOUT_LOGIN);
 
     try {
-      const resp = this.isGraduate
-        ? await ApiService.loginGraduate(sid, pwd)
-        : await ApiService.loginUndergrad(sid, pwd);
+      let resp: BaseResponse<TokenDataContent | GraduateLoginDataContent>;
+      let deviceData: DeviceLoginData | undefined = undefined;
+      if (this.isGraduate) {
+        resp = await ApiService.loginGraduate(sid, pwd);
+      } else {
+        // 新的设备登录：WebSocket 由后端驱动学校登录；不可用时回退旧 HTTP 登录。
+        try {
+          const outcome = await UndergradDeviceLogin.login(sid, pwd);
+          if (outcome.code === 200 && outcome.data?.token) {
+            deviceData = outcome.data;
+            const tokenData: TokenDataContent = {
+              token: outcome.data.token,
+              student_id: outcome.data.student_id || sid,
+              student_type: 'undergrad'
+            };
+            resp = { code: 200, msg: outcome.message, data: tokenData };
+          } else {
+            resp = { code: outcome.code, msg: outcome.message };
+          }
+        } catch (deviceError) {
+          console.warn(TAG, `device login unavailable, fallback: ${JSON.stringify(deviceError)}`);
+          resp = await ApiService.loginUndergrad(sid, pwd);
+        }
+      }
       this.clearLoginTimer();
 
       if (!this.isGraduate) {
@@ -318,6 +340,7 @@ struct LoginPage {
               await s.setTokenLastUseTime(Date.now());
               await s.setStudentId(sid);
               await s.setPassword(pwd);
+              if (deviceData?.appAuth) await this.saveDeviceAppAuth(deviceData.appAuth, sid);
               await StorageUtil.saveLoginInfo(tdata.token, sid, sid);
               console.info(TAG, 'login token saved: ' + tdata.token);
             }
@@ -447,6 +470,26 @@ struct LoginPage {
   }
 
   // ══════════ 保存登录数据 ══════════
+
+  /** 设备登录返回的 App 会话单独保存；教务 Cookie 仍然走 token 字段。 */
+  private async saveDeviceAppAuth(appAuth: DeviceAppAuth, sid: string): Promise<void> {
+    try {
+      const s = AppStorage.getInstance();
+      const epoch = s.getSessionEpoch();
+      const saved = await s.setAppAuthTokensIfSession(epoch, sid,
+        appAuth.accessToken ?? '', appAuth.refreshToken ?? '',
+        appAuth.expiresAt ?? 0, appAuth.refreshExpiresAt ?? 0);
+      if (!saved) return;
+      if (appAuth.user?.avatarUrl) {
+        await s.setAvatarUrlForAccount(epoch, sid, appAuth.user.avatarUrl);
+      }
+      if (appAuth.user?.realName) await s.setRealName(appAuth.user.realName);
+      if (appAuth.user?.college) await s.setCollege(appAuth.user.college);
+      if (appAuth.user?.major) await s.setMajor(appAuth.user.major);
+    } catch (error) {
+      console.warn(TAG, `save device app auth failed: ${JSON.stringify(error)}`);
+    }
+  }
 
   private async saveLoginData(token: string, msg: string, sid: string, pwd: string): Promise<void> {
     try {

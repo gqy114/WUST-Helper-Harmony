@@ -10,6 +10,7 @@ import {
   AppAuthDataContent,
 } from '../model/BaseResponse';
 import { AppStorage } from '../store/AppStorage';
+import { UndergradDeviceLogin } from './UndergradDeviceLogin';
 
 // 从 WustApi.java 抽取的常量子集
 // 登录接口以 iOS 接口文档为准：本科生换取教务 Cookie，研究生直接返回个人信息。
@@ -282,8 +283,16 @@ export class ApiService {
     // 先同步固定会话代次，再读凭据：请求期间切号，返回结果一律丢弃。
     const sessionEpoch = storage.getSessionEpoch();
     const studentId = await storage.getStudentId();
+    if (!studentId) {
+      console.warn('ApiService', 'missing saved credentials for app auth');
+      return;
+    }
+    if (storage.getSessionEpoch() !== sessionEpoch) {
+      console.warn('ApiService', 'account changed while reading credentials, auth restore cancelled');
+      return;
+    }
     const password = await storage.getPassword();
-    if (!studentId || !password) {
+    if (!password) {
       console.warn('ApiService', 'missing saved credentials for app auth');
       return;
     }
@@ -324,13 +333,13 @@ export class ApiService {
     password: string,
   ): Promise<boolean> {
     try {
-      const resp = await ApiService.loginUndergrad(studentId, password);
-      if (resp && resp.data?.token) {
-        const token = resp.data.token;
+      const outcome = await UndergradDeviceLogin.login(studentId, password);
+      if (outcome.code === 200 && outcome.data?.token) {
+        const token = outcome.data.token;
         await storage.setToken(token);
         await storage.setTokenUpdateTime(Date.now());
         await storage.setTokenLastUseTime(Date.now());
-        await storage.setMessage(resp.msg ?? '');
+        await storage.setMessage(outcome.message ?? '');
         return true;
       }
       return false;
