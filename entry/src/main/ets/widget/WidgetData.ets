@@ -40,7 +40,7 @@ export interface WidgetCountdownSlide {
   remaining: string;
 }
 
-interface QuickRoomPref { id?: string; name?: string; remaining?: string; unit?: string; }
+interface QuickRoomPref { id?: string; name?: string; remaining?: string | number; unit?: string; }
 
 export interface WidgetSnapshot {
   mode: string;
@@ -125,8 +125,9 @@ export class WidgetPrefs {
   }
 
   static async getAccent(storage: AppStorage): Promise<string> {
-    const accent = await storage.getSettingString(ACCENT_KEY, '#EC5A3C');
-    return accent.length > 0 ? accent : '#EC5A3C';
+    const accent = await storage.getSettingString(ACCENT_KEY, '#61A5FA');
+    if (accent.length === 0 || accent.toUpperCase() === '#EC5A3C') return '#61A5FA';
+    return accent;
   }
 
   static async setAccent(storage: AppStorage, accent: string): Promise<void> {
@@ -471,15 +472,16 @@ export class WidgetData {
    */
   /** 快捷功能卡片：电量数据来自本机缓存，其余入口是固定路由。 */
   private static async quickSnapshot(storage: AppStorage, accent: string): Promise<WidgetSnapshot> {
-    let roomLabel = '快捷功能';
-    let valueText = '校园生活 一手掌握';
+    let roomLabel = '未绑定房间';
+    let valueText = '—';
     try {
       const raw = await storage.getSettingString('electricityRooms', '');
-      const rooms = JSON.parse(raw) as QuickRoomPref[];
+      const rooms = JSON.parse(raw || '[]') as QuickRoomPref[];
       if (Array.isArray(rooms) && rooms.length > 0) {
         const room = rooms[0];
-        roomLabel = (room.name || room.id || '我的寝室').trim();
-        valueText = `${(room.remaining || '--')}${(room.unit || '度')}`;
+        roomLabel = (room.name || '').trim() || (room.id || '').trim() || '我的寝室';
+        const remaining = String(room.remaining ?? '').trim();
+        valueText = remaining ? remaining + ((room.unit || '').trim() || '度') : '—';
       }
     } catch (error) {
       console.warn('WidgetData', `read electricity failed: ${JSON.stringify(error)}`);

@@ -164,3 +164,28 @@ test('周课表以本周为默认滑页，前后周各自显示课程并共用�
   assert.equal(weekGridIndexes[12], weekGridIndexes[13]);
   assert.equal(weekGridIndexes.length, 25);
 });
+
+test('快捷功能电量显示真实零值，缺少读数时显示占位', async () => {
+  const WidgetData = await loadWidget();
+  const snapshot = (rooms) => WidgetData.build({
+    getSettingString: async (key, fallback) => key === 'electricityRooms' ? JSON.stringify(rooms) : fallback,
+  }, false, 'quick');
+  const zero = await snapshot([{ name: '1630 房间', remaining: 0 }]);
+  assert.equal(zero.title, '1630 房间');
+  assert.equal(zero.subtitle, '0度');
+  assert.equal((await snapshot([{ name: '1630 房间' }])).subtitle, '—');
+  assert.equal((await snapshot([])).title, '未绑定房间');
+});
+
+test('快捷按钮在浅蓝底上使用深色文字保证可读性', async () => {
+  const card = await source('../entry/src/main/ets/widget/WidgetCard.ets');
+  const block = card.slice(card.indexOf('private quickTile'), card.indexOf('private quickContent'));
+  assert.match(block, /fontColor\('#123A66'\)/, '快捷按钮文字不是深色');
+  assert.doesNotMatch(block, /fontColor\(Color\.White\)/, '快捷按钮仍是白字');
+});
+
+test('房间名和电量数字在浅蓝底上使用深色文字', async () => {
+  const card = await source('../entry/src/main/ets/widget/WidgetCard.ets');
+  assert.match(card, /Text\(this\.title\)\.fontSize\(11\)\.fontColor\('#123A66'\)/, '房间名不是深色');
+  assert.match(card, /Text\(this\.subtitle\)\.fontSize\(18\)\.fontWeight\(FontWeight\.Medium\)\.fontColor\('#123A66'\)/, '电量数字不是深色');
+});

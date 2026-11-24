@@ -9,6 +9,7 @@ import { DailyWidgetCarousel } from './DailyWidgetCarousel';
 import { CountdownWidgetCarousel } from './CountdownWidgetCarousel';
 
 const LINE_COUNT = 4;
+const QUICK_TILE_BLUE = '#61A5FA';
 
 let widgetStorage: LocalStorage = new LocalStorage();
 
@@ -24,7 +25,7 @@ struct WidgetCard {
   @LocalStorageProp('line3') line3: string = '';
   @LocalStorageProp('countdownSlides') countdownSlides: string = '';
   @LocalStorageProp('countdownCompact') countdownCompact: boolean = false;
-  @LocalStorageProp('accent') accent: string = '#EC5A3C';
+  @LocalStorageProp('accent') accent: string = '#61A5FA';
   @LocalStorageProp('bg') bg: string = '';
   @LocalStorageProp('bgOpacity') bgOpacity: number = 0.7;
   @LocalStorageProp('cardBg') cardBg: string = '#FFFFFF';
@@ -99,21 +100,17 @@ struct WidgetCard {
   }
 
   @Builder
-  private quickTile(label: string, route: string) {
-    Column() {
-      Text(label)
-        .fontSize(12)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.textColor)
-        .maxLines(2)
-        .textAlign(TextAlign.Center)
+  private quickTile(label: string, icon: Resource, route: string) {
+    Column({ space: 3 }) {
+      Image(icon).width(24).height(24).objectFit(ImageFit.Contain)
+      Text(label).fontSize(11).fontColor('#123A66').maxLines(1).minFontSize(9)
     }
     .layoutWeight(1)
     .height('100%')
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.accent)
-    .borderRadius(12)
-    .margin(4)
+    .borderRadius(11)
+    .accessibilityText(label)
     .onClick(() => {
       postCardAction(this, {
         action: 'router',
@@ -125,66 +122,49 @@ struct WidgetCard {
 
   @Builder
   private quickContent() {
-    Column() {
+    Column({ space: 5 }) {
       Row() {
-        Text('快捷功能')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.textColor)
-          .layoutWeight(1)
-        Text('⚙')
-          .fontSize(16)
-          .fontColor(this.subColor)
-      }
-      .width('100%')
-      .margin({ bottom: 6 })
+        Text('快捷功能').fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.textColor).layoutWeight(1)
+        Image($r('app.media.setting')).width(26).height(24).padding(3)
+          .objectFit(ImageFit.Contain).fillColor(this.textColor).accessibilityText('小组件设置')
+          .onClick(() => {
+            postCardAction(this, { action: 'router', abilityName: 'EntryAbility',
+              params: { widgetRoute: 'pages/profile/WidgetSettingsPage' } });
+          })
+      }.width('100%').height(25)
 
-      Row() {
-        Column() {
-          Text(this.title)
-            .fontSize(11)
-            .fontColor(this.textColor)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text(this.subtitle)
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.textColor)
-            .maxLines(1)
-            .margin({ top: 2 })
+      Row({ space: 5 }) {
+        Row({ space: 8 }) {
+          Image($r('app.media.quick_widget_electricity')).width(25).height(25).objectFit(ImageFit.Contain)
+          Column({ space: 2 }) {
+            Text(this.title).fontSize(11).fontColor('#123A66').maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+            Text(this.subtitle).fontSize(18).fontWeight(FontWeight.Medium).fontColor('#123A66')
+              .maxLines(1).minFontSize(12).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+          }.layoutWeight(1).alignItems(HorizontalAlign.Start)
         }
-        .layoutWeight(1)
+        .layoutWeight(2)
         .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Start)
-        .padding({ left: 10, right: 10 })
+        .padding({ left: 9, right: 7 })
+        .alignItems(VerticalAlign.Center)
         .backgroundColor(this.accent)
-        .borderRadius(12)
-        .margin(4)
+        .borderRadius(11)
+        .accessibilityText('电量 ' + this.title + ' ' + this.subtitle)
         .onClick(() => {
-          postCardAction(this, {
-            action: 'router',
-            abilityName: 'EntryAbility',
-            params: { widgetRoute: 'pages/main/ElectricityPage' }
-          });
+          postCardAction(this, { action: 'router', abilityName: 'EntryAbility',
+            params: { widgetRoute: 'pages/main/ElectricityPage' } });
         })
-        this.quickTile('成绩查询', 'pages/campus/grade/GradePage')
-        this.quickTile('校园墙', 'pages/campus/CampusWallPage')
-      }
-      .width('100%')
-      .layoutWeight(1)
+        this.quickTile('成绩查询', $r('app.media.quick_widget_grades'), 'pages/campus/grade/GradePage')
+        this.quickTile('校园墙', $r('app.media.quick_widget_campus_wall'), 'pages/campus/CampusWallPage')
+      }.width('100%').layoutWeight(1)
 
-      Row() {
-        this.quickTile('教室查询', 'pages/campus/ClassroomQueryPage')
-        this.quickTile('图书馆', 'pages/library/LibraryPage')
-        this.quickTile('培养方案', 'pages/campus/TrainingPlanPage')
-      }
-      .width('100%')
-      .layoutWeight(1)
-    }
-    .width('100%')
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
+      Row({ space: 5 }) {
+        this.quickTile('教室查询', $r('app.media.quick_widget_classroom'), 'pages/campus/ClassroomQueryPage')
+        this.quickTile('图书馆', $r('app.media.quick_widget_library'), 'pages/library/LibraryPage')
+        this.quickTile('培养方案', $r('app.media.quick_widget_plan'), 'pages/campus/TrainingPlanPage')
+        Blank().layoutWeight(1)
+      }.width('100%').layoutWeight(1)
+    }.width('100%').height('100%')
   }
 
   build() {
@@ -255,7 +235,7 @@ struct WidgetCard {
       }
       .width('100%')
       .height('100%')
-      .padding(this.mode === 'countdown' ? 0 : (this.mode === 'weekly' || this.mode === 'daily' ? 8 : 16))
+      .padding(this.mode === 'countdown' ? 0 : (this.mode === 'quick' ? 10 : 8))
       .justifyContent(FlexAlign.Center)
     }
     .width('100%')
