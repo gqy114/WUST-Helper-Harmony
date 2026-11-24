@@ -13,9 +13,11 @@ import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { image } from '@kit.ImageKit';
 import { fileIo } from '@kit.CoreFileKit';
-import { AppStorage } from '../../store/AppStorage';
+import { AppStorage as PreferencesStorage } from '../../store/AppStorage';
 import { CountdownApi, CountdownItem } from '../../net/CountdownApi';
 import { WeeklyWidgetGrid } from '../../widget/WeeklyWidgetGrid';
+import { DailyWidgetCarousel } from '../../widget/DailyWidgetCarousel';
+import { CountdownWidgetCarousel } from '../../widget/CountdownWidgetCarousel';
 import {
   WidgetCountdownItem,
   WidgetData,
@@ -69,6 +71,7 @@ struct WidgetSettingsPage {
   @State private cropOffsetX: number = 0;
   @State private cropOffsetY: number = 0;
   @State private cropperBusy: boolean = false;
+  private leavingRoot: boolean = false;
   private cropStartOffsetX: number = 0;
   private cropStartOffsetY: number = 0;
   // 考试同步串行执行：旧学期保存尚未结束时，新学期同步会排在它后面。
@@ -77,12 +80,38 @@ struct WidgetSettingsPage {
   private refreshChain: Promise<void> = Promise.resolve();
 
   aboutToAppear(): void {
+    const params = router.getParams() as Record<string, boolean> | undefined;
+    if (params?.addCountdown || AppStorage.get<boolean>('addCountdownOnLaunch')) {
+      AppStorage.delete('addCountdownOnLaunch');
+      this.addOpen = true;
+    }
     this.loadSettings();
     this.refreshPublishedCount();
   }
 
+  private leaveSettings(): void {
+    if (Number(router.getLength()) > 1) {
+      router.back();
+      return;
+    }
+    // 桌面卡片冷启动时直接加载设置页，此时路由栈没有上一页。
+    if (this.leavingRoot) return;
+    this.leavingRoot = true;
+    router.replaceUrl({ url: 'pages/splash/LaunchPage' }).catch((error: Error) => {
+      this.leavingRoot = false;
+      console.warn(TAG, 'return from widget settings failed', error.message);
+      promptAction.showToast({ message: '暂时无法返回，请重试' });
+    });
+  }
+
+  onBackPress(): boolean {
+    if (Number(router.getLength()) > 1) return false;
+    this.leaveSettings();
+    return true;
+  }
+
   private async loadSettings(): Promise<void> {
-    const storage = AppStorage.getInstance();
+    const storage = PreferencesStorage.getInstance();
     const mode = await WidgetPrefs.getMode(storage);
     this.selectedTab = mode === WIDGET_MODE_DAILY ? 1 : (mode === WIDGET_MODE_WEEKLY ? 2 : 0);
     this.accent = await WidgetPrefs.getAccent(storage);
@@ -117,7 +146,7 @@ struct WidgetSettingsPage {
 
   /** 从教务同步考试安排，写进卡片数据源。 */
   private async syncExamCountdownsInternal(toast: boolean): Promise<void> {
-    const storage = AppStorage.getInstance();
+    const storage = PreferencesStorage.getInstance();
     try {
       // 同步期间可能切账号或切学期：先记住发起同步的账号与学期，回来后再校验。
       const sid = (await storage.getStudentId()).trim();
@@ -185,7 +214,7 @@ struct WidgetSettingsPage {
 
   private async refreshWidgetsInternal(showToast: boolean = true): Promise<void> {
     this.busy = true;
-    const storage = AppStorage.getInstance();
+    const storage = PreferencesStorage.getInstance();
     try {
       this.snapshot = await WidgetData.build(storage, this.systemDark(),
         TAB_MODES[this.selectedTab] || 'countdown');
@@ -227,13 +256,13 @@ struct WidgetSettingsPage {
 
   private async selectTab(index: number): Promise<void> {
     this.selectedTab = index;
-    await WidgetPrefs.setMode(AppStorage.getInstance(), TAB_MODES[index]);
+    await WidgetPrefs.setMode(PreferencesStorage.getInstance(), TAB_MODES[index]);
     await this.refreshWidgets(false);
   }
 
   private async selectAccent(color: string): Promise<void> {
     this.accent = color;
-    await WidgetPrefs.setAccent(AppStorage.getInstance(), color);
+    await WidgetPrefs.setAccent(PreferencesStorage.getInstance(), color);
     await this.refreshWidgets(false);
   }
 
@@ -277,7 +306,7 @@ struct WidgetSettingsPage {
         const value = THEME_VALUES[index];
         if (!value) return;
         this.theme = value;
-        WidgetPrefs.setTheme(AppStorage.getInstance(), value).then(() => this.refreshWidgets(false));
+        WidgetPrefs.setTheme(PreferencesStorage.getInstance(), value).then(() => this.refreshWidgets(false));
       }
     });
   }
@@ -384,7 +413,7 @@ struct WidgetSettingsPage {
       }
       const stored = `file://${path}`;
       this.backgroundPath = stored;
-      await WidgetPrefs.setBackground(AppStorage.getInstance(), stored);
+      await WidgetPrefs.setBackground(PreferencesStorage.getInstance(), stored);
       await this.refreshWidgets(false);
       promptAction.showToast({ message: '背景已更新', duration: 1500 });
     } catch (error) {
@@ -399,13 +428,13 @@ struct WidgetSettingsPage {
 
   private async clearBackground(): Promise<void> {
     this.backgroundPath = '';
-    await WidgetPrefs.setBackground(AppStorage.getInstance(), '');
+    await WidgetPrefs.setBackground(PreferencesStorage.getInstance(), '');
     await this.refreshWidgets(false);
   }
 
   private async changeOpacity(value: number): Promise<void> {
     this.backgroundOpacity = value;
-    await WidgetPrefs.setBackgroundOpacity(AppStorage.getInstance(), value);
+    await WidgetPrefs.setBackgroundOpacity(PreferencesStorage.getInstance(), value);
     await this.refreshWidgets(false);
   }
 
@@ -436,8 +465,8 @@ struct WidgetSettingsPage {
     }
     const items: WidgetCountdownItem[] = [];
     for (let i = 0; i < this.countdowns.length; i++) items.push(this.countdowns[i]);
-    items.push({ title: title, date: this.countdownDate });
-    await WidgetPrefs.setCountdowns(AppStorage.getInstance(), items);
+    items.push({ title, date: this.countdownDate, startedOn: WidgetData.formatDate(new Date()) });
+    await WidgetPrefs.setCountdowns(PreferencesStorage.getInstance(), items);
     this.countdowns = items;
     this.countdownTitle = '';
     this.countdownDate = '';
@@ -451,7 +480,7 @@ struct WidgetSettingsPage {
     for (let i = 0; i < this.countdowns.length; i++) {
       if (i !== index) items.push(this.countdowns[i]);
     }
-    await WidgetPrefs.setCountdowns(AppStorage.getInstance(), items);
+    await WidgetPrefs.setCountdowns(PreferencesStorage.getInstance(), items);
     this.countdowns = items;
     await this.refreshWidgets(false);
   }
@@ -487,20 +516,34 @@ struct WidgetSettingsPage {
           .opacity(this.backgroundOpacity)
       }
       Column() {
-        Row() {
-          Blank()
-          Image($r('app.media.setting')).width(24).height(24).fillColor(this.themeColors()[2])
-            .onClick(() => { this.addOpen = true; })
-          Image($r('app.media.refresh')).width(24).height(24).fillColor(this.themeColors()[2])
-            .margin({ left: 8, right: 8 })
-            .onClick(() => { this.refreshWidgets(true); })
-          Image($r('app.media.add')).width(24).height(24).fillColor(this.themeColors()[2])
-            .onClick(() => { this.addOpen = true; })
-        }
-        .width('100%')
-        .height(36)
-
         if (this.selectedTab === 2) {
+          Row() {
+            Blank()
+            Image($r('app.media.setting')).width(24).height(24).fillColor(this.themeColors()[2])
+              .onClick(() => { this.addOpen = true; })
+            Image($r('app.media.refresh')).width(24).height(24).fillColor(this.themeColors()[2])
+              .margin({ left: 8, right: 8 })
+              .onClick(() => { this.refreshWidgets(true); })
+            Image($r('app.media.add')).width(24).height(24).fillColor(this.themeColors()[2])
+              .onClick(() => { this.addOpen = true; })
+          }
+          .width('100%')
+          .height(36)
+        }
+
+        if (this.selectedTab === 1) {
+          DailyWidgetCarousel({
+            dateText: this.snapshot?.title ?? '',
+            weekText: this.snapshot?.dailyWeekday ?? '',
+            courses: this.snapshot?.dailyCourses ?? '',
+            emptyText: this.snapshot?.subtitle ?? '正在加载数据…',
+            accent: this.accent,
+            textColor: this.themeColors()[1],
+            subColor: this.themeColors()[2],
+            onSettings: () => { this.helpOpen = true; },
+            onRefresh: () => { this.refreshWidgets(true); }
+          })
+        } else if (this.selectedTab === 2) {
           Text(this.snapshot?.title ?? '周课表').fontSize(16).fontWeight(FontWeight.Bold)
             .fontColor(this.themeColors()[1]).width('100%')
           WeeklyWidgetGrid({
@@ -511,51 +554,21 @@ struct WidgetSettingsPage {
             subColor: this.themeColors()[2]
           }).layoutWeight(1)
         } else {
-          Row() {
-            Column() {
-              Text(this.snapshot?.title ?? '考试倒计时')
-                .fontSize(19).fontWeight(FontWeight.Bold).fontColor(this.themeColors()[1])
-                .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
-              if (this.selectedTab === 0) {
-                Text(this.snapshot?.subtitle ?? '还没有考试安排')
-                  .fontSize(13).fontColor(this.accent).margin({ top: 6 }).width('100%')
-                Text(this.snapshot?.line0 ?? '')
-                  .fontSize(12).fontColor(this.themeColors()[2]).margin({ top: 6 }).width('100%')
-              }
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-
-            if (this.selectedTab === 0) {
-              Column() {
-                Text(this.snapshot?.days && this.snapshot.days.length > 0 ? this.snapshot.days : '—')
-                  .fontSize(46).fontWeight(FontWeight.Bold).fontColor(this.accent)
-                Text('天').fontSize(12).fontColor(this.themeColors()[2])
-              }
-              .width(84)
-              .alignItems(HorizontalAlign.Center)
-            }
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .alignItems(VerticalAlign.Center)
-
-          if (this.selectedTab === 1) {
-            Column() {
-              Text(this.snapshot?.line0 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%')
-              Text(this.snapshot?.line1 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
-              Text(this.snapshot?.line2 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
-              Text(this.snapshot?.line3 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
-            }
-            .width('100%')
-            .alignItems(HorizontalAlign.Start)
-            .margin({ top: 6 })
-          }
+          CountdownWidgetCarousel({
+            slides: this.snapshot?.countdownSlides ?? '',
+            emptyText: this.snapshot?.subtitle ?? '正在加载数据…',
+            accent: this.accent,
+            textColor: this.themeColors()[1],
+            subColor: this.themeColors()[2],
+            onSettings: () => { this.helpOpen = true; },
+            onRefresh: () => { this.refreshWidgets(true); },
+            onAdd: () => { this.addOpen = true; }
+          })
         }
       }
       .width('100%')
       .height('100%')
-      .padding(16)
+      .padding(this.selectedTab === 0 ? 0 : 16)
     }
     .width('100%')
     .aspectRatio(this.selectedTab === 2 ? 1 : 2)
@@ -568,7 +581,7 @@ struct WidgetSettingsPage {
     Stack({ alignContent: Alignment.Center }) {
       Column() {
         Row() {
-          Image($r('app.media.ic_arrow_left')).width(27).height(27).fillColor('#222222').onClick(() => router.back())
+          Image($r('app.media.ic_arrow_left')).width(27).height(27).fillColor('#222222').accessibilityText('返回').onClick(() => this.leaveSettings())
           Text('小组件设置').fontSize(25).fontWeight(FontWeight.Bold).fontColor('#222222').margin({ left: 17 })
           Blank()
           Image($r('app.media.help')).width(29).height(29).fillColor('#777777')
@@ -613,7 +626,7 @@ struct WidgetSettingsPage {
                 .layoutWeight(1).height(46).fontSize(15).fontColor(Color.White)
                 .backgroundColor('#9B51E0').borderRadius(10)
                 .margin({ left: 10 })
-                .onClick(() => this.openAddWidget('wust_quick', formInfo.FormDimension.Dimension_4_4))
+                .onClick(() => this.openAddWidget('wust_quick', formInfo.FormDimension.Dimension_2_4))
             }.width('100%').margin({ top: 10 })
 
             Text('倒计时').fontSize(15).fontWeight(FontWeight.Medium).fontColor('#A7ABB3')
@@ -649,7 +662,7 @@ struct WidgetSettingsPage {
               .width('100%').margin({ top: 22, bottom: 8 })
             Column() {
               Row() {
-                Text(this.examCountdowns.length > 0 ? `已同步 ${this.examCountdowns.length} 场考试，卡片按小时轮换显示` : '还没有同步考试安排')
+                Text(this.examCountdowns.length > 0 ? `已同步 ${this.examCountdowns.length} 场考试，卡片每 20 秒轮换` : '还没有同步考试安排')
                   .fontSize(14).fontColor('#666666').layoutWeight(1)
                 Text('同步').fontSize(14).fontColor('#20C997')
                   .onClick(() => { this.syncExamCountdowns(true).then(() => this.refreshWidgets(false)); })
@@ -815,7 +828,7 @@ struct WidgetSettingsPage {
           Text('小组件设置说明')
             .fontSize(22).fontWeight(FontWeight.Bold).fontColor('#555555')
             .width('100%').textAlign(TextAlign.Center).margin({ bottom: 18 })
-          Text('1. 倒计时卡片展示教务同步的考试安排；多场考试时按小时轮换。')
+          Text('1. 倒计时卡片展示教务同步的考试安排；多场考试每 20 秒轮换，考试当天仍会显示。')
             .fontSize(15).fontColor('#777777').lineHeight(24).width('100%').margin({ bottom: 14 })
           Text('2. 点击对应的添加按钮，在系统卡片页面选择“添加至桌面”。')
             .fontSize(15).fontColor('#777777').lineHeight(24).width('100%').margin({ bottom: 14 })

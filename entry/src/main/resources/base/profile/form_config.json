@@ -18,8 +18,7 @@
       "defaultDimension": "2*4",
       "supportDimensions": [
         "2*2",
-        "2*4",
-        "4*4"
+        "2*4"
       ]
     },
     {
@@ -39,11 +38,9 @@
       "updateDuration": 1,
       "defaultDimension": "4*4",
       "supportDimensions": [
-        "2*4",
         "4*4"
       ]
-    }
-    ,
+    },
     {
       "name": "wust_daily",
       "displayName": "$string:widget_daily_name",
@@ -61,9 +58,7 @@
       "updateDuration": 1,
       "defaultDimension": "2*4",
       "supportDimensions": [
-        "2*2",
-        "2*4",
-        "4*4"
+        "2*4"
       ]
     },
     {
@@ -81,10 +76,9 @@
       "updateEnabled": true,
       "scheduledUpdateTime": "07:30",
       "updateDuration": 1,
-      "defaultDimension": "4*4",
+      "defaultDimension": "2*4",
       "supportDimensions": [
-        "2*4",
-        "4*4"
+        "2*4"
       ]
     }
   ]
