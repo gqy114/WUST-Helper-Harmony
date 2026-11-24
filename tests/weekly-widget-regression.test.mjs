@@ -26,3 +26,12 @@ test('周课块的分栏数变化后，ArkUI 重建旧课块并应用新宽度',
   assert.ok(key?.includes('${course.lanes}'));
   assert.match(grid, /\.width\([^\n]+\/ course\.lanes\}%/);
 });
+
+test('周课表滑到非本周后 30 秒自动回到本周', async () => {
+  const carousel = await source('widget/WeeklyWidgetCarousel.ets');
+  assert.match(carousel, /setTimeout\(\(\) => \{/, '没有自动回到本周的定时器');
+  assert.match(carousel, /\}, 30000\);/, '定时器不是 30 秒');
+  assert.match(carousel, /swiperController\.changeIndex\(this\.currentPageIndex\(\), true\)/, '没有切回本周');
+  assert.match(carousel, /onChange\(\(index: number\) => this\.onPageChanged\(index\)\)/, '没有监听滑动');
+  assert.match(carousel, /clearTimeout/, '再次滑动时没有重置计时');
+});
