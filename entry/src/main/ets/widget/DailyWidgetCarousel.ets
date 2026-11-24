@@ -54,7 +54,7 @@ export struct DailyWidgetCarousel {
                 }
               }.alignItems(HorizontalAlign.Start).layoutWeight(1)
             }.width('100%').height('100%').alignItems(VerticalAlign.Center)
-          }, (course: DailyWidgetCourse, index: number) => `${index}-${course.start}-${course.name}`)
+          }, (course: DailyWidgetCourse, index: number) => `${index}-${JSON.stringify(course)}`)
         }
         .autoPlay(this.entries().length > 1)
         .loop(this.entries().length > 1)

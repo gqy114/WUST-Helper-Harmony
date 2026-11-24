@@ -520,16 +520,14 @@ export class WidgetData {
     if (mode === WIDGET_MODE_QUICK) {
       snapshot = await WidgetData.quickSnapshot(storage, accent);
     } else if (mode === WIDGET_MODE_COUNTDOWN) {
-      // 优先展示考试倒计时；没有考试数据时退回手动倒计时。
+      // 考试与自定义倒计时使用同一个轮换队列。
       const sid = (await storage.getStudentId()).trim();
       let term = (await storage.getSemester()).trim();
       if (!term) term = (await storage.getSelectSemester()).trim();
       const today = new Date();
       const exams = await WidgetPrefs.getExamCountdowns(storage, sid, term);
-      snapshot = WidgetData.countdownSnapshot(exams, accent, today);
-      if (!snapshot.days) {
-        snapshot = WidgetData.countdownSnapshot(await WidgetPrefs.getCountdowns(storage), accent, today);
-      }
+      const custom = await WidgetPrefs.getCountdowns(storage);
+      snapshot = WidgetData.countdownSnapshot([...exams, ...custom], accent, today);
     } else {
       let courses: CourseData[] = [];
       try {

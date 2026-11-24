@@ -110,6 +110,27 @@ test('青山 10:05 从 10:10 上课的第二门开始轮播', async () => {
   ]);
 });
 
+test('仍有考试时，新建自定义倒计时也加入桌面卡片轮换', async () => {
+  const WidgetData = await loadWidget();
+  const storage = {
+    getStudentId: async () => 'student',
+    getSemester: async () => '2026-2027-1',
+    getSettingString: async (key, fallback) => {
+      if (key === 'widgetCountdowns') return JSON.stringify([
+        { title: '已结束活动', date: '2020-01-01' },
+        { title: '刚添加的倒计时', date: '2099-06-02' },
+      ]);
+      if (key === 'widgetExamCountdowns_student_2026-2027-1') return JSON.stringify([
+        { title: '待考课程', date: '2099-06-01 14:00' },
+      ]);
+      return fallback;
+    },
+  };
+  const snapshot = await WidgetData.build(storage, false, 'countdown');
+  assert.deepEqual(JSON.parse(snapshot.countdownSlides).map(slide => slide.title),
+    ['待考课程', '刚添加的倒计时']);
+});
+
 test('考试当日考完仍显示 0 天，隔天移出轮换，保留日期时间与开始天数', async () => {
   const WidgetData = await loadWidget();
   const items = [
