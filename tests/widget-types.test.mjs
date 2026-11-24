@@ -98,3 +98,10 @@ test('快捷入口兼容 want.parameters.params 嵌套参数，旧卡片内部�
   const config = await src('entry/src/main/resources/base/profile/form_config.json');
   assert.match(config, /"name": "wust_widget"/, '旧卡片内部名称 wust_widget 被改名，会导致升级后旧卡片消失');
 });
+
+test('快捷功能按钮使用与 App 图标一致的蓝色', async () => {
+  const card = await src('entry/src/main/ets/widget/WidgetCard.ets');
+  assert.match(card, /const QUICK_TILE_BG: string = '#61A5FA';/, '缺少快捷按钮蓝色常量');
+  const block = card.slice(card.indexOf('private quickTile'), card.indexOf('private quickContent'));
+  assert.match(block, /backgroundColor\(QUICK_TILE_BG\)/, '快捷按钮没有使用蓝色背景');
+});

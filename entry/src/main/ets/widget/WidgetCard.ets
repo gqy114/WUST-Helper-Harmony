@@ -7,6 +7,8 @@
 import { WeeklyWidgetGrid } from './WeeklyWidgetGrid';
 
 const LINE_COUNT = 4;
+// 快捷功能按钮使用 App 图标同款蓝色，保持品牌一致。
+const QUICK_TILE_BG: string = '#61A5FA';
 
 let widgetStorage: LocalStorage = new LocalStorage();
 
@@ -165,7 +167,7 @@ struct WidgetCard {
     .layoutWeight(1)
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.accent)
+    .backgroundColor(QUICK_TILE_BG)
     .borderRadius(12)
     .margin(4)
     .onClick(() => {
