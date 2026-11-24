@@ -149,6 +149,8 @@ struct LoginPage {
   // ── 内部状态 ──
   private errorCount: Record<string, number> = {};
   private isLoggingIn: boolean = false;
+  // 每次登录尝试递增；超时/重试后旧请求的结果必须丢弃。
+  private loginAttempt: number = 0;
   private courseFinished: boolean = false;
   private loginTimer?: number;
   private courseTimer?: number;
@@ -258,6 +260,7 @@ struct LoginPage {
   private async doLogin(sid: string, pwd: string): Promise<void> {
     if (this.isLoggingIn) return;
     this.isLoggingIn = true;
+    const attempt = ++this.loginAttempt;
     this.semesterStr = this.calcSemester();
     await AppStorage.getInstance().setSemester(this.semesterStr);
     this.showLoading('\u767b\u5f55\u4e2d...');
@@ -290,6 +293,7 @@ struct LoginPage {
         }
       }
       this.clearLoginTimer();
+      if (attempt !== this.loginAttempt) return;
 
       if (!this.isGraduate) {
         const undergradData = resp.data as TokenDataContent | undefined;
@@ -315,6 +319,7 @@ struct LoginPage {
           CourseStore.getInstance().setCourses([]);
           console.info(TAG, `account switched ${prevSid} -> ${sid}, cached timetable cleared`);
         }
+        if (attempt !== this.loginAttempt) return;
         if (resp.data) {
           if (this.isGraduate) {
             const gdata = resp.data as GraduateLoginDataContent;
@@ -589,6 +594,8 @@ private async fetchUserInfo(_sid: string): Promise<void> {
       if (!this.isPageAlive) return;
       this.hideLoading();
       promptAction.showToast({ message: '登录超时，请检查网络或稍后再试', duration: 3000 });
+      // 让仍在运行的旧请求失效，避免它稍后覆盖新登录状态。
+      this.loginAttempt++;
       this.isLoggingIn = false;
     }, timeoutMs);
   }
