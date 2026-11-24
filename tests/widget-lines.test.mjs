@@ -109,3 +109,20 @@ test('青山 10:05 从 10:10 上课的第二门开始轮播', async () => {
     ['第二门', '10:10', '11:50'], [first.courseName, '08:00', '09:40'],
   ]);
 });
+
+test('考试当日考完仍显示 0 天，隔天移出轮换，保留日期时间与开始天数', async () => {
+  const WidgetData = await loadWidget();
+  const items = [
+    { title: '昨日考试', date: '2026-11-23 16:00' },
+    { title: '今天上午考试', date: '2026-11-24 08:20', startedOn: '2026-11-21' },
+    { title: '明天考试', date: '2026-11-25 14:00' },
+    { title: '无效日期', date: '2026-11-31 08:20' },
+  ];
+  const snapshot = (date) => WidgetData.countdownSnapshot(items, '#123456', date);
+  assert.deepEqual(JSON.parse(snapshot(new Date(2026, 10, 24, 23, 59)).countdownSlides), [
+    { title: '今天上午考试', date: '2026-11-24 08:20', elapsed: '3', remaining: '0' },
+    { title: '明天考试', date: '2026-11-25 14:00', elapsed: '—', remaining: '1' },
+  ]);
+  assert.deepEqual(JSON.parse(snapshot(new Date(2026, 10, 25)).countdownSlides).map(s => s.title), ['明天考试']);
+  assert.deepEqual(JSON.parse(snapshot(new Date(2026, 10, 26)).countdownSlides), []);
+});

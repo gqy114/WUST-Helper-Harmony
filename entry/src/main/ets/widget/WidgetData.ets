@@ -30,6 +30,14 @@ export interface WidgetCountdownItem {
   title: string;
   date: string;
   detail?: string;
+  startedOn?: string;
+}
+
+export interface WidgetCountdownSlide {
+  title: string;
+  date: string;
+  elapsed: string;
+  remaining: string;
 }
 
 interface QuickRoomPref { id?: string; name?: string; remaining?: string; unit?: string; }
@@ -61,6 +69,7 @@ export interface WidgetSnapshot {
   campus?: string;
   dailyCourses?: string;
   dailyWeekday?: string;
+  countdownSlides?: string;
 }
 
 export interface DailyWidgetCourse {
@@ -144,8 +153,14 @@ export class WidgetPrefs {
 
   static async setExamCountdowns(storage: AppStorage, items: WidgetCountdownItem[], sid: string,
     term: string): Promise<void> {
-    await storage.setSettingString(WidgetPrefs.examStorageKey((sid || '').trim(), (term || '').trim()),
-      JSON.stringify(items));
+    const key = WidgetPrefs.examStorageKey(sid.trim(), term.trim());
+    const previous = await WidgetPrefs.readItems(storage, key);
+    const today = WidgetData.formatDate(new Date());
+    const next: WidgetCountdownItem[] = items.map((item: WidgetCountdownItem): WidgetCountdownItem => {
+      const cached = previous.find(old => old.title === item.title && old.date === item.date);
+      return { title: item.title, date: item.date, detail: item.detail, startedOn: cached?.startedOn || today };
+    });
+    await storage.setSettingString(key, JSON.stringify(next));
   }
 
   static async getBackground(storage: AppStorage): Promise<string> {
@@ -188,7 +203,8 @@ export class WidgetPrefs {
           items.push({
             title: item.title,
             date: item.date,
-            detail: typeof item.detail === 'string' ? item.detail : ''
+            detail: typeof item.detail === 'string' ? item.detail : '',
+            startedOn: typeof item.startedOn === 'string' ? item.startedOn : ''
           });
         }
       }
@@ -204,7 +220,7 @@ export class WidgetData {
     return value < 10 ? `0${value}` : `${value}`;
   }
 
-  private static formatDate(date: Date): string {
+  static formatDate(date: Date): string {
     return `${date.getFullYear()}-${WidgetData.two(date.getMonth() + 1)}-${WidgetData.two(date.getDate())}`;
   }
 
@@ -212,6 +228,7 @@ export class WidgetData {
   private static parseDate(value: string): Date | null {
     if (!value) return null;
     const dayPart = value.trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dayPart)) return null;
     const parts = dayPart.split('-');
     if (parts.length !== 3) return null;
     const year = parseInt(parts[0], 10);
@@ -219,7 +236,8 @@ export class WidgetData {
     const day = parseInt(parts[2], 10);
     if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
     if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-    return new Date(year, month - 1, day);
+    const date = new Date(year, month - 1, day);
+    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null;
   }
 
   private static async currentWeek(storage: AppStorage): Promise<number> {
@@ -239,57 +257,43 @@ export class WidgetData {
     return week;
   }
 
-  /** 按小时轮换：多个考试倒计时时，每小时切换显示下一个。 */
-  private static rotationIndex(total: number): number {
-    if (total <= 1) return 0;
-    return Math.floor(Date.now() / (60 * 60 * 1000)) % total;
+  private static calendarDay(date: Date): number {
+    return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000;
   }
 
-  private static countdownSnapshot(items: WidgetCountdownItem[], accent: string): WidgetSnapshot {
-    const today = new Date();
-    const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    let title = '考试倒计时';
-    let subtitle = '还没有考试安排';
-    let detail = '';
-    let days = '';
-    let line0 = '';
-
-    const sorted: WidgetCountdownItem[] = [];
-    for (let i = 0; i < items.length; i++) sorted.push(items[i]);
-    sorted.sort((left: WidgetCountdownItem, right: WidgetCountdownItem): number => {
-      return left.date.localeCompare(right.date);
-    });
-    const upcoming: WidgetCountdownItem[] = [];
-    for (let i = 0; i < sorted.length; i++) {
-      const date = WidgetData.parseDate(sorted[i].date);
+  private static countdownSnapshot(items: WidgetCountdownItem[], accent: string,
+    today: Date = new Date()): WidgetSnapshot {
+    const currentDay = WidgetData.calendarDay(today);
+    const slides: WidgetCountdownSlide[] = [];
+    const sorted = [...items].sort((left, right) => left.date.localeCompare(right.date));
+    for (const item of sorted) {
+      const date = WidgetData.parseDate(item.date);
       if (date === null) continue;
-      if (date.getTime() >= todayDay.getTime()) upcoming.push(sorted[i]);
+      const remaining = WidgetData.calendarDay(date) - currentDay;
+      if (remaining < 0) continue;
+      const started = WidgetData.parseDate(item.startedOn || '');
+      const slide: WidgetCountdownSlide = {
+        title: item.title,
+        date: item.date.trim(),
+        elapsed: started ? String(Math.max(0, currentDay - WidgetData.calendarDay(started))) : '—',
+        remaining: String(remaining)
+      };
+      slides.push(slide);
     }
-    const pool = upcoming.length > 0 ? upcoming : sorted;
-    if (pool.length > 0) {
-      const target = pool[WidgetData.rotationIndex(pool.length)];
-      title = target.title;
-      detail = target.detail || '';
-      const date = WidgetData.parseDate(target.date);
-      if (date !== null) {
-        const remain = Math.round((date.getTime() - todayDay.getTime()) / (24 * 60 * 60 * 1000));
-        days = `${remain}`;
-        subtitle = remain >= 0 ? `还有 ${remain} 天` : `已过去 ${-remain} 天`;
-        line0 = `${target.date} ${WEEKDAY_NAMES[date.getDay()]}`;
-      }
-    }
+    const first = slides[0];
     return {
       mode: WIDGET_MODE_COUNTDOWN,
-      title: title,
-      subtitle: subtitle,
-      line0: line0,
+      title: first?.title ?? '倒计时',
+      subtitle: first ? '' : '暂无待显示的倒计时',
+      line0: first?.date ?? '',
       line1: '',
       line2: '',
       line3: '',
       line4: '',
       line5: '',
-      days: days,
-      detail: detail,
+      days: first?.remaining ?? '',
+      detail: '',
+      countdownSlides: JSON.stringify(slides),
       accent: accent,
       bg: '',
       bgOpacity: DEFAULT_BACKGROUND_OPACITY,
@@ -492,9 +496,12 @@ export class WidgetData {
       const sid = (await storage.getStudentId()).trim();
       let term = (await storage.getSemester()).trim();
       if (!term) term = (await storage.getSelectSemester()).trim();
-      let items = await WidgetPrefs.getExamCountdowns(storage, sid, term);
-      if (items.length === 0) items = await WidgetPrefs.getCountdowns(storage);
-      snapshot = WidgetData.countdownSnapshot(items, accent);
+      const today = new Date();
+      const exams = await WidgetPrefs.getExamCountdowns(storage, sid, term);
+      snapshot = WidgetData.countdownSnapshot(exams, accent, today);
+      if (!snapshot.days) {
+        snapshot = WidgetData.countdownSnapshot(await WidgetPrefs.getCountdowns(storage), accent, today);
+      }
     } else {
       let courses: CourseData[] = [];
       try {
