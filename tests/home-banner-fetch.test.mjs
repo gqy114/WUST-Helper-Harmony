@@ -11,7 +11,7 @@ test('BannerImageLoader 自行抓取字节解码，不依赖 HTTP 状态码', as
   assert.match(loader, /http\.createHttp\(\)/, '缺少 http 请求');
   assert.match(loader, /expectDataType: http\.HttpDataType\.ARRAY_BUFFER/, '没有按二进制取响应');
   assert.match(loader, /image\.createImageSource\(body\)/, '没有解码响应体');
-  assert.match(loader, /createPixelMap\(\)/, '没有生成 PixelMap');
+  assert.match(loader, /createPixelMap\(/, '没有生成 PixelMap');
   assert.doesNotMatch(loader, /responseCode\s*!==\s*200/, '不能只认 200；图片字节有效即可');
   assert.match(loader, /BannerImageLoader\.cache\.set/, '缺少缓存');
 });

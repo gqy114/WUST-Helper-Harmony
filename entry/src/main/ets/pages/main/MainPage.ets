@@ -16,6 +16,7 @@ import { promptAction } from '@kit.ArkUI';
 import router from '@ohos.router';
 import { HomeBanner, HomeContentApi, HomeNotice } from '../../net/HomeContentApi';
 import { BannerImageLoader } from '../../utils/BannerImageLoader';
+import { display } from '@kit.ArkUI';
 import { image } from '@kit.ImageKit';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
 import { CampusWallApi, CampusWallPost } from '../../net/CampusWallApi';
@@ -393,16 +394,36 @@ struct MainPage {
   }
 
   /** 逐张抓取 banner 图片字节并解码，成功后替换 Image 的网络加载。 */
+  private bannerDecodeWidth(): number {
+    try {
+      const screen = display.getDefaultDisplaySync();
+      return Math.max(1, Math.round(screen.width - 32 * screen.densityPixels));
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  private bannerDecodeHeight(): number {
+    try {
+      return Math.max(1, Math.round(150 * display.getDefaultDisplaySync().densityPixels));
+    } catch (error) {
+      return 0;
+    }
+  }
+
   private async loadBannerPixels(): Promise<void> {
     if (this.bannerLoading) return;
     this.bannerLoading = true;
     try {
       const banners = this.homeBanners;
+      BannerImageLoader.setActive(banners.map((banner: HomeBanner) => banner.imageUrl));
+      const width = this.bannerDecodeWidth();
+      const height = this.bannerDecodeHeight();
       for (let i = 0; i < banners.length; i++) {
         const banner = banners[i];
         const key = this.bannerKey(banner);
         if (this.bannerPixels.has(key)) continue;
-        const pixel = await BannerImageLoader.load(banner.imageUrl);
+        const pixel = await BannerImageLoader.load(banner.imageUrl, width, height);
         if (!pixel) continue;
         const next = new Map<string, image.PixelMap>(this.bannerPixels);
         next.set(key, pixel);
