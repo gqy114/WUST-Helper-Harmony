@@ -93,6 +93,7 @@ export default class EntryFormAbility extends FormExtensionAbility {
     setTimeout(() => this.refreshForm(formId), 300);
     return formBindingData.createFormBindingData({
       mode: initialMode,
+      countdownCompact: want?.parameters?.['ohos.extra.param.key.form_dimension'] === formInfo.FormDimension.Dimension_2_2,
       title: '梧桐助手',
       subtitle: '正在加载数据…',
       line0: '',

@@ -5,13 +5,15 @@ import { readFile } from 'node:fs/promises';
 
 const src = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('form_config 提供四种小组件', async () => {
-  const config = await src('entry/src/main/resources/base/profile/form_config.json');
-  for (const name of ['wust_widget', 'wust_weekly', 'wust_daily', 'wust_quick']) {
-    assert.match(config, new RegExp(`"name": "${name}"`), `缺少 ${name}`);
-  }
-  assert.match(config, /"name": "wust_quick"[\s\S]*?"defaultDimension": "4\*4"/, '快捷功能默认应为 4*4');
-  assert.match(config, /"name": "wust_daily"[\s\S]*?"defaultDimension": "2\*4"/, '日课表默认应为 2*4');
+test('系统只提供截图中保留的五种卡片规格', async () => {
+  const { forms } = JSON.parse(await src('entry/src/main/resources/base/profile/form_config.json'));
+  assert.deepEqual(forms.map(({ name, defaultDimension, supportDimensions }) =>
+    ({ name, defaultDimension, supportDimensions })), [
+    { name: 'wust_widget', defaultDimension: '2*4', supportDimensions: ['2*2', '2*4'] },
+    { name: 'wust_weekly', defaultDimension: '4*4', supportDimensions: ['4*4'] },
+    { name: 'wust_daily', defaultDimension: '2*4', supportDimensions: ['2*4'] },
+    { name: 'wust_quick', defaultDimension: '2*4', supportDimensions: ['2*4'] },
+  ]);
 });
 
 test('EntryFormAbility 按 form 名称映射四种模式', async () => {
@@ -97,4 +99,12 @@ test('快捷入口兼容 want.parameters.params 嵌套参数，旧卡片内部�
   assert.match(ability, /widgetRouteFromWant\(want\)/, '没有统一的参数解析方法');
   const config = await src('entry/src/main/resources/base/profile/form_config.json');
   assert.match(config, /"name": "wust_widget"/, '旧卡片内部名称 wust_widget 被改名，会导致升级后旧卡片消失');
+});
+
+test('桌面卡片直达设置后返回走应用启动页，有上一页时仍正常返回', async () => {
+  const page = await src('entry/src/main/ets/pages/profile/WidgetSettingsPage.ets');
+  assert.match(page, /if \(Number\(router\.getLength\(\)\) > 1\) \{\s*router\.back\(\)/);
+  assert.match(page, /router\.replaceUrl\(\{ url: 'pages\/splash\/LaunchPage' \}\)/);
+  assert.match(page, /onBackPress\(\): boolean \{\s*if \(Number\(router\.getLength\(\)\) > 1\) return false;\s*this\.leaveSettings\(\);\s*return true;/);
+  assert.match(page, /accessibilityText\('返回'\)\.onClick\(\(\) => this\.leaveSettings\(\)\)/);
 });
