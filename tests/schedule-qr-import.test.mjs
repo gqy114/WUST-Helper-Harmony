@@ -69,3 +69,10 @@ test('过期、登录失效和空响应显示可处理的错误，无账号时�
   await assert.rejects(loggedOut.DynamicScheduleApi.redeemInvite(inviteToken), /请先登录/);
   assert.equal(loggedOut.requests.length, 0);
 });
+
+test('快速连切两个共享档案时只允许第一个切换，避免覆盖我的课表', async () => {
+  const page = await readFile(new URL('../entry/src/main/ets/pages/course/CourseArchivePage.ets', import.meta.url), 'utf8');
+  assert.match(page, /private switching: boolean = false;/, '缺少切换互斥标记');
+  assert.match(page, /if \(this\.switching\) return;/, '切换时没有拦截并发点击');
+  assert.match(page, /finally \{\s*this\.switching = false;/, '切换结束后没有释放互斥');
+});

@@ -19,6 +19,8 @@ struct CourseArchivePage {
   @State private importing: boolean = false;
   private active: boolean = false;
   private scanOpened: boolean = false;
+  // 连点两个档案时只允许第一个切换生效，避免把共享课表当成“我的课表”存回去。
+  private switching: boolean = false;
 
   async aboutToAppear(): Promise<void> {
     this.active = true;
@@ -41,7 +43,10 @@ struct CourseArchivePage {
   }
 
   private async switchArchive(archive: CourseArchive): Promise<void> {
+    if (this.switching) return;
+    this.switching = true;
     const storage = PreferencesStorage.getInstance();
+    try {
     if (this.currentArchiveId === 'mine') {
       const myCourses = await storage.getCurrentCourses();
       const semester = await storage.getSemester();
@@ -61,6 +66,9 @@ struct CourseArchivePage {
     AppStorage.setOrCreate<number>('courseDataVersion', version + 1);
     promptAction.showToast({ message: `已切换到${archive.name}`, duration: 1500 });
     setTimeout(() => router.back(), 800);
+    } finally {
+      this.switching = false;
+    }
   }
 
   /** 解析分享页生成的紧凑课表（WUSTC1|学期|名称|课程…），保留物理实验信息。 */
