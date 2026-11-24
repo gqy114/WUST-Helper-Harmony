@@ -616,7 +616,7 @@ struct WidgetSettingsPage {
                 .layoutWeight(1).height(46).fontSize(15).fontColor(Color.White)
                 .backgroundColor('#9B51E0').borderRadius(10)
                 .margin({ left: 10 })
-                .onClick(() => this.openAddWidget('wust_quick', formInfo.FormDimension.Dimension_4_4))
+                .onClick(() => this.openAddWidget('wust_quick', formInfo.FormDimension.Dimension_2_4))
             }.width('100%').margin({ top: 10 })
 
             Text('倒计时').fontSize(15).fontWeight(FontWeight.Medium).fontColor('#A7ABB3')
