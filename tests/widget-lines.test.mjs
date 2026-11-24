@@ -13,13 +13,8 @@ async function loadWidget() {
   const storage = new SyntheticModule(['AppStorage'], function () {
     this.setExport('AppStorage', { getInstance: () => ({}) });
   });
-  const model = new SyntheticModule(['CourseData', 'isCourseInWeek', 'getCourseColor', 'PERIOD_COUNT'], function () {
-    this.setExport('CourseData', undefined);
-    this.setExport('isCourseInWeek', (course) => course.weekRanges !== '1-2');
-    this.setExport('getCourseColor', () => '#2196f3');
-    this.setExport('PERIOD_COUNT', 12);
-  });
-  const widget = new SourceTextModule(transform(await source('../entry/src/main/ets/widget/WidgetData.ets')));
+  const model = new SourceTextModule(transform(await source('../entry/src/main/ets/model/CourseModel.ts')));
+  const widget = new SourceTextModule(transform((await source('../entry/src/main/ets/widget/WidgetData.ets')).replace('CourseData, ', '')));
   await widget.link((name) => {
     if (name === '../store/AppStorage') return storage;
     if (name === '../model/CourseModel') return model;
@@ -48,6 +43,31 @@ test('四门课程：四行全部显示，不应被截断', async () => {
   assert.doesNotMatch(snapshot.line0 + snapshot.line3, /还有/);
 });
 
+test('日课表从最近课程开始按节次循环，只包含当天本周课程', async () => {
+  const WidgetData = await loadWidget();
+  const template = makeCourses(1)[0];
+  const courses = [1, 3, 5].map((startPeriod) => ({
+    ...template, courseName: `课${startPeriod}`, startPeriod, endPeriod: startPeriod + 1,
+    location: '教一楼', teacher: '王老师',
+  }));
+  courses.push({ ...courses[0], courseName: '其他星期', dayOfWeek: 2 });
+  courses.push({ ...courses[0], courseName: '其他周', weekRanges: '1-2' });
+  const at = (hour, minute) => WidgetData.courseSnapshot(courses, 13, 'daily', '#123456',
+    new Date(2026, 10, 23, hour, minute));
+  const order = (snapshot) => JSON.parse(snapshot.dailyCourses).map((course) => course.name);
+  assert.deepEqual(order(at(7, 0)), ['课1', '课3', '课5']);
+  assert.deepEqual(order(at(10, 10)), ['课3', '课5', '课1']);
+  assert.deepEqual(order(at(11, 0)), ['课3', '课5', '课1']);
+  assert.deepEqual(order(at(18, 0)), ['课5', '课1', '课3']);
+  const snapshot = at(11, 0);
+  assert.equal(snapshot.title, '11月23日');
+  assert.equal(snapshot.dailyWeekday, '第13周 周一');
+  assert.deepEqual(JSON.parse(snapshot.dailyCourses)[0], {
+    name: '课3', start: '10:20', end: '12:00', details: '教一楼 · 王老师',
+  });
+  assert.deepEqual(JSON.parse(WidgetData.courseSnapshot([], 13, 'daily', '#123456').dailyCourses), []);
+});
+
 test('周课表网格保留完整周次、周日、晚课和同节次不同课程', async () => {
   const WidgetData = await loadWidget();
   const courses = makeCourses(7);
@@ -59,7 +79,7 @@ test('周课表网格保留完整周次、周日、晚课和同节次不同课�
   assert.equal(grid.length, 8);
   assert.deepEqual(grid.slice(-2).map(({ day, start, end, lane, lanes }) => [day, start, end, lane, lanes]),
     [[7, 10, 12, 0, 2], [7, 10, 12, 1, 2]]);
-  assert.equal(grid.at(-1).color, '#2196f3');
+  assert.match(grid.at(-1).color, /^#[0-9a-f]{6}$/i);
 });
 
 test('五门课程：显示三门 + 还有两门提示', async () => {
@@ -77,4 +97,15 @@ test('三门与零门：不出现溢出提示', async () => {
   const zero = WidgetData.courseSnapshot([], 10, 'daily', '#1ec98d');
   assert.equal(zero.line0, '');
   assert.match(zero.subtitle, /没有课程/);
+});
+
+test('青山 10:05 从 10:10 上课的第二门开始轮播', async () => {
+  const WidgetData = await loadWidget();
+  const first = { ...makeCourses(1)[0], endPeriod: 2 };
+  const second = { ...first, courseName: '第二门', startPeriod: 3, endPeriod: 4 };
+  const snapshot = WidgetData.courseSnapshot([first, second], 13, 'daily', '#123456',
+    new Date(2026, 10, 23, 10, 5), '青山校区');
+  assert.deepEqual(JSON.parse(snapshot.dailyCourses).map(({ name, start, end }) => [name, start, end]), [
+    ['第二门', '10:10', '11:50'], [first.courseName, '08:00', '09:40'],
+  ]);
 });

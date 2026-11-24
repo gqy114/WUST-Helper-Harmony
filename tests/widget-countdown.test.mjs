@@ -10,7 +10,7 @@ test('倒计时与周课表是两个独立小组件', async () => {
   assert.match(config, /"name": "wust_widget"/, '缺少倒计时组件');
   assert.match(config, /"name": "wust_weekly"/, '缺少周课表组件');
   assert.match(config, /"defaultDimension": "2\*4"/, '倒计时默认尺寸应为宽卡 2*4');
-  assert.match(config, /"supportDimensions": \[\s*"2\*2",\s*"2\*4",\s*"4\*4"/, '2*4 宽卡不在支持列表');
+  assert.match(config, /"supportDimensions": \[\s*"2\*2",\s*"2\*4"\s*\]/, '2*4 宽卡不在支持列表');
   assert.doesNotMatch(config, /"4\*2"/, 'config 不支持 4*2 写法');
 });
 

@@ -16,6 +16,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { AppStorage } from '../../store/AppStorage';
 import { CountdownApi, CountdownItem } from '../../net/CountdownApi';
 import { WeeklyWidgetGrid } from '../../widget/WeeklyWidgetGrid';
+import { DailyWidgetCarousel } from '../../widget/DailyWidgetCarousel';
 import {
   WidgetCountdownItem,
   WidgetData,
@@ -487,20 +488,34 @@ struct WidgetSettingsPage {
           .opacity(this.backgroundOpacity)
       }
       Column() {
-        Row() {
-          Blank()
-          Image($r('app.media.setting')).width(24).height(24).fillColor(this.themeColors()[2])
-            .onClick(() => { this.addOpen = true; })
-          Image($r('app.media.refresh')).width(24).height(24).fillColor(this.themeColors()[2])
-            .margin({ left: 8, right: 8 })
-            .onClick(() => { this.refreshWidgets(true); })
-          Image($r('app.media.add')).width(24).height(24).fillColor(this.themeColors()[2])
-            .onClick(() => { this.addOpen = true; })
+        if (this.selectedTab !== 1) {
+          Row() {
+            Blank()
+            Image($r('app.media.setting')).width(24).height(24).fillColor(this.themeColors()[2])
+              .onClick(() => { this.addOpen = true; })
+            Image($r('app.media.refresh')).width(24).height(24).fillColor(this.themeColors()[2])
+              .margin({ left: 8, right: 8 })
+              .onClick(() => { this.refreshWidgets(true); })
+            Image($r('app.media.add')).width(24).height(24).fillColor(this.themeColors()[2])
+              .onClick(() => { this.addOpen = true; })
+          }
+          .width('100%')
+          .height(36)
         }
-        .width('100%')
-        .height(36)
 
-        if (this.selectedTab === 2) {
+        if (this.selectedTab === 1) {
+          DailyWidgetCarousel({
+            dateText: this.snapshot?.title ?? '',
+            weekText: this.snapshot?.dailyWeekday ?? '',
+            courses: this.snapshot?.dailyCourses ?? '',
+            emptyText: this.snapshot?.subtitle ?? '正在加载数据…',
+            accent: this.accent,
+            textColor: this.themeColors()[1],
+            subColor: this.themeColors()[2],
+            onSettings: () => { this.helpOpen = true; },
+            onRefresh: () => { this.refreshWidgets(true); }
+          })
+        } else if (this.selectedTab === 2) {
           Text(this.snapshot?.title ?? '周课表').fontSize(16).fontWeight(FontWeight.Bold)
             .fontColor(this.themeColors()[1]).width('100%')
           WeeklyWidgetGrid({
@@ -540,17 +555,6 @@ struct WidgetSettingsPage {
           .layoutWeight(1)
           .alignItems(VerticalAlign.Center)
 
-          if (this.selectedTab === 1) {
-            Column() {
-              Text(this.snapshot?.line0 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%')
-              Text(this.snapshot?.line1 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
-              Text(this.snapshot?.line2 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
-              Text(this.snapshot?.line3 ?? '').fontSize(12).fontColor(this.themeColors()[2]).width('100%').margin({ top: 4 })
-            }
-            .width('100%')
-            .alignItems(HorizontalAlign.Start)
-            .margin({ top: 6 })
-          }
         }
       }
       .width('100%')
@@ -613,7 +617,7 @@ struct WidgetSettingsPage {
                 .layoutWeight(1).height(46).fontSize(15).fontColor(Color.White)
                 .backgroundColor('#9B51E0').borderRadius(10)
                 .margin({ left: 10 })
-                .onClick(() => this.openAddWidget('wust_quick', formInfo.FormDimension.Dimension_4_4))
+                .onClick(() => this.openAddWidget('wust_quick', formInfo.FormDimension.Dimension_2_4))
             }.width('100%').margin({ top: 10 })
 
             Text('倒计时').fontSize(15).fontWeight(FontWeight.Medium).fontColor('#A7ABB3')

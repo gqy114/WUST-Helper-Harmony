@@ -5,13 +5,15 @@ import { readFile } from 'node:fs/promises';
 
 const src = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('form_config 提供四种小组件', async () => {
-  const config = await src('entry/src/main/resources/base/profile/form_config.json');
-  for (const name of ['wust_widget', 'wust_weekly', 'wust_daily', 'wust_quick']) {
-    assert.match(config, new RegExp(`"name": "${name}"`), `缺少 ${name}`);
-  }
-  assert.match(config, /"name": "wust_quick"[\s\S]*?"defaultDimension": "4\*4"/, '快捷功能默认应为 4*4');
-  assert.match(config, /"name": "wust_daily"[\s\S]*?"defaultDimension": "2\*4"/, '日课表默认应为 2*4');
+test('系统只提供截图中保留的五种卡片规格', async () => {
+  const { forms } = JSON.parse(await src('entry/src/main/resources/base/profile/form_config.json'));
+  assert.deepEqual(forms.map(({ name, defaultDimension, supportDimensions }) =>
+    ({ name, defaultDimension, supportDimensions })), [
+    { name: 'wust_widget', defaultDimension: '2*4', supportDimensions: ['2*2', '2*4'] },
+    { name: 'wust_weekly', defaultDimension: '4*4', supportDimensions: ['4*4'] },
+    { name: 'wust_daily', defaultDimension: '2*4', supportDimensions: ['2*4'] },
+    { name: 'wust_quick', defaultDimension: '2*4', supportDimensions: ['2*4'] },
+  ]);
 });
 
 test('EntryFormAbility 按 form 名称映射四种模式', async () => {
