@@ -770,21 +770,55 @@ export class AppStorage {
     const epochAtStart = this.sessionEpoch;
     return this.enqueueCourseWrite(async () => {
       if (this.sessionEpoch !== epochAtStart) return;
-      // 该档案自己的实验课缓存要保留：切回自己的档案时不能把已有实验课清掉。
-      const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
-      const incomingExperiments: CourseData[] = [];
-      for (let i = 0; i < value.length; i++) {
-        if (this.isPhysicalExperimentCourse(value[i])) {
-          incomingExperiments.push(this.normalizePhysicalExperiment(value[i]));
-        }
-      }
-      const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
-      await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId);
-      if (this.sessionEpoch !== epochAtStart) return;
-      const merged = this.mergePhysicalExperiments(value, experiments);
-      this.courseCacheMarker = `archive_${archiveId}_${Date.now()}`;
-      await this.putStr('currentCourses', JSON.stringify(merged));
+      await this.writeArchiveCoursesUnlocked(archiveId, value, epochAtStart);
     });
+  }
+
+  async activateCourseArchive(archive: CourseArchive, termStart: string, expectedEpoch: number): Promise<boolean> {
+    return this.enqueueCourseWrite(async () => {
+      const idKey = await this.archiveKey('currentArchiveId');
+      if (this.sessionEpoch !== expectedEpoch) return false;
+      await this.writeArchiveCoursesUnlocked(archive.id, archive.courses, expectedEpoch);
+      if (this.sessionEpoch !== expectedEpoch) return false;
+      await this.putStr('archiveSemester', archive.semester);
+      if (this.sessionEpoch !== expectedEpoch) return false;
+      await this.putStr('archiveTermStartDate', termStart);
+      if (this.sessionEpoch !== expectedEpoch) return false;
+      await this.putStr(idKey, archive.id);
+      return this.sessionEpoch === expectedEpoch;
+    });
+  }
+
+  async removeCourseArchive(id: string, expectedEpoch: number): Promise<boolean> {
+    return this.enqueueCourseWrite(async () => {
+      if (id === 'mine' || this.sessionEpoch !== expectedEpoch || await this.getCurrentArchiveId() === id) return false;
+      const archivesKey = await this.archiveKey('courseArchives');
+      const experimentsKey = await this.physicalExperimentKey(id);
+      const archives = await this.getCourseArchives();
+      if (this.sessionEpoch !== expectedEpoch) return false;
+      await this.putStr(archivesKey, JSON.stringify(archives.filter(item => item.id !== id)));
+      if (this.sessionEpoch !== expectedEpoch) return false;
+      await this.putStr(experimentsKey, '[]');
+      return this.sessionEpoch === expectedEpoch;
+    });
+  }
+
+  private async writeArchiveCoursesUnlocked(archiveId: string, value: CourseData[],
+    epochAtStart: number): Promise<void> {
+    // 该档案自己的实验课缓存要保留：切回自己的档案时不能把已有实验课清掉。
+    const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
+    const incomingExperiments: CourseData[] = [];
+    for (let i = 0; i < value.length; i++) {
+      if (this.isPhysicalExperimentCourse(value[i])) {
+        incomingExperiments.push(this.normalizePhysicalExperiment(value[i]));
+      }
+    }
+    const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
+    await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId);
+    if (this.sessionEpoch !== epochAtStart) return;
+    const merged = this.mergePhysicalExperiments(value, experiments);
+    this.courseCacheMarker = `archive_${archiveId}_${Date.now()}`;
+    await this.putStr('currentCourses', JSON.stringify(merged));
   }
 
   /**

@@ -91,6 +91,8 @@ export interface CourseArchive {
   termStartDate?: string;
   courses: CourseData[];
   isMine: boolean;
+  relation?: string;
+  ownerStudentId?: string;
 }
 
 export function getDefaultArchive(): CourseArchive {

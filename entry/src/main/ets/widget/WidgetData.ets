@@ -241,7 +241,9 @@ export class WidgetData {
   }
 
   private static async currentWeek(storage: AppStorage): Promise<number> {
-    const startText = await storage.getTermStartDate();
+    const archiveId = await storage.getCurrentArchiveId();
+    const startText = archiveId === 'mine' ? await storage.getTermStartDate()
+      : await storage.getSettingString('archiveTermStartDate', '');
     const start = WidgetData.parseDate(startText);
     if (start === null) {
       const saved = await storage.getWeek();

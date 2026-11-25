@@ -1,3 +1,5 @@
+import common from '@ohos.app.ability.common';
+import { ScheduleWidgetRefresh } from '../../widget/ScheduleWidgetRefresh';
 /**
  * CoursePage — 课表页面（不含 @Entry，供 MainPage Tabs 嵌入）
  *
@@ -85,7 +87,7 @@ export struct CoursePage {
     const archiveStart = (await storage.getSettingString('archiveTermStartDate', '')).trim();
     const cached = archiveStart.length > 0 ? archiveStart : await storage.getTermStartDate();
     if (this.applyTermStartDateFromString(cached)) {
-      this.updateWeekDates();
+      await this.syncActualWeekWithClock(true);
       this.refreshKey = this.refreshKey + 1;
     }
   }
@@ -654,12 +656,18 @@ export struct CoursePage {
     const archive = await DynamicScheduleApi.getSharedSchedule(archiveId);
     const archives = await storage.getCourseArchives();
     if (await storage.getCurrentArchiveId() !== archiveId || storage.getSessionEpoch() !== accountEpoch) return;
+    const previous = archives.find(item => item.id === archive.id);
+    if (!previous) return;
+    archive.relation = previous.relation;
+    archive.ownerStudentId = archive.ownerStudentId || previous.ownerStudentId;
+    archive.termStartDate = previous.termStartDate;
     const updated = archives.map(item => item.id === archive.id ? archive : item);
     await storage.setCourseArchives(updated, accountEpoch);
     if (await storage.getCurrentArchiveId() !== archiveId || storage.getSessionEpoch() !== accountEpoch) return;
     await storage.setCurrentArchiveCourses(archiveId, archive.courses);
     AppStorage.setOrCreate('courseArchives', updated);
     await this.loadCurrentArchiveCourses();
+    ScheduleWidgetRefresh.run(getContext(this) as common.UIAbilityContext, accountEpoch);
   }
 
   /** 右上角刷新课表 */

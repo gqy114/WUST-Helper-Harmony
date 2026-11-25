@@ -23,6 +23,7 @@ interface SharedScheduleCourse {
 
 interface SharedSchedule {
   grantId: string;
+  owner?: string;
   name: string;
   semester: string;
   courses: SharedScheduleCourse[];
@@ -103,6 +104,7 @@ export class DynamicScheduleApi {
     }
     return {
       id: 'shared_' + schedule.grantId,
+      ownerStudentId: typeof schedule.owner === 'string' ? schedule.owner : '',
       name: typeof schedule.name === 'string' && schedule.name.trim() ? schedule.name.trim() : '共享课表',
       semester: schedule.semester,
       courses,

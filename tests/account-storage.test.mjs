@@ -219,3 +219,22 @@ test('共享档案读取本档案的实验，刷新共享课程不丢失实验�
   assert.equal(await storage.removePhysicalExperimentCourses(), 1);
   assert.deepEqual(await names(), ['刷新后的共享课程']);
 });
+
+test('删除当前共享档案前先恢复自己的课程，且保留同账号其他档案', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  const epoch = storage.getSessionEpoch();
+  const mine = { id: 'mine', name: '我的课表', semester: '2026-2027-1', courses: courses('我的课程'), isMine: true };
+  const shared = { id: 'shared_example', name: '同学', semester: '2025-2026-2',
+    courses: courses('共享课程'), isMine: false, relation: '同学课表' };
+  const friend = { ...shared, id: 'archive_friend', relation: '朋友课表' };
+  await storage.setCourseArchives([mine, shared, friend]);
+  assert.equal(await storage.activateCourseArchive(shared, '2026-03-02', epoch), true);
+  assert.equal(await storage.getSettingString('archiveTermStartDate'), '2026-03-02');
+  assert.equal((await storage.getCurrentCourses())[0].courseName, '共享课程');
+  assert.equal(await storage.removeCourseArchive(shared.id, epoch), false);
+  assert.equal(await storage.activateCourseArchive(mine, '2026-09-01', epoch), true);
+  assert.equal(await storage.removeCourseArchive(shared.id, epoch), true);
+  assert.equal((await storage.getCurrentCourses())[0].courseName, '我的课程');
+  assert.deepEqual(Array.from(await storage.getCourseArchives(), item => item.id), [mine.id, friend.id]);
+});
