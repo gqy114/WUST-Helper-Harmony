@@ -23,5 +23,5 @@ test('筛选按钮位于搜索左侧，全部来源时栏目给出提示', async
   assert.ok(filter > 0 && search > filter, '筛选按钮不在搜索左侧');
   assert.match(page, /先选择学校或学院/, '全部来源时缺少选择提示');
   assert.match(page, /CampusNewsApi\.articles\(this\.page, PAGE_SIZE, this\.collegeId, this\.categoryUrl\)/, '筛选条件没有传给文章接口');
-  assert.match(page, /this\.filterRow\('全部来源'/, '缺少全部来源选项');
+  assert.match(page, /name: '全部来源'/, '缺少全部来源选项');
 });
