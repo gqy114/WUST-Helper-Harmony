@@ -4,13 +4,16 @@ const ROTATION_INTERVAL_MS: number = 20000;
 
 @Component
 export struct CountdownWidgetCarousel {
-  @Prop slides: string = '';
+  @Prop @Watch('onSlidesChanged') slides: string = '';
   @Prop emptyText: string = '';
   @Prop textColor: string = '#111111';
   @Prop subColor: string = '#666666';
   @Prop accent: string = '#EC5A3C';
   @Prop initialCompact: boolean = false;
   @State private widthToHeight: number = 0;
+  @State private locked: boolean = false;
+  @State private slideIndex: number = 0;
+  private swiperController: SwiperController = new SwiperController();
   onSettings: () => void = () => {};
   onRefresh: () => void = () => {};
   onAdd: () => void = () => {};
@@ -25,6 +28,41 @@ export struct CountdownWidgetCarousel {
     } catch {
       return [];
     }
+  }
+
+  /** 只有倒计时日期已经过去才算结束；当天显示 0 天时仍应保留当前考试。 */
+  private isSlideEnded(slide: WidgetCountdownSlide): boolean {
+    const match = /(\d{4})\D+(\d{1,2})\D+(\d{1,2})/.exec(slide.date || '');
+    if (!match) return false;
+    const today = new Date();
+    const eventDay = Number(match[1]) * 10000 + Number(match[2]) * 100 + Number(match[3]);
+    const todayDay = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
+    return eventDay < todayDay;
+  }
+
+  /** 锁定时当前倒计时已经结束，自动切到下一个还没结束的倒计时。 */
+  private onSlidesChanged(): void {
+    if (!this.locked) return;
+    const list = this.entries();
+    if (list.length === 0) return;
+    const index = Math.min(this.slideIndex, list.length - 1);
+    if (!this.isSlideEnded(list[index])) return;
+    for (let i = 0; i < list.length; i++) {
+      if (!this.isSlideEnded(list[i])) {
+        this.slideIndex = i;
+        try { this.swiperController.changeIndex(i, true); } catch (error) {}
+        return;
+      }
+    }
+  }
+
+  @Builder
+  private lockIcon(size: number) {
+    Image($r('app.media.ic_widget_lock'))
+      .width(size).height(size).objectFit(ImageFit.Contain)
+      .fillColor(this.locked ? '#61A5FA' : this.subColor)
+      .accessibilityText(this.locked ? '取消锁定当前倒计时' : '锁定当前倒计时')
+      .onClick(() => { this.locked = !this.locked; })
   }
 
   @Builder
@@ -54,14 +92,18 @@ export struct CountdownWidgetCarousel {
   @Builder
   private slideContent(slide: WidgetCountdownSlide) {
     if (this.compact()) {
-      Column() {
-        this.titleAndDate(slide)
-        Row({ space: 4 }) {
-          Text(slide.remaining).fontSize(48).minFontSize(24).fontWeight(FontWeight.Bold)
-            .fontColor(this.accent).maxLines(1)
-          Text('天').fontSize(13).fontColor(this.subColor)
-        }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
-      }.width('100%').height('100%').alignItems(HorizontalAlign.Start)
+      // 2*2 卡片空间小：锁图标缩到接近标题一个字大小，叠在右上角。
+      Stack({ alignContent: Alignment.TopEnd }) {
+        Column() {
+          this.titleAndDate(slide)
+          Row({ space: 4 }) {
+            Text(slide.remaining).fontSize(48).minFontSize(24).fontWeight(FontWeight.Bold)
+              .fontColor(this.accent).maxLines(1)
+            Text('天').fontSize(13).fontColor(this.subColor)
+          }.layoutWeight(1).width('100%').justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
+        }.width('100%').height('100%').alignItems(HorizontalAlign.Start)
+        this.lockIcon(15)
+      }.width('100%').height('100%')
     } else {
       Row({ space: 4 }) {
         Column() { this.titleAndDate(slide) }.layoutWeight(1)
@@ -76,6 +118,7 @@ export struct CountdownWidgetCarousel {
       if (!this.compact()) {
         Row({ space: 5 }) {
           Text('倒计时').fontSize(16).fontWeight(FontWeight.Medium).fontColor(this.textColor).layoutWeight(1)
+          this.lockIcon(26)
           this.icon($r('app.media.setting'), '小组件设置', () => this.onSettings())
           this.icon($r('app.media.refresh'), '刷新倒计时', () => this.onRefresh())
           this.icon($r('app.media.add'), '添加倒计时', () => this.onAdd())
@@ -83,17 +126,18 @@ export struct CountdownWidgetCarousel {
       }
 
       if (this.entries().length > 0) {
-        Swiper() {
+        Swiper(this.swiperController) {
           ForEach(this.entries(), (slide: WidgetCountdownSlide, index: number) => {
             this.slideContent(slide)
           }, (slide: WidgetCountdownSlide, index: number) =>
             index + '|' + slide.title + '|' + slide.date + '|' + slide.elapsed + '|' + slide.remaining)
         }
-        .autoPlay(this.entries().length > 1)
+        .autoPlay(!this.locked && this.entries().length > 1)
         .loop(this.entries().length > 1)
         .interval(ROTATION_INTERVAL_MS)
-        .disableSwipe(true)
+        .vertical(true)
         .indicator(false)
+        .onChange((index: number) => { this.slideIndex = index; })
         .width('100%')
         .layoutWeight(1)
       } else {
