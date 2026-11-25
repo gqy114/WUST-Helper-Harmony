@@ -125,6 +125,7 @@ struct MainPage {
   private tabsController: TabsController = new TabsController();
   private teachingRetryTimer: number = -1;
   private communityBadgeTimer: number = -1;
+  private bannerIndex: number = 0;
   private communityBadgesLoading: boolean = false;
   private campusWallLatestId: number = 0;
   private campusLostLatestId: number = 0;
@@ -411,12 +412,24 @@ struct MainPage {
     }
   }
 
+  private activeBannerUrl(): string {
+    const banners = this.visibleBanners();
+    if (banners.length === 0) return '';
+    const index = Math.max(0, Math.min(this.bannerIndex, banners.length - 1));
+    return banners[index].imageUrl;
+  }
+
+  private syncActiveBanner(): void {
+    const url = this.activeBannerUrl();
+    BannerImageLoader.setActive(url ? [url] : []);
+  }
+
   private async loadBannerPixels(): Promise<void> {
     if (this.bannerLoading) return;
     this.bannerLoading = true;
     try {
       const banners = this.homeBanners;
-      BannerImageLoader.setActive(banners.map((banner: HomeBanner) => banner.imageUrl));
+      this.syncActiveBanner();
       const width = this.bannerDecodeWidth();
       const height = this.bannerDecodeHeight();
       for (let i = 0; i < banners.length; i++) {
@@ -735,6 +748,10 @@ struct MainPage {
         }
         .width('100%')
         .height(150)
+        .onChange((index: number) => {
+          this.bannerIndex = index;
+          this.syncActiveBanner();
+        })
         .autoPlay(this.visibleBanners().length > 1)
         .interval(4500)
         .loop(this.visibleBanners().length > 1)

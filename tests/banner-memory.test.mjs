@@ -23,7 +23,7 @@ test('缓存超限时按 LRU 淘汰且跳过展示中的图片', async () => {
 
 test('MainPage 传入实际显示尺寸并标记当前轮播 URL', async () => {
   const page = await source('pages/main/MainPage.ets');
-  assert.match(page, /BannerImageLoader\.setActive\(banners\.map/, '没有标记当前轮播');
+  assert.match(page, /syncActiveBanner\(\)/, '没有标记当前轮播');
   assert.match(page, /BannerImageLoader\.load\(banner\.imageUrl, width, height\)/, '没有按显示尺寸加载');
   assert.match(page, /screen\.width - 32 \* screen\.densityPixels/, '宽度未按屏幕尺寸换算');
   assert.match(page, /150 \* display\.getDefaultDisplaySync\(\)\.densityPixels/, '高度未按 150vp 换算');

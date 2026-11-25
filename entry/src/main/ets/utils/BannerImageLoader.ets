@@ -67,7 +67,6 @@ export class BannerImageLoader {
     while (BannerImageLoader.totalBytes > MAX_CACHE_BYTES) {
       let victimKey = '';
       let victim: BannerCacheEntry | undefined = undefined;
-      // 优先淘汰不在展示中的图片；若全部都在展示中，也强制淘汰最旧一张，保证缓存上限。
       for (const pair of BannerImageLoader.cache) {
         if (!BannerImageLoader.isActive(pair[1].url)) {
           victimKey = pair[0];
@@ -75,12 +74,8 @@ export class BannerImageLoader {
           break;
         }
       }
-      if (!victim) {
-        const oldest = BannerImageLoader.cache.entries().next();
-        if (oldest.done) break;
-        victimKey = oldest.value[0];
-        victim = oldest.value[1];
-      }
+      // 展示中的图片不能释放，否则轮播到该张时会空白；宁可暂时超过上限。
+      if (!victim) break;
       BannerImageLoader.cache.delete(victimKey);
       BannerImageLoader.totalBytes = Math.max(0, BannerImageLoader.totalBytes - victim.bytes);
       victim.pixelMap.release();
