@@ -67,7 +67,7 @@ test('加载更多进行中重复点击不会把请求代次推进导致卡在�
 
 test('校园资讯为空时显示占位与刷新，不出现整页空白', async () => {
   const page = await readFile(new URL('../entry/src/main/ets/pages/campus/CampusPage.ets', import.meta.url), 'utf8');
-  assert.match(page, /else if \(this\.articles\.length === 0\)/, '缺少空列表状态');
+  assert.match(page, /else if \(this\.articleCount === 0\)/, '缺少空列表状态');
   assert.match(page, /暂无校园资讯/, '空列表没有提示文案');
   assert.match(page, /Text\('刷新'\)/, '空列表没有刷新入口');
 });
@@ -85,18 +85,22 @@ test('搜索分页沿用已提交的关键词，并忽略清除搜索后的迟�
     },
     articles: async () => ({ items: [{ id: 'feed' }], total: 1 }),
   };
-  const Page = runInNewContext(stripTypeScriptTypes('class Page {\n' + load + '\n}; Page;'), {
-    CampusNewsApi: api, PAGE_SIZE: 20,
+  const nearEnd = code.match(/  private loadNearEnd\(lastVisible: number\): void \{[\s\S]*?\n  \}/)[0];
+  const Page = runInNewContext(stripTypeScriptTypes('class Page {\n' + load + nearEnd + '\n}; Page;'), {
+    CampusNewsApi: api, PAGE_SIZE: 20, PREFETCH_REMAINING: 3,
   });
-  const page = Object.assign(new Page(), { keyword: '研究生', requestGeneration: 0 });
+  const items = [];
+  const newsSource = { clear: () => { items.length = 0; }, append: (batch) => items.push(...batch),
+    totalCount: () => items.length };
+  const page = Object.assign(new Page(), { keyword: '研究生', requestGeneration: 0, newsSource });
   await page.load(true);
-  const pending = page.load(false);
-  await page.load(false);
+  page.loadNearEnd(0);
+  page.loadNearEnd(0);
   assert.deepEqual(calls, [['研究生', 1], ['研究生', 2]]);
   page.keyword = '';
   await page.load(true);
   resolveNextPage({ items: [{ id: 'old' }], total: 2 });
-  await pending;
-  assert.deepEqual(page.articles, [{ id: 'feed' }]);
+  await nextPage;
+  assert.deepEqual(items, [{ id: 'feed' }]);
   assert.equal(page.loadingMore, false);
 });

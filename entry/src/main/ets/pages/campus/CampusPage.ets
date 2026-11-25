@@ -3,10 +3,60 @@ import { CampusNewsApi, NewsArticle, NewsCategory, NewsCollege } from '../../net
 
 const TAG = 'CampusPage';
 const PAGE_SIZE = 20;
+const PREFETCH_REMAINING = 3;
+const COVER_RATIO_LIMIT = 200;
+const coverRatios = new Map<string, number>();
 const FEED_INSET = 16;
 const FEED_GAP = 10;
 const CONTROL_COLOR = '#82888A';
 const SEARCH_INPUT_ID = 'campusNewsSearchInput';
+
+function articleKey(item: NewsArticle): string {
+  return item.id || item.url || item.title || '';
+}
+
+class CampusNewsSource implements IDataSource {
+  private items: NewsArticle[] = [];
+  private readonly keys: Set<string> = new Set<string>();
+  private readonly listeners: Set<DataChangeListener> = new Set<DataChangeListener>();
+
+  totalCount(): number {
+    return this.items.length;
+  }
+
+  getData(index: number): NewsArticle {
+    return this.items[index];
+  }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    this.listeners.add(listener);
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    this.listeners.delete(listener);
+  }
+
+  clear(): void {
+    this.items = [];
+    this.keys.clear();
+    this.listeners.forEach(listener => listener.onDataReloaded());
+  }
+
+  append(items: NewsArticle[]): void {
+    const index = this.items.length;
+    items.forEach(item => {
+      const key = articleKey(item);
+      if (!this.keys.has(key)) {
+        this.keys.add(key);
+        this.items.push(item);
+      }
+    });
+    const count = this.items.length - index;
+    if (count === 0) return;
+    const operation: DataAddOperation = { type: DataOperationType.ADD, index: index, count: count };
+    this.listeners.forEach(listener => listener.onDatasetChange([operation]));
+  }
+}
 
 @Component
 struct CampusNewsCover {
@@ -14,20 +64,42 @@ struct CampusNewsCover {
   @Prop dashboard: boolean = false;
   @State private ratio: number = 1;
   @State private failed: boolean = false;
+  @State private requested: boolean = false;
+
+  aboutToAppear(): void {
+    this.ratio = coverRatios.get(this.src) ?? 1;
+  }
+
+  private rememberRatio(width: number, height: number): void {
+    if (width <= 0 || height <= 0) return;
+    this.ratio = width / height;
+    coverRatios.delete(this.src);
+    coverRatios.set(this.src, this.ratio);
+    if (coverRatios.size > COVER_RATIO_LIMIT) {
+      const oldest = coverRatios.keys().next();
+      if (!oldest.done) coverRatios.delete(oldest.value);
+    }
+  }
 
   build() {
     if (!this.failed) {
-      if (this.dashboard) {
-        Image(this.src)
-          .width('100%').aspectRatio(this.ratio).objectFit(ImageFit.Contain).autoResize(false)
-          .onComplete((event) => {
-            if (event && event.width > 0 && event.height > 0) this.ratio = event.width / event.height;
-          })
-          .onError(() => { this.failed = true; })
-      } else {
-        Image(this.src).width(86).height(74).objectFit(ImageFit.Contain).margin({ left: 12 })
-          .onError(() => { this.failed = true; })
+      Stack() {
+        if (this.requested) {
+          Image(this.src)
+            .width('100%').height('100%').objectFit(ImageFit.Contain)
+            .autoResize(!this.dashboard)
+            .onComplete((event) => {
+              if (this.dashboard && event) this.rememberRatio(event.width, event.height);
+            })
+            .onError(() => { this.failed = true; })
+        }
       }
+      .width(this.dashboard ? '100%' : 86)
+      .aspectRatio(this.dashboard ? this.ratio : 86 / 74)
+      .margin({ left: this.dashboard ? 0 : 12 })
+      .onVisibleAreaChange([0], (visible: boolean, ratio: number) => {
+        if (visible && ratio > 0) this.requested = true;
+      })
     }
   }
 }
@@ -48,7 +120,9 @@ const CAMPUS_SHORTCUTS: CampusShortcut[] = [
 
 @Component
 export struct CampusPage {
-  @State private articles: NewsArticle[] = [];
+  private readonly newsSource: CampusNewsSource = new CampusNewsSource();
+  @State private articleCount: number = 0;
+  private receivedCount: number = 0;
   @State private loading: boolean = true;
   @State private loadingMore: boolean = false;
   @State private errorText: string = '';
@@ -86,7 +160,9 @@ export struct CampusPage {
       this.hasMore = true;
       this.loading = true;
       this.errorText = '';
-      this.articles = [];
+      this.receivedCount = 0;
+      this.articleCount = 0;
+      this.newsSource.clear();
     } else {
       this.loadingMore = true;
     }
@@ -96,9 +172,11 @@ export struct CampusPage {
         : await CampusNewsApi.articles(this.page, PAGE_SIZE, this.collegeId, this.categoryUrl);
       if (generation !== this.requestGeneration) return;
       const items = result.items || [];
-      this.articles = reset ? items : this.articles.concat(items);
+      this.receivedCount += items.length;
+      this.newsSource.append(items);
+      this.articleCount = this.newsSource.totalCount();
       this.hasMore = typeof result.total === 'number'
-        ? items.length > 0 && this.articles.length < result.total
+        ? items.length > 0 && this.receivedCount < result.total
         : items.length >= (result.page_size || PAGE_SIZE);
       this.page = this.page + 1;
       this.errorText = '';
@@ -112,6 +190,13 @@ export struct CampusPage {
         this.loading = false;
         this.loadingMore = false;
       }
+    }
+  }
+
+  private loadNearEnd(lastVisible: number): void {
+    if (lastVisible >= 0 && this.articleCount > 0 && this.errorText.length === 0 &&
+      lastVisible >= this.articleCount - PREFETCH_REMAINING) {
+      this.load(false);
     }
   }
 
@@ -294,20 +379,25 @@ export struct CampusPage {
 
   @Builder
   private activeFilterBar() {
-    if (this.collegeId.length > 0) {
-      Row({ space: 8 }) {
+    Row({ space: 8 }) {
+      if (this.collegeId.length > 0) {
         Text(this.sourceLabel()).fontSize(12).fontColor('#20C997').maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         if (this.categoryUrl.length > 0) {
           Text('/ ' + this.categoryLabel()).fontSize(12).fontColor('#20C997').maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
-        Blank()
         Text('清除').fontSize(12).fontColor('#888888').onClick(() => {
           this.selectCollege('');
         })
-      }.width('100%').padding({ left: 16, right: 16, top: 8 })
-    }
+      }
+      Blank()
+      Button('校园服务', { type: ButtonType.Normal }).fontSize(12).fontColor(CONTROL_COLOR)
+        .height(32).backgroundColor(Color.Transparent).padding({ left: 10, right: 10 })
+        .bindMenu(CAMPUS_SHORTCUTS.map((item: CampusShortcut): MenuElement => ({
+          value: item.title, action: () => this.openShortcut(item.route)
+        })))
+    }.width('100%').padding({ left: 16, right: 16 })
   }
 
   @Builder
@@ -332,8 +422,8 @@ export struct CampusPage {
         Blank()
       }
       this.toolbarButton($r('app.media.refresh'), '刷新校园资讯', () => { this.load(true); })
-    this.toolbarButton($r('app.media.filter'), '筛选校园资讯', () => { this.toggleFilter(); })
-    this.toolbarButton($r('app.media.search'), '搜索校园资讯', () => { this.search(); })
+      this.toolbarButton($r('app.media.filter'), '筛选校园资讯', () => { this.toggleFilter(); })
+      this.toolbarButton($r('app.media.search'), '搜索校园资讯', () => { this.search(); })
       if (this.dashboard) {
         this.toolbarButton($r('app.media.campus_news_list'), '切换为列表', () => { this.dashboard = false; })
       } else {
@@ -405,7 +495,7 @@ export struct CampusPage {
         LoadingProgress().width(36).height(36).color('#20C997')
         Text('校园资讯加载中…').fontSize(13).fontColor('#999999').margin({ top: 10 })
       }.width('100%').padding({ top: 40, bottom: 40 }).justifyContent(FlexAlign.Center)
-    } else if (this.errorText.length > 0 && this.articles.length === 0) {
+    } else if (this.errorText.length > 0 && this.articleCount === 0) {
       Row() {
         Image($r('app.media.empty')).width(30).height(30).objectFit(ImageFit.Contain)
         Column() {
@@ -424,7 +514,7 @@ export struct CampusPage {
         Text('重试').fontSize(13).fontColor('#20C997').onClick(() => this.load(true))
       }.width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 })
       .backgroundColor(Color.White).borderRadius(12).margin({ bottom: 16 })
-    } else if (this.articles.length === 0) {
+    } else if (this.articleCount === 0) {
       // 接口成功但暂时没有数据时也要有可见内容，不能留给用户一整页空白。
       Row() {
         Image($r('app.media.empty')).width(30).height(30).objectFit(ImageFit.Contain)
@@ -441,7 +531,7 @@ export struct CampusPage {
           Text(this.errorText).fontSize(12).fontColor('#C0392B').margin({ top: 4, bottom: 8 })
         }
         if (this.hasMore) {
-          Text(this.loadingMore ? '加载中…' : '加载更多')
+          Text(this.loadingMore ? '加载中…' : this.errorText ? '重试加载更多' : '加载更多')
             .fontSize(13).fontColor('#20C997').padding(10)
             .onClick(() => this.load(false))
         }
@@ -482,33 +572,35 @@ export struct CampusPage {
       if (this.dashboard) {
         WaterFlow({ scroller: this.dashboardScroller, footer: () => { this.feedFooter(); } }) {
           if (this.dashboardColumnWidth > 0) {
-            ForEach(this.articles, (item: NewsArticle) => {
+            LazyForEach(this.newsSource, (item: NewsArticle) => {
               FlowItem() {
                 this.articleCard(item, true)
               }.width(this.dashboardColumnWidth)
-            }, (item: NewsArticle) => item.id || item.url || item.title || '')
+            }, (item: NewsArticle) => articleKey(item))
           }
         }
         .columnsTemplate('1fr 1fr').columnsGap(FEED_GAP).rowsGap(FEED_GAP)
         .layoutWeight(1).width('100%').scrollBar(BarState.Off)
         .padding({ left: FEED_INSET, right: FEED_INSET })
+        .onScrollIndex((_first: number, last: number) => this.loadNearEnd(last))
         .onAreaChange((_, area) => {
           const available = Number.parseFloat(String(area.width)) - FEED_INSET * 2 - FEED_GAP;
           if (available > 0) this.dashboardColumnWidth = available / 2;
         })
       } else {
         List({ scroller: this.listScroller, space: FEED_GAP }) {
-          ForEach(this.articles, (item: NewsArticle) => {
+          LazyForEach(this.newsSource, (item: NewsArticle) => {
             ListItem() {
               this.articleCard(item, false)
             }
-          }, (item: NewsArticle) => item.id || item.url || item.title || '')
+          }, (item: NewsArticle) => articleKey(item))
           ListItem() {
             this.feedFooter()
           }
         }
         .layoutWeight(1).width('100%').scrollBar(BarState.Off)
         .padding({ left: FEED_INSET, right: FEED_INSET })
+        .onScrollIndex((_first: number, last: number) => this.loadNearEnd(last))
       }
     }
     .width('100%').height('100%').backgroundColor('#F5F6F7')
