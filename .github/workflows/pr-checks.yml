@@ -1,4 +1,4 @@
-name: PR Checks
+﻿name: PR Checks
 
 on:
   pull_request:
@@ -70,40 +70,3 @@ jobs:
             fi
             echo "::endgroup::"
           done
-
-  # DevEco 未签名构建：需要一台装有 DevEco SDK 的 self-hosted runner。
-  # 在仓库 Variables 中设置 ENABLE_DEVECO_BUILD=true 后启用，并配置：
-  # DEVECO_SDK_HOME、DEVECO_NODE_PATH、OHPM_PATH、HVIGORW_PATH。
-  harmony-unsigned-build:
-    name: HarmonyOS unsigned HAP
-    # 只允许可信来源：手动触发或 push 到 main，避免外部 PR 在自托管构建机上执行代码。
-    if: ${{ vars.ENABLE_DEVECO_BUILD == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
-    runs-on: [self-hosted, windows, x64, harmonyos]
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install dependencies
-        shell: pwsh
-        run: |
-          & "${{ vars.OHPM_PATH }}" install
-      - name: Remove signing config for unsigned build
-        shell: pwsh
-        run: |
-          $path = 'build-profile.json5'
-          $json = Get-Content $path -Raw | ConvertFrom-Json
-          $json.app.PSObject.Properties.Remove('signingConfigs')
-          $json.app.products[0].PSObject.Properties.Remove('signingConfig')
-          $json | ConvertTo-Json -Depth 20 | Set-Content $path -Encoding utf8
-      - name: Build release HAP (unsigned)
-        shell: pwsh
-        env:
-          DEVECO_SDK_HOME: ${{ vars.DEVECO_SDK_HOME }}
-        run: |
-          $env:PATH = "${{ vars.DEVECO_NODE_PATH }};" + $env:PATH
-          & "${{ vars.HVIGORW_PATH }}" --mode module -p product=default -p buildMode=release assembleHap --no-daemon
-      - name: Upload unsigned HAP
-        uses: actions/upload-artifact@v4
-        with:
-          name: harmony-unsigned-hap
-          path: entry/build/**/outputs/**/*.hap
-          if-no-files-found: error

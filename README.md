@@ -1,4 +1,4 @@
-# WUST Helper · HarmonyOS 版
+﻿# WUST Helper · HarmonyOS 版
 ![](https://img.shields.io/badge/Platform-HarmonyOS-0A59F7?logo=harmonyos&logoColor=white)
 ![](https://img.shields.io/badge/Language-ArkTS%2FTypeScript-3178C6?logo=typescript&logoColor=white)
 ![](https://img.shields.io/badge/DevEco%20Studio-5.0+-black?logo=harmonyos&logoColor=white)
@@ -59,25 +59,15 @@ git clone https://github.com/gqy114/WUST-Helper-Harmony.git
 
 # 用 DevEco Studio 打开项目根目录
 # 等待依赖下载完成后，点击 Run 即可运行到模拟器/真机
+```
 
 ---
 
-## ✅ 持续集成
+## 持续集成
 
-仓库使用 `.github/workflows/pr-checks.yml`：
+`.github/workflows/pr-checks.yml` 使用 GitHub 托管的运行器执行自动测试。
 
-- **Node regression tests**：所有 PR、分支 push、每日定时和手动触发都会运行 `tests` 下的 Node 回归测试，PR 合并前需通过。
-- **Stacked PR tests**：push 到任意分支时，会自动找出以该分支为 base 的开放 PR，检出 GitHub 的 `pull/<n>/merge` 合并结果并跑测试，及时发现叠加 PR 的回归。
-- **HarmonyOS unsigned HAP**：需要一台装有 DevEco Studio/SDK 的 self-hosted runner（标签：`windows`、`x64`、`harmonyos`）。
+- **Node regression tests** 在 PR 创建或更新、分支推送、每日定时或手动触发时运行 `tests` 下的 Node 测试。合并到 `main` 前，GitHub 会检查 PR 最新提交的测试结果。
+- **Stacked PR tests** 在分支推送后，检出以该分支为目标的待合并 PR 的合并结果并运行测试。
 
-启用未签名构建前，在仓库 Settings → Secrets and variables → Actions → Variables 中配置：
-
-| Variable | 说明 |
-|---|---|
-| `ENABLE_DEVECO_BUILD` | 设为 `true` 才启用构建任务 |
-| `DEVECO_SDK_HOME` | DevEco SDK 路径 |
-| `DEVECO_NODE_PATH` | DevEco 自带 node 目录 |
-| `OHPM_PATH` | `ohpm.bat` 完整路径 |
-| `HVIGORW_PATH` | `hvigorw.bat` 完整路径 |
-
-构建任务会在 CI 中临时移除 `build-profile.json5` 的签名配置，产出 unsigned HAP 并上传 artifact。
+在本地用 DevEco Studio 构建鸿蒙安装包。
