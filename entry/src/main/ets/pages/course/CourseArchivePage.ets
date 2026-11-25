@@ -74,7 +74,8 @@ struct CourseArchivePage {
       await storage.setCourseArchives(this.archives);
       await storage.setSettingString('archiveSemester', semester);
       const ownStart = (await storage.getTermStartDate()).trim();
-      if (ownStart) await storage.setSettingString('archiveTermStartDate', ownStart);
+      // 切回自己的课表时必须清掉共享档案的开学日期，避免旧学期缓存串用。
+      await storage.setSettingString('archiveTermStartDate', ownStart);
     }
 
     await storage.setCurrentArchiveId(archive.id);
