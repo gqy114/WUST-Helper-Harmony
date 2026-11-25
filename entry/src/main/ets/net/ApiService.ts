@@ -343,6 +343,11 @@ export class ApiService {
           await storage.setMessage(outcome.message ?? '');
           return true;
         }
+        if (outcome.code < 500) {
+          // 服务明确拒绝密码时不能再拿同一密码试旧接口，避免账号被锁。
+          console.warn('ApiService', 'device refresh rejected credentials');
+          return false;
+        }
         console.warn('ApiService', 'device refresh unavailable, fallback to legacy login');
       } catch (error) {
         console.warn('ApiService', 'device refresh failed, fallback to legacy login');
