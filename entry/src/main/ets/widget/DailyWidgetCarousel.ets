@@ -12,6 +12,9 @@ export struct DailyWidgetCarousel {
   @Prop textColor: string = '#111111';
   @Prop subColor: string = '#666666';
   onSettings: () => void = () => {};
+  @Prop showArchiveSwitch: boolean = false;
+  onArchiveSwitch: () => void = () => {};
+  onOpen: () => void = () => {};
   onRefresh: () => void = () => {};
 
   private entries(): DailyWidgetCourse[] {
@@ -33,6 +36,11 @@ export struct DailyWidgetCarousel {
           .accessibilityText('小组件设置').onClick(() => this.onSettings())
         Image($r('app.media.refresh')).width(22).height(28).objectFit(ImageFit.Contain).fillColor(this.subColor)
           .accessibilityText('刷新日课表').onClick(() => this.onRefresh())
+        if (this.showArchiveSwitch) {
+          Image($r('app.media.widget_archive_switch')).width(22).height(28)
+            .objectFit(ImageFit.Contain).fillColor(this.subColor)
+            .accessibilityText('切换课表档案').onClick(() => this.onArchiveSwitch())
+        }
       }.width('100%')
 
       Divider().color('#33808080').margin({ top: 6, bottom: 4 })
@@ -62,10 +70,10 @@ export struct DailyWidgetCarousel {
         .disableSwipe(true)
         .indicator(false)
         .width('100%')
-        .layoutWeight(1)
+        .layoutWeight(1).onClick(() => this.onOpen())
       } else {
         Text(this.emptyText).fontSize(13).fontColor(this.subColor)
-          .width('100%').textAlign(TextAlign.Center).layoutWeight(1)
+          .width('100%').textAlign(TextAlign.Center).layoutWeight(1).onClick(() => this.onOpen())
       }
     }.width('100%').height('100%')
   }

@@ -238,3 +238,31 @@ test('删除当前共享档案前先恢复自己的课程，且保留同账号�
   assert.equal((await storage.getCurrentCourses())[0].courseName, '我的课程');
   assert.deepEqual(Array.from(await storage.getCourseArchives(), item => item.id), [mine.id, friend.id]);
 });
+
+test('每张桌面课表卡片独立保存课表，切换 App 档案不会改变已添加的卡片', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  const epoch = storage.getSessionEpoch();
+  const mine = { id: 'mine', name: '我的课表', semester: '2026-2027-1',
+    courses: courses('我的课程'), isMine: true, termStartDate: '2026-09-01' };
+  const friend = { id: 'shared_friend', name: '朋友', semester: '2025-2026-2',
+    courses: courses('朋友课程'), isMine: false, termStartDate: '2026-03-02' };
+  await storage.setCourseArchives([mine, friend]);
+  await storage.activateCourseArchive(friend, friend.termStartDate, epoch);
+  assert.equal((await storage.getWidgetSchedule('daily-1')).archiveId, friend.id);
+  await storage.activateCourseArchive(mine, mine.termStartDate, epoch);
+  assert.equal((await storage.getWidgetSchedule('weekly-2')).archiveId, mine.id);
+  assert.equal((await storage.getWidgetSchedule('daily-1')).termStart, friend.termStartDate);
+
+  await storage.setWidgetScheduleArchive('weekly-2', friend.id);
+  await storage.setWidgetScheduleArchive('daily-1', mine.id);
+  await storage.setWidgetScheduleArchive('weekly-2', 'missing');
+  await storage.init({});
+  assert.equal((await storage.getWidgetSchedule('daily-1')).courses[0].courseName, '我的课程');
+  assert.equal((await storage.getWidgetSchedule('weekly-2')).courses[0].courseName, '朋友课程');
+  assert.equal(await storage.getCurrentArchiveId(), mine.id);
+
+  await storage.removeCourseArchive(friend.id, epoch);
+  assert.equal((await storage.getWidgetSchedule('weekly-2')).archiveId, mine.id);
+  assert.equal((await storage.getWidgetSchedule('weekly-2')).archives.some(item => item.id === friend.id), false);
+});

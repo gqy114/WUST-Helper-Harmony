@@ -8,6 +8,14 @@ import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { ScheduleSettings, DEFAULT_SETTINGS, CourseArchive, CourseData } from '../model/CourseModel';
 
+export interface WidgetSchedule {
+  archiveId: string;
+  archives: CourseArchive[];
+  courses: CourseData[];
+  termStart: string;
+  semester: string;
+}
+
 const STORE_NAME = 'wusthelper_prefs';
 
 export class AppStorage {
@@ -710,6 +718,49 @@ export class AppStorage {
     return this.enqueueCourseWrite(async () => {
       const archiveId = await this.getCurrentArchiveId();
       return this.readCurrentCoursesUnlocked(archiveId);
+    });
+  }
+
+  async getWidgetSchedule(formId: string = ''): Promise<WidgetSchedule> {
+    return this.enqueueCourseWrite(async () => {
+      const epoch = this.sessionEpoch;
+      const studentId = await this.getStudentId();
+      const key = await this.archiveKey('widgetScheduleArchive_' + formId);
+      const current = await this.getCurrentArchiveId();
+      const archives = await this.getCourseArchives();
+      const saved = formId ? await this.getStr(key, '') : '';
+      let archiveId = saved || current;
+      let selected = archives.find(item => item.id === archiveId);
+      if (archiveId !== 'mine' && !selected) {
+        archiveId = 'mine';
+        selected = archives.find(item => item.id === 'mine');
+      }
+      let courses: CourseData[] = [];
+      if (archiveId === current) {
+        courses = await this.readCurrentCoursesUnlocked(current);
+      } else {
+        const experiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
+        courses = this.mergePhysicalExperiments(selected?.courses ?? [], experiments);
+      }
+      const ownStart = archiveId === 'mine' ? await this.getAccountTermStartDate(studentId) : '';
+      const termStart = archiveId === 'mine' ? ownStart || selected?.termStartDate || ''
+        : selected?.termStartDate || '';
+      const semester = archiveId === 'mine' ? (selected?.semester || await this.getSemester())
+        : (selected?.semester || '');
+      if (epoch !== this.sessionEpoch) return { archiveId: '', archives: [], courses: [], termStart: '', semester: '' };
+      if (formId && saved !== archiveId) await this.putStr(key, archiveId);
+      return { archiveId, archives, courses, termStart, semester };
+    });
+  }
+
+  async setWidgetScheduleArchive(formId: string, archiveId: string): Promise<void> {
+    if (!formId || !archiveId) return;
+    const epoch = this.sessionEpoch;
+    return this.enqueueCourseWrite(async () => {
+      const key = await this.archiveKey('widgetScheduleArchive_' + formId);
+      const archives = await this.getCourseArchives();
+      if (epoch !== this.sessionEpoch) return;
+      if (archiveId === 'mine' || archives.some(item => item.id === archiveId)) await this.putStr(key, archiveId);
     });
   }
 

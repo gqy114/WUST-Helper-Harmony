@@ -110,7 +110,6 @@ struct CourseArchivePage {
     AppStorage.setOrCreate('currentCourses', courses);
     const version = AppStorage.get<number>('courseDataVersion') ?? 0;
     AppStorage.setOrCreate<number>('courseDataVersion', version + 1);
-    ScheduleWidgetRefresh.run(getContext(this) as common.UIAbilityContext, epoch);
   }
 
   private confirmDelete(archive: CourseArchive): void {
@@ -139,6 +138,7 @@ struct CourseArchivePage {
       if (epoch !== storage.getSessionEpoch() || !this.active) return;
       this.archives = next;
       AppStorage.setOrCreate('courseArchives', next);
+      ScheduleWidgetRefresh.run(getContext(this) as common.UIAbilityContext, epoch);
     } catch {
       promptAction.showToast({ message: '删除课表失败，请重试' });
     } finally {

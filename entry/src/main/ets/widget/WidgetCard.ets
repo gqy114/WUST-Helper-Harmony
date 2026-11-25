@@ -8,6 +8,9 @@ import { WeeklyWidgetGrid } from './WeeklyWidgetGrid';
 import { DailyWidgetCarousel } from './DailyWidgetCarousel';
 import { CountdownWidgetCarousel } from './CountdownWidgetCarousel';
 
+import { WidgetScheduleOption } from './WidgetData';
+
+const ARCHIVES_PER_PAGE = 3;
 const LINE_COUNT = 4;
 
 let widgetStorage: LocalStorage = new LocalStorage();
@@ -34,6 +37,73 @@ struct WidgetCard {
   @LocalStorageProp('weeklyCourses') weeklyCourses: string = '';
   @LocalStorageProp('dailyCourses') dailyCourses: string = '';
   @LocalStorageProp('dailyWeekday') dailyWeekday: string = '';
+
+  @LocalStorageProp('scheduleArchiveId') scheduleArchiveId: string = '';
+  @LocalStorageProp('scheduleOptions') scheduleOptions: string = '';
+  @State private choosingArchive: boolean = false;
+  @State private archivePage: number = 0;
+
+  private archiveOptions(): WidgetScheduleOption[] {
+    try {
+      return JSON.parse(this.scheduleOptions || '[]') as WidgetScheduleOption[];
+    } catch {
+      return [];
+    }
+  }
+
+  private pageOptions(): WidgetScheduleOption[] {
+    const start = this.archivePage * ARCHIVES_PER_PAGE;
+    return this.archiveOptions().slice(start, start + ARCHIVES_PER_PAGE);
+  }
+
+  private openArchivePicker(): void {
+    this.archivePage = 0;
+    this.choosingArchive = true;
+    postCardAction(this, { action: 'message', params: { action: 'archiveOptions' } });
+  }
+
+  private selectArchive(id: string): void {
+    this.choosingArchive = false;
+    postCardAction(this, { action: 'message', params: { action: 'selectArchive', archiveId: id } });
+  }
+
+  private openApp(): void {
+    postCardAction(this, { action: 'router', abilityName: 'EntryAbility', params: { message: 'open' } });
+  }
+
+  @Builder
+  private archivePicker() {
+    Column() {
+      Row({ space: 8 }) {
+        Text('选择课表').fontSize(13).fontWeight(FontWeight.Bold).fontColor(this.textColor).layoutWeight(1)
+        if (this.archiveOptions().length > ARCHIVES_PER_PAGE) {
+          Text('‹').fontSize(19).fontColor(this.archivePage > 0 ? this.textColor : this.subColor)
+            .width(24).textAlign(TextAlign.Center).accessibilityText('上一页').onClick(() => {
+              if (this.archivePage > 0) this.archivePage--;
+            })
+          Text('›').fontSize(19).fontColor(this.textColor).width(24).textAlign(TextAlign.Center)
+            .accessibilityText('下一页').onClick(() => {
+              if ((this.archivePage + 1) * ARCHIVES_PER_PAGE < this.archiveOptions().length) this.archivePage++;
+            })
+        }
+        Text('×').fontSize(19).fontColor(this.subColor).width(24).textAlign(TextAlign.Center)
+          .accessibilityText('关闭课表选项').onClick(() => { this.choosingArchive = false; })
+      }.width('100%').height(23)
+      ForEach(this.pageOptions(), (option: WidgetScheduleOption) => {
+        Row({ space: 4 }) {
+          Text(option.label).fontSize(12).fontColor(this.textColor).maxLines(1).layoutWeight(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          if (this.scheduleArchiveId === option.id) {
+            Text('✓').fontSize(12).fontColor(this.accent)
+          }
+        }.width('100%').height(25).padding({ left: 4, right: 6 })
+          .accessibilitySelected(this.scheduleArchiveId === option.id).onClick(() => this.selectArchive(option.id))
+      }, (option: WidgetScheduleOption) => option.id)
+      if (this.archiveOptions().length === 0) {
+        Text('正在读取课表档案…').fontSize(12).fontColor(this.subColor).margin({ top: 8 })
+      }
+    }.width('100%').height('100%').alignItems(HorizontalAlign.Start)
+  }
 
   private lineAt(index: number): string {
     if (index === 0) return this.line0;
@@ -201,7 +271,9 @@ struct WidgetCard {
       }
 
       Column() {
-        if (this.mode === 'quick') {
+        if ((this.mode === 'daily' || this.mode === 'weekly') && this.choosingArchive) {
+          this.archivePicker()
+        } else if (this.mode === 'quick') {
           this.quickContent()
         } else if (this.mode === 'countdown') {
           CountdownWidgetCarousel({
@@ -224,14 +296,22 @@ struct WidgetCard {
             }
           })
         } else if (this.mode === 'weekly') {
-          Text(this.title).fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.textColor).width('100%')
+          Row() {
+            Text(this.title).fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.textColor).layoutWeight(1)
+            Image($r('app.media.widget_archive_switch')).width(22).height(28)
+              .objectFit(ImageFit.Contain).fillColor(this.subColor)
+              .accessibilityText('切换课表档案').onClick(() => this.openArchivePicker())
+          }.width('100%')
           WeeklyWidgetGrid({ courses: this.weeklyCourses, campus: this.campus, subtitle: this.subtitle,
             textColor: this.textColor, subColor: this.subColor })
-            .layoutWeight(1)
+            .layoutWeight(1).onClick(() => this.openApp())
         } else if (this.mode === 'daily') {
           DailyWidgetCarousel({
             dateText: this.title,
             weekText: this.dailyWeekday,
+            showArchiveSwitch: true,
+            onArchiveSwitch: () => { this.openArchivePicker(); },
+            onOpen: () => { this.openApp(); },
             courses: this.dailyCourses,
             emptyText: this.subtitle,
             accent: this.accent,
@@ -259,13 +339,7 @@ struct WidgetCard {
     .borderRadius(16)
     .clip(true)
     .onClick(() => {
-      postCardAction(this, {
-        action: 'router',
-        abilityName: 'EntryAbility',
-        params: {
-          message: 'open'
-        }
-      });
+      if (this.mode !== 'daily' && this.mode !== 'weekly') this.openApp();
     })
   }
 }

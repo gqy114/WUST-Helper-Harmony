@@ -9,7 +9,8 @@ test('开学日期按账号隔离，切号后桌面卡片不沿用上一个账�
   assert.match(storage, /getAccountTermStartDate\(studentId: string\)/, '缺少账号开学日期读取');
   assert.match(storage, /setAccountTermStartDate\(studentId: string, value: string\)/, '缺少账号开学日期写入');
   const widget = await source('widget/WidgetData.ets');
-  assert.match(widget, /getAccountTermStartDate\(sid\)/, '组件没有读取当前账号开学日期');
+  assert.match(widget, /getWidgetSchedule\(formId\)/, '组件没有读取绑定档案');
+  assert.match(storage, /getAccountTermStartDate\(studentId\)/, '本人档案没有读取当前账号开学日期');
   assert.doesNotMatch(widget, /archiveId === 'mine' \? await storage\.getTermStartDate\(\)/, '组件仍回退全局开学日期');
   const page = await source('pages/course/CoursePage.ets');
   assert.match(page, /setAccountTermStartDate\(\(await s\.getStudentId\(\)\)\.trim\(\)/, '课程页没有写入账号开学日期');

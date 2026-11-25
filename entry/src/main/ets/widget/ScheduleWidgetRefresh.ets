@@ -19,7 +19,7 @@ export class ScheduleWidgetRefresh {
         const mode = await storage.getSettingString('widgetFormMode_' + info.formId, fallback);
         if (mode !== WIDGET_MODE_DAILY && mode !== WIDGET_MODE_WEEKLY) continue;
         try {
-          const snapshot = await WidgetData.build(storage, dark, mode);
+          const snapshot = await WidgetData.build(storage, dark, mode, info.formId);
           if (epoch !== storage.getSessionEpoch()) return;
           await formProvider.updateForm(info.formId, formBindingData.createFormBindingData(snapshot));
         } catch (error) {

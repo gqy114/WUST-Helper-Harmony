@@ -70,7 +70,7 @@ test('快捷功能数据包含电量，且 EntryAbility 支持直达页面', asy
 test('刷新桌面卡片时按每张卡自己的类型生成数据', async () => {
   const page = await src('entry/src/main/ets/pages/profile/WidgetSettingsPage.ets');
   assert.match(page, /widgetFormMode_\$\{infos\[i\]\.formId\}/, '刷新时没有读取卡片自己的模式');
-  assert.match(page, /WidgetData\.build\(storage, this\.systemDark\(\), mode\)/, '没有按卡片模式重新生成数据');
+  assert.match(page, /WidgetData\.build\(storage, this\.systemDark\(\), mode, infos\[i\]\.formId\)/, '没有按卡片模式重新生成数据');
 });
 
 test('App 在后台时点卡片快捷入口能跳到对应页面，失败立即重试', async () => {
