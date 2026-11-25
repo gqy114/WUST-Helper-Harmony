@@ -266,6 +266,8 @@ struct MainPage {
           this.communityCheckedAt.set(key, result.checkedAt);
           // 首次成功取数时，用服务端时间建立账号自己的已读基线。
           if (since <= 0) await storage.setSettingNumber(this.communitySeenKey(account, key), result.checkedAt);
+          // 等待落盘期间用户可能打开板块，必须再校验一次代次。
+          if ((this.communitySeenRevision.get(key) ?? 0) !== (revisionMap.get(key) ?? 0)) continue;
           this.setCommunityUnread(key, since > 0 ? (countMap.get(key) ?? 0) : 0);
         }
         if (this.communityMessageRevision === messageRevision) {
