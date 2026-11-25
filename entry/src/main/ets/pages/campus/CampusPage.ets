@@ -182,7 +182,11 @@ export struct CampusPage {
     this.collegeId = id;
     this.categoryUrl = '';
     this.categories = [];
-    if (!id) return;
+    if (!id) {
+      // 选回“全部来源”时立即按全部来源重新加载列表。
+      this.load(true);
+      return;
+    }
     const generation = ++this.categoryGeneration;
     this.categoriesLoading = true;
     try {
