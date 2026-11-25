@@ -74,9 +74,15 @@ struct ElectricityPage {
     const storage = AppStorage.getInstance();
     const account = (await storage.getStudentId()).trim();
     const loggedIn = await storage.getIsLogin();
-    if (loggedIn && account === this.roomAccount && storage.getSessionEpoch() === this.roomEpoch) return true;
-    this.balances = [];
-    this.savedRooms = [];
+    // 同一学号重新保存登录态会换 session epoch，但电表仍属于这个账号，不能清空。
+    if (loggedIn && account === this.roomAccount) {
+      this.roomEpoch = storage.getSessionEpoch();
+      return true;
+    }
+    if (loggedIn && account !== this.roomAccount) {
+      this.balances = [];
+      this.savedRooms = [];
+    }
     return false;
   }
 
