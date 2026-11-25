@@ -1,5 +1,5 @@
 import { router } from '@kit.ArkUI';
-import { CampusNewsApi, NewsArticle } from '../../net/CampusNewsApi';
+import { CampusNewsApi, NewsArticle, NewsCategory, NewsCollege } from '../../net/CampusNewsApi';
 
 const TAG = 'CampusPage';
 const PAGE_SIZE = 20;
@@ -59,7 +59,15 @@ export struct CampusPage {
   @State private searching: boolean = false;
   @State private searchText: string = '';
   @State private keyword: string = '';
+  @State private filterOpen: boolean = false;
+  @State private colleges: NewsCollege[] = [];
+  @State private categories: NewsCategory[] = [];
+  @State private collegeId: string = '';
+  @State private categoryUrl: string = '';
+  @State private collegesLoading: boolean = false;
+  @State private categoriesLoading: boolean = false;
   private requestGeneration: number = 0;
+  private categoryGeneration: number = 0;
   private readonly listScroller: Scroller = new Scroller();
   private readonly dashboardScroller: Scroller = new Scroller();
 
@@ -85,7 +93,7 @@ export struct CampusPage {
     try {
       const result = keyword
         ? await CampusNewsApi.search(keyword, this.page, PAGE_SIZE)
-        : await CampusNewsApi.articles(this.page, PAGE_SIZE);
+        : await CampusNewsApi.articles(this.page, PAGE_SIZE, this.collegeId, this.categoryUrl);
       if (generation !== this.requestGeneration) return;
       const items = result.items || [];
       this.articles = reset ? items : this.articles.concat(items);
@@ -156,6 +164,144 @@ export struct CampusPage {
     }
   }
 
+  private async toggleFilter(): Promise<void> {
+    this.filterOpen = !this.filterOpen;
+    if (!this.filterOpen || this.colleges.length > 0 || this.collegesLoading) return;
+    this.collegesLoading = true;
+    try {
+      this.colleges = await CampusNewsApi.colleges();
+    } catch (error) {
+      console.warn(TAG, 'load news colleges failed');
+    } finally {
+      this.collegesLoading = false;
+    }
+  }
+
+  private async selectCollege(id: string): Promise<void> {
+    if (this.collegeId === id) return;
+    this.collegeId = id;
+    this.categoryUrl = '';
+    this.categories = [];
+    if (!id) return;
+    const generation = ++this.categoryGeneration;
+    this.categoriesLoading = true;
+    try {
+      const categories = await CampusNewsApi.categories(id);
+      if (generation !== this.categoryGeneration) return;
+      this.categories = categories;
+    } catch (error) {
+      console.warn(TAG, 'load news categories failed');
+    } finally {
+      this.categoriesLoading = false;
+    }
+  }
+
+  private selectCategory(url: string): void {
+    this.categoryUrl = url;
+    this.filterOpen = false;
+    this.load(true);
+  }
+
+  private sourceLabel(): string {
+    if (!this.collegeId) return '全部来源';
+    const college = this.colleges.find((item: NewsCollege) => item.id === this.collegeId);
+    return college?.name || '全部来源';
+  }
+
+  private categoryLabel(): string {
+    if (!this.categoryUrl) return '全部栏目';
+    const category = this.categories.find((item: NewsCategory) => item.url === this.categoryUrl);
+    return category?.name || '全部栏目';
+  }
+
+  @Builder
+  private filterRow(label: string, selected: boolean, action: () => void) {
+    Row() {
+      Text(label).fontSize(15).fontColor(selected ? '#20C997' : '#333333')
+        .fontWeight(selected ? FontWeight.Medium : FontWeight.Normal)
+        .layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (selected) {
+        Text('✓').fontSize(16).fontColor('#20C997').margin({ left: 6 })
+      }
+    }
+    .width('100%').height(48).padding({ left: 16, right: 12 })
+    .backgroundColor(selected ? '#EAF8F3' : Color.Transparent)
+    .borderRadius(10)
+    .onClick(action)
+  }
+
+  @Builder
+  private filterPanel() {
+    Row({ space: 10 }) {
+      Column() {
+        Text('学校与学院').fontSize(12).fontColor('#999999').width('100%')
+          .padding({ left: 16, top: 14, bottom: 8 })
+        Scroll() {
+          Column() {
+            this.filterRow('全部来源', this.collegeId.length === 0, () => { this.selectCollege(''); })
+            ForEach(this.colleges, (college: NewsCollege) => {
+              this.filterRow(college.name, this.collegeId === college.id, () => { this.selectCollege(college.id); })
+            }, (college: NewsCollege) => college.id)
+            if (this.collegesLoading) {
+              Row() {
+                LoadingProgress().width(20).height(20).color('#20C997')
+                Text('来源加载中…').fontSize(12).fontColor('#999999').margin({ left: 8 })
+              }.width('100%').padding(16)
+            }
+          }.width('100%')
+        }.layoutWeight(1).scrollBar(BarState.Off)
+      }
+      .layoutWeight(1).height('100%').backgroundColor(Color.White).borderRadius(12).clip(true)
+
+      Column() {
+        Text('栏目').fontSize(12).fontColor('#999999').width('100%')
+          .padding({ left: 16, top: 14, bottom: 8 })
+        if (this.collegeId.length === 0) {
+          Text('先选择学校或学院').fontSize(14).fontColor('#999999').width('100%').padding(16)
+        } else {
+          Scroll() {
+            Column() {
+              this.filterRow('全部栏目', this.categoryUrl.length === 0, () => { this.selectCategory(''); })
+              ForEach(this.categories, (category: NewsCategory) => {
+                this.filterRow(category.name, this.categoryUrl === category.url, () => { this.selectCategory(category.url); })
+              }, (category: NewsCategory) => category.url)
+              if (this.categoriesLoading) {
+                Row() {
+                  LoadingProgress().width(20).height(20).color('#20C997')
+                  Text('栏目加载中…').fontSize(12).fontColor('#999999').margin({ left: 8 })
+                }.width('100%').padding(16)
+              }
+            }.width('100%')
+          }.layoutWeight(1).scrollBar(BarState.Off)
+        }
+      }
+      .layoutWeight(1).height('100%').backgroundColor(Color.White).borderRadius(12).clip(true)
+    }
+    .width('100%').height(360).padding({ left: 16, right: 16 })
+    .margin({ top: 76 })
+  }
+
+  @Builder
+  private activeFilterBar() {
+    if (this.collegeId.length > 0) {
+      Row({ space: 8 }) {
+        Text(this.sourceLabel()).fontSize(12).fontColor('#20C997').maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (this.categoryUrl.length > 0) {
+          Text('/ ' + this.categoryLabel()).fontSize(12).fontColor('#20C997').maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        Blank()
+        Text('清除').fontSize(12).fontColor('#888888').onClick(() => {
+          this.collegeId = '';
+          this.categoryUrl = '';
+          this.categories = [];
+          this.load(true);
+        })
+      }.width('100%').padding({ left: 16, right: 16, top: 8 })
+    }
+  }
+
   @Builder
   private newsHeader() {
     Row() {
@@ -178,6 +324,7 @@ export struct CampusPage {
         Blank()
       }
       this.toolbarButton($r('app.media.refresh'), '刷新校园资讯', () => { this.load(true); })
+    this.toolbarButton($r('app.media.filter'), '筛选校园资讯', () => { this.toggleFilter(); })
     this.toolbarButton($r('app.media.search'), '搜索校园资讯', () => { this.search(); })
       if (this.dashboard) {
         this.toolbarButton($r('app.media.campus_news_list'), '切换为列表', () => { this.dashboard = false; })
@@ -320,8 +467,10 @@ export struct CampusPage {
   }
 
   build() {
-    Column() {
-      this.newsHeader()
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column() {
+        this.newsHeader()
+        if (!this.searching) this.activeFilterBar()
       if (this.dashboard) {
         WaterFlow({ scroller: this.dashboardScroller, footer: () => { this.feedFooter(); } }) {
           if (this.dashboardColumnWidth > 0) {
@@ -355,5 +504,10 @@ export struct CampusPage {
       }
     }
     .width('100%').height('100%').backgroundColor('#F5F6F7')
+  if (this.filterOpen) {
+    this.filterPanel()
   }
+  }
+  .width('100%').height('100%')
+}
 }
