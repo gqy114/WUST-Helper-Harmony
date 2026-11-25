@@ -334,16 +334,20 @@ struct CourseArchivePage {
     return archive.isMine ? '#438969' : archive.relation === '情侣课表' ? '#A25068' : '#666666';
   }
 
+  private archiveTextColor(archive: CourseArchive): string {
+    return archive.isMine ? '#438969' : archive.relation === '情侣课表' ? '#F6D9DE' : '#C2C2C2';
+  }
+
   @Builder
   private archiveCard(archive: CourseArchive) {
     Stack({ alignContent: Alignment.End }) {
       Image(archive.isMine ? $r('app.media.archive_sun') :
         archive.relation === '情侣课表' ? $r('app.media.archive_heart') : $r('app.media.archive_pin'))
-        .width(66).height(66).fillColor(this.archiveColor(archive)).opacity(0.15).margin({ right: 24 })
+        .width(66).height(66).margin({ right: 24 }).hitTestBehavior(HitTestMode.None)
       Column() {
         Row({ space: 8 }) {
           Text(this.archiveTitle(archive)).fontSize(18).fontWeight(FontWeight.Bold)
-            .fontColor(this.archiveColor(archive)).layoutWeight(1).maxLines(2)
+            .fontColor(this.archiveTextColor(archive)).layoutWeight(1).maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           if (this.currentArchiveId === archive.id) {
             Text('当前课表').fontSize(12).fontColor(Color.White).backgroundColor(this.archiveColor(archive))
@@ -352,7 +356,7 @@ struct CourseArchivePage {
         }.width('100%')
         Text([archive.isMine ? '我的课表' : archive.relation || '共享课表', archive.semester,
           archive.isMine ? '' : archive.name].filter((value: string) => !!value).join(' · '))
-          .fontSize(13).fontColor(this.archiveColor(archive)).margin({ top: 8 }).maxLines(2)
+          .fontSize(13).fontColor(this.archiveTextColor(archive)).margin({ top: 8 }).maxLines(2)
         Row({ space: 10 }) {
           Button(this.currentArchiveId === archive.id ? '显示中' : '显示')
             .fontSize(14).fontColor(Color.White).backgroundColor(this.archiveColor(archive))
@@ -365,7 +369,7 @@ struct CourseArchivePage {
         }.margin({ top: 14 })
       }.width('100%').alignItems(HorizontalAlign.Start).padding(16)
     }.width('100%').borderRadius(12)
-      .backgroundColor(archive.isMine ? '#EAF7EE' : archive.relation === '情侣课表' ? '#FBEDEF' : '#F7F7F7')
+      .backgroundColor(archive.isMine ? '#F3FAF2' : archive.relation === '情侣课表' ? '#FFF3F5' : '#F7F7F7')
       .shadow({ radius: 3, color: '#19000000', offsetY: 1 }).margin({ bottom: 12 })
   }
 
@@ -419,7 +423,7 @@ struct CourseArchivePage {
               this.archiveCard(archive)
             }, (archive: CourseArchive) => archive.id + ':' + (archive.relation || '') + ':' + archive.semester)
           }.width('100%').padding(14)
-        }.layoutWeight(1).width('100%').backgroundColor('#F4F5F6')
+        }.layoutWeight(1).width('100%').align(Alignment.Top).backgroundColor('#F4F5F6')
       }.width('100%').height('100%')
       if (this.pendingArchive) {
         Stack() {
