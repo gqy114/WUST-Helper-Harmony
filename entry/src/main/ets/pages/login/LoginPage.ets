@@ -319,7 +319,7 @@ struct LoginPage {
               await s.setStudentId(sid);
               await s.setPassword(pwd);
               await StorageUtil.saveLoginInfo(tdata.token, sid, sid);
-              console.info(TAG, 'login token saved: ' + tdata.token);
+              console.info(TAG, 'login token saved');
             }
           }
         }
