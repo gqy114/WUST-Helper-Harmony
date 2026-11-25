@@ -4,7 +4,7 @@ import { WeeklyWidgetPages } from './WidgetData';
 @Component
 export struct WeeklyWidgetCarousel {
   @Prop @Watch('loadPages') pagesJson: string = '';
-  @Prop currentWeek: number = 1;
+  @Prop @Watch('onCurrentWeekChanged') currentWeek: number = 1;
   @Prop title: string = '';
   @Prop courses: string = '';
   @Prop campus: string = '黄家湖校区';
@@ -15,13 +15,28 @@ export struct WeeklyWidgetCarousel {
   @State private locked: boolean = false;
   @State private displayIndex: number = 0;
   private initialized: boolean = false;
+  private lastCurrentWeek: number = 1;
   private swiperController: SwiperController = new SwiperController();
   // 滑到非本周后 30 秒自动回到本周；每次滑动都会重新计时。
   private returnTimer: number = -1;
   private autoReturning: boolean = false;
 
   aboutToAppear(): void {
+    this.lastCurrentWeek = this.currentWeek;
     this.loadPages();
+  }
+
+  private onCurrentWeekChanged(): void {
+    const length = this.pages.weekGridIndexes.length;
+    if (length === 0) {
+      this.lastCurrentWeek = this.currentWeek;
+      return;
+    }
+    const oldIndex = Math.max(0, Math.min(this.lastCurrentWeek - 1, length - 1));
+    const nextIndex = this.currentPageIndex();
+    // 未锁定时，停留在旧“本周”则跟随到新本周；手动滑到别的周则保留。
+    if (!this.locked && this.displayIndex === oldIndex) this.displayIndex = nextIndex;
+    this.lastCurrentWeek = this.currentWeek;
   }
 
   aboutToDisappear(): void {
