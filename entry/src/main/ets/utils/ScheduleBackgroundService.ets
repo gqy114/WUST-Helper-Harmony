@@ -1,3 +1,5 @@
+import { image } from '@kit.ImageKit';
+import { CropRectangle } from './ScheduleBackgroundCrop';
 import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
 
@@ -51,6 +53,54 @@ export class ScheduleBackgroundService {
     }
 
     return `file://${targetPath}`;
+  }
+
+  static async decode(uri: string): Promise<image.PixelMap> {
+    const file = fileIo.openSync(ScheduleBackgroundService.toPath(uri), fileIo.OpenMode.READ_ONLY);
+    try {
+      const source = image.createImageSource(file.fd);
+      try {
+        const size = (await source.getImageInfo()).size;
+        const scale = Math.min(1, 2048 / Math.max(size.width, size.height));
+        return await source.createPixelMap({
+          editable: true,
+          desiredSize: {
+            width: Math.max(1, Math.round(size.width * scale)),
+            height: Math.max(1, Math.round(size.height * scale))
+          }
+        });
+      } finally {
+        await source.release();
+      }
+    } finally {
+      fileIo.closeSync(file);
+    }
+  }
+
+  static async saveCropped(context: common.UIAbilityContext, sourceUri: string,
+    crop: CropRectangle): Promise<string> {
+    const pixelMap = await ScheduleBackgroundService.decode(sourceUri);
+    try {
+      await pixelMap.crop({ x: crop.x, y: crop.y, size: { width: crop.width, height: crop.height } });
+      const path = `${ScheduleBackgroundService.getDirectory(context)}/schedule_crop_${Date.now()}.jpg`;
+      const packer = image.createImagePacker();
+      try {
+        const file = fileIo.openSync(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
+        try {
+          await packer.packToFile(pixelMap, file.fd, { format: 'image/jpeg', quality: 94 });
+        } finally {
+          fileIo.closeSync(file);
+        }
+        return `file://${path}`;
+      } catch (err) {
+        ScheduleBackgroundService.removeOwned(context, path);
+        throw ScheduleBackgroundService.asError(err);
+      } finally {
+        await packer.release();
+      }
+    } finally {
+      await pixelMap.release();
+    }
   }
 
   /** 只删除本服务创建的文件，避免误删系统相册内容。 */
