@@ -2,6 +2,35 @@ import { router } from '@kit.ArkUI';
 import { CampusNewsApi, NewsArticle } from '../../net/CampusNewsApi';
 
 const TAG = 'CampusPage';
+const PAGE_SIZE = 20;
+const FEED_INSET = 16;
+const FEED_GAP = 10;
+const CONTROL_COLOR = '#82888A';
+const SEARCH_INPUT_ID = 'campusNewsSearchInput';
+
+@Component
+struct CampusNewsCover {
+  @Prop src: string = '';
+  @Prop dashboard: boolean = false;
+  @State private ratio: number = 1;
+  @State private failed: boolean = false;
+
+  build() {
+    if (!this.failed) {
+      if (this.dashboard) {
+        Image(this.src)
+          .width('100%').aspectRatio(this.ratio).objectFit(ImageFit.Contain).autoResize(false)
+          .onComplete((event) => {
+            if (event && event.width > 0 && event.height > 0) this.ratio = event.width / event.height;
+          })
+          .onError(() => { this.failed = true; })
+      } else {
+        Image(this.src).width(86).height(74).objectFit(ImageFit.Contain).margin({ left: 12 })
+          .onError(() => { this.failed = true; })
+      }
+    }
+  }
+}
 
 interface CampusShortcut {
   title: string;
@@ -25,7 +54,14 @@ export struct CampusPage {
   @State private errorText: string = '';
   @State private page: number = 1;
   @State private hasMore: boolean = true;
+  @State private dashboard: boolean = false;
+  @State private dashboardColumnWidth: number = 0;
+  @State private searching: boolean = false;
+  @State private searchText: string = '';
+  @State private keyword: string = '';
   private requestGeneration: number = 0;
+  private readonly listScroller: Scroller = new Scroller();
+  private readonly dashboardScroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
     this.load(true);
@@ -34,8 +70,9 @@ export struct CampusPage {
   private async load(reset: boolean): Promise<void> {
     // 先判断是否正在加载：重复点“加载更多”不能推进代次，
     // 否则正在进行的请求回来时会被判定过期，loadingMore 永远复位不了。
-    if (!reset && (this.loadingMore || !this.hasMore)) return;
+    if (!reset && (this.loadingMore || !this.hasMore || this.loading)) return;
     const generation = ++this.requestGeneration;
+    const keyword = this.keyword;
     if (reset) {
       this.page = 1;
       this.hasMore = true;
@@ -46,12 +83,15 @@ export struct CampusPage {
       this.loadingMore = true;
     }
     try {
-      const result = await CampusNewsApi.articles(this.page, 20);
+      const result = keyword
+        ? await CampusNewsApi.search(keyword, this.page, PAGE_SIZE)
+        : await CampusNewsApi.articles(this.page, PAGE_SIZE);
       if (generation !== this.requestGeneration) return;
       const items = result.items || [];
       this.articles = reset ? items : this.articles.concat(items);
-      const total = result.total || 0;
-      this.hasMore = items.length > 0 && this.articles.length < total;
+      this.hasMore = typeof result.total === 'number'
+        ? items.length > 0 && this.articles.length < result.total
+        : items.length >= (result.page_size || PAGE_SIZE);
       this.page = this.page + 1;
       this.errorText = '';
     } catch (error) {
@@ -83,6 +123,125 @@ export struct CampusPage {
     router.pushUrl({ url: route });
   }
 
+  private coverOf(item: NewsArticle): string {
+    const cover = item.cover_url?.trim() || item.images?.find((url: string) => !!url?.trim())?.trim() || '';
+    return cover.startsWith('//') ? 'https:' + cover : cover;
+  }
+
+  private search(): void {
+    if (!this.searching) {
+      this.searching = true;
+      setTimeout(() => {
+        if (this.searching) this.getUIContext().getFocusController().requestFocus(SEARCH_INPUT_ID);
+      }, 150);
+      return;
+    }
+    const keyword = this.searchText.trim();
+    if (this.keyword !== keyword || this.errorText) {
+      this.keyword = keyword;
+      const scroller = this.dashboard ? this.dashboardScroller : this.listScroller;
+      scroller.scrollEdge(Edge.Top);
+      this.load(true);
+    }
+  }
+
+  private closeSearch(): void {
+    this.searching = false;
+    this.searchText = '';
+    if (this.keyword) {
+      this.keyword = '';
+      const scroller = this.dashboard ? this.dashboardScroller : this.listScroller;
+      scroller.scrollEdge(Edge.Top);
+      this.load(true);
+    }
+  }
+
+  @Builder
+  private newsHeader() {
+    Row() {
+      if (this.searching) {
+        Row() {
+          TextInput({ placeholder: '搜索校园资讯', text: this.searchText })
+            .id(SEARCH_INPUT_ID)
+            .layoutWeight(1).height(42).fontSize(14).backgroundColor(Color.Transparent)
+            .enterKeyType(EnterKeyType.Search)
+            .cancelButton({ style: CancelButtonStyle.INVISIBLE })
+            .onChange((value: string) => { this.searchText = value; })
+            .onSubmit(() => { this.search(); })
+          Button('×', { type: ButtonType.Normal }).width(40).height(42).padding(0)
+            .fontSize(24).fontColor(CONTROL_COLOR).backgroundColor(Color.Transparent)
+            .accessibilityText('关闭搜索').onClick(() => { this.closeSearch(); })
+        }.layoutWeight(1).height(42).backgroundColor(Color.White).borderRadius(12).clip(true)
+      } else {
+        Text('校园').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#555555')
+        Text('SCHOOL').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#777777').margin({ left: 12 })
+        Blank()
+      }
+      this.toolbarButton($r('app.media.search'), '搜索校园资讯', () => { this.search(); })
+      if (this.dashboard) {
+        this.toolbarButton($r('app.media.campus_news_list'), '切换为列表', () => { this.dashboard = false; })
+      } else {
+        this.toolbarButton($r('app.media.campus_news_dashboard'), '切换为瀑布流', () => { this.dashboard = true; })
+      }
+    }.width('100%').height(76).padding({ left: this.searching ? 16 : 24, right: 16 })
+  }
+
+  @Builder
+  private toolbarButton(icon: Resource, label: string, action: () => void) {
+    Button({ type: ButtonType.Normal }) {
+      Image(icon).width(24).height(24).fillColor(CONTROL_COLOR)
+    }.width(44).height(44).padding(0).backgroundColor(Color.Transparent)
+    .accessibilityText(label).onClick(action)
+  }
+
+  @Builder
+  private title(item: NewsArticle, lines: number) {
+    Text(item.title || '未命名资讯').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#333333')
+      .width('100%').maxLines(lines).textOverflow({ overflow: TextOverflow.Ellipsis })
+  }
+
+  @Builder
+  private articleMeta(item: NewsArticle) {
+    Row({ space: 8 }) {
+      Text(item.category_name || '校园资讯').fontSize(11).fontColor(CONTROL_COLOR)
+        .layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text((item.published_at || '').substring(0, 10)).fontSize(11).fontColor(CONTROL_COLOR).maxLines(1)
+    }.width('100%').margin({ top: 10 })
+  }
+
+  @Builder
+  private articleCard(item: NewsArticle, dashboard: boolean) {
+    Column() {
+      if (dashboard) {
+        if (this.coverOf(item)) {
+          CampusNewsCover({ src: this.coverOf(item), dashboard: true })
+        }
+        Column() {
+          this.title(item, 4)
+          if (item.summary?.trim()) {
+            Text(item.summary).fontSize(12).fontColor('#777777').width('100%').maxLines(3)
+              .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6 })
+          }
+          this.articleMeta(item)
+        }.width('100%').padding(14)
+      } else {
+        Column() {
+          Row() {
+            Column() {
+              this.title(item, 3)
+            }.layoutWeight(1)
+            if (this.coverOf(item)) {
+              CampusNewsCover({ src: this.coverOf(item) })
+            }
+          }.width('100%')
+          this.articleMeta(item)
+        }.width('100%').padding(14)
+      }
+    }.width(dashboard ? this.dashboardColumnWidth : '100%')
+    .backgroundColor(Color.White).borderRadius(12).clip(true)
+    .onClick(() => this.openArticle(item))
+  }
+
   @Builder
   private newsSection() {
     if (this.loading) {
@@ -94,17 +253,18 @@ export struct CampusPage {
       Row() {
         Image($r('app.media.empty')).width(30).height(30).objectFit(ImageFit.Contain)
         Column() {
-          Text('校园资讯暂不可用').fontSize(14).fontWeight(FontWeight.Medium).fontColor('#555555').width('100%')
+          Text(this.keyword ? '搜索失败' : '校园资讯暂不可用').fontSize(14).fontWeight(FontWeight.Medium).fontColor('#555555').width('100%')
           Text(this.errorText).fontSize(11).fontColor('#999999').margin({ top: 2 }).width('100%')
         }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 10 })
-        Text('旧版入口').fontSize(12).fontColor('#888888').margin({ right: 10 })
-          .onClick(() => {
-            // 新接口尚未部署时保留可用的旧入口。
-            router.pushUrl({
-              url: 'pages/common/WebPage',
-              params: { title: '校园资讯', url: 'https://news.wustlinghang.cn' }
-            });
-          })
+        if (!this.keyword) {
+          Text('旧版入口').fontSize(12).fontColor('#888888').margin({ right: 10 })
+            .onClick(() => {
+              router.pushUrl({
+                url: 'pages/common/WebPage',
+                params: { title: '校园资讯', url: 'https://news.wustlinghang.cn' }
+              });
+            })
+        }
         Text('重试').fontSize(13).fontColor('#20C997').onClick(() => this.load(true))
       }.width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 })
       .backgroundColor(Color.White).borderRadius(12).margin({ bottom: 16 })
@@ -113,32 +273,14 @@ export struct CampusPage {
       Row() {
         Image($r('app.media.empty')).width(30).height(30).objectFit(ImageFit.Contain)
         Column() {
-          Text('暂无校园资讯').fontSize(14).fontWeight(FontWeight.Medium).fontColor('#555555').width('100%')
-          Text('稍后再试，或点击右侧刷新').fontSize(11).fontColor('#999999').margin({ top: 2 }).width('100%')
+          Text(this.keyword ? '没有找到相关资讯' : '暂无校园资讯').fontSize(14).fontWeight(FontWeight.Medium).fontColor('#555555').width('100%')
+          Text(this.keyword ? '试试其他关键词' : '稍后再试，或点击右侧刷新').fontSize(11).fontColor('#999999').margin({ top: 2 }).width('100%')
         }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 10 })
         Text('刷新').fontSize(13).fontColor('#20C997').onClick(() => this.load(true))
       }.width('100%').padding({ left: 14, right: 14, top: 10, bottom: 10 })
       .backgroundColor(Color.White).borderRadius(12).margin({ bottom: 16 })
     } else {
       Column() {
-        ForEach(this.articles, (item: NewsArticle) => {
-          Column() {
-            Text(item.title || '未命名资讯').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#333333')
-              .width('100%').maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
-            if (item.summary) {
-              Text(item.summary).fontSize(12).fontColor('#888888').width('100%').maxLines(2)
-                .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6 })
-            }
-            Row() {
-              Text(item.category_name || '校园资讯').fontSize(11).fontColor('#20C997')
-              Blank()
-              Text((item.published_at || '').substring(0, 10)).fontSize(11).fontColor('#AAAAAA')
-            }.width('100%').margin({ top: 8 })
-          }
-          .width('100%').padding(14).backgroundColor(Color.White).borderRadius(12).margin({ bottom: 10 })
-          .onClick(() => this.openArticle(item))
-        }, (item: NewsArticle) => item.id || item.title || '')
-
         if (this.errorText.length > 0) {
           Text(this.errorText).fontSize(12).fontColor('#C0392B').margin({ top: 4, bottom: 8 })
         }
@@ -151,40 +293,65 @@ export struct CampusPage {
     }
   }
 
+  @Builder
+  private feedFooter() {
+    Column() {
+      this.newsSection()
+      if (!this.keyword) {
+      Text('校园服务').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#444444')
+        .width('100%').margin({ top: 14, bottom: 12 })
+
+      ForEach(CAMPUS_SHORTCUTS, (item: CampusShortcut) => {
+        Row() {
+          Image(item.icon).width(44).height(44).borderRadius(12)
+          Column() {
+            Text(item.title).fontSize(17).fontWeight(FontWeight.Medium).fontColor('#333333').width('100%')
+            Text(item.description).fontSize(12).fontColor('#999999').margin({ top: 4 }).width('100%')
+          }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 14 })
+          Text('›').fontSize(22).fontColor('#BBBBBB')
+        }
+        .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
+        .backgroundColor(Color.White).borderRadius(12).margin({ bottom: 10 })
+        .onClick(() => this.openShortcut(item.route))
+      }, (item: CampusShortcut) => item.route)
+      }
+    }.width('100%').padding({ top: 10, bottom: 20 })
+  }
+
   build() {
     Column() {
-      Row() {
-        Text('校园').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#555555')
-        Text('SCHOOL').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#777777').margin({ left: 12 })
-        Blank()
-        Image($r('app.media.refresh')).width(22).height(22)
-          .onClick(() => this.load(true))
-      }.width('100%').padding({ left: 28, right: 24, top: 32, bottom: 18 })
-
-      Scroll() {
-        Column() {
-          this.newsSection()
-
-          Text('校园服务').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#444444')
-            .width('100%').margin({ top: 14, bottom: 12 })
-
-          ForEach(CAMPUS_SHORTCUTS, (item: CampusShortcut) => {
-            Row() {
-              Image(item.icon).width(44).height(44).borderRadius(12)
-              Column() {
-                Text(item.title).fontSize(17).fontWeight(FontWeight.Medium).fontColor('#333333').width('100%')
-                Text(item.description).fontSize(12).fontColor('#999999').margin({ top: 4 }).width('100%')
-              }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 14 })
-              Text('›').fontSize(22).fontColor('#BBBBBB')
-            }
-            .width('100%').padding({ left: 14, right: 14, top: 12, bottom: 12 })
-            .backgroundColor(Color.White).borderRadius(12).margin({ bottom: 10 })
-            .onClick(() => this.openShortcut(item.route))
-          }, (item: CampusShortcut) => item.route)
+      this.newsHeader()
+      if (this.dashboard) {
+        WaterFlow({ scroller: this.dashboardScroller, footer: () => { this.feedFooter(); } }) {
+          if (this.dashboardColumnWidth > 0) {
+            ForEach(this.articles, (item: NewsArticle) => {
+              FlowItem() {
+                this.articleCard(item, true)
+              }.width(this.dashboardColumnWidth)
+            }, (item: NewsArticle) => item.id || item.url || item.title || '')
+          }
         }
-        .width('100%').padding({ left: 18, right: 18, bottom: 24 })
+        .columnsTemplate('1fr 1fr').columnsGap(FEED_GAP).rowsGap(FEED_GAP)
+        .layoutWeight(1).width('100%').scrollBar(BarState.Off)
+        .padding({ left: FEED_INSET, right: FEED_INSET })
+        .onAreaChange((_, area) => {
+          const available = Number.parseFloat(String(area.width)) - FEED_INSET * 2 - FEED_GAP;
+          if (available > 0) this.dashboardColumnWidth = available / 2;
+        })
+      } else {
+        List({ scroller: this.listScroller, space: FEED_GAP }) {
+          ForEach(this.articles, (item: NewsArticle) => {
+            ListItem() {
+              this.articleCard(item, false)
+            }
+          }, (item: NewsArticle) => item.id || item.url || item.title || '')
+          ListItem() {
+            this.feedFooter()
+          }
+        }
+        .layoutWeight(1).width('100%').scrollBar(BarState.Off)
+        .padding({ left: FEED_INSET, right: FEED_INSET })
       }
-      .layoutWeight(1).width('100%').scrollBar(BarState.Off)
     }
     .width('100%').height('100%').backgroundColor('#F5F6F7')
   }
