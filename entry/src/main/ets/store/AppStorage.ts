@@ -279,6 +279,15 @@ export class AppStorage {
   async getTermStartDate(): Promise<string> { return this.getStr('termStartDate'); }
   async setTermStartDate(v: string): Promise<void> { return this.putStr('termStartDate', v); }
 
+  // 开学日期按账号隔离，避免切号后桌面卡片沿用上一个账号的周次基准。
+  async getAccountTermStartDate(studentId: string): Promise<string> {
+    return this.getStr('termStartDate_' + encodeURIComponent(studentId), '');
+  }
+
+  async setAccountTermStartDate(studentId: string, value: string): Promise<void> {
+    return this.putStr('termStartDate_' + encodeURIComponent(studentId), value);
+  }
+
   // ── 登录与 Token ──
 
   async getIsLogin(): Promise<boolean> { return this.getBool('isLogin'); }

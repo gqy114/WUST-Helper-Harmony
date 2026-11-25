@@ -242,7 +242,10 @@ export class WidgetData {
 
   private static async currentWeek(storage: AppStorage): Promise<number> {
     const archiveId = await storage.getCurrentArchiveId();
-    const startText = archiveId === 'mine' ? await storage.getTermStartDate()
+    const sid = (await storage.getStudentId()).trim();
+    // 自己的课表只认当前账号的开学日期；账号还没有缓存时退回保存的周次，不能用别的账号的日期。
+    const startText = archiveId === 'mine'
+      ? await storage.getAccountTermStartDate(sid)
       : await storage.getSettingString('archiveTermStartDate', '');
     const start = WidgetData.parseDate(startText);
     if (start === null) {

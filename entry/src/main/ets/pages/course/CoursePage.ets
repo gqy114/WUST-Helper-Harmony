@@ -84,8 +84,12 @@ export struct CoursePage {
     await this.loadCurrentArchiveCourses();
     // 切换档案可能换了学期：优先使用档案自己的开学日期，但不改 App 当前学期。
     const storage = PreferenceStorage.getInstance();
-    const archiveStart = (await storage.getSettingString('archiveTermStartDate', '')).trim();
-    const cached = archiveStart.length > 0 ? archiveStart : await storage.getTermStartDate();
+    const archiveId = await storage.getCurrentArchiveId();
+    const sid = (await storage.getStudentId()).trim();
+    // 共享档案用档案日期；自己的课表用当前账号的日期，避免切号沿用上一个账号的开学日。
+    const cached = archiveId === 'mine'
+      ? await storage.getAccountTermStartDate(sid)
+      : (await storage.getSettingString('archiveTermStartDate', '')) || await storage.getTermStartDate();
     if (this.applyTermStartDateFromString(cached)) {
       await this.syncActualWeekWithClock(true);
       this.refreshKey = this.refreshKey + 1;
@@ -126,7 +130,10 @@ export struct CoursePage {
         const archiveStart = (await s.getSettingString('archiveTermStartDate', '')).trim();
         if (this.applyTermStartDateFromString(archiveStart)) return;
       }
-      const cached = await s.getTermStartDate();
+      const sid = (await s.getStudentId()).trim();
+      const cached = archiveId === 'mine'
+        ? await s.getAccountTermStartDate(sid)
+        : await s.getTermStartDate();
       if (this.applyTermStartDateFromString(cached)) {
         console.info(TAG, `resolveSemesterStart from cache: ${cached}`);
         return;
@@ -151,6 +158,7 @@ export struct CoursePage {
             const mm = month < 10 ? `0${month}` : `${month}`;
             const dd = day < 10 ? `0${day}` : `${day}`;
             await s.setTermStartDate(`${year}-${mm}-${dd}`);
+          await s.setAccountTermStartDate((await s.getStudentId()).trim(), `${year}-${mm}-${dd}`);
             console.info(TAG, `resolveSemesterStart from api: ${year}-${mm}-${dd}`);
           }
         }
