@@ -81,6 +81,7 @@ struct PasswordRecoveryPage {
       this.recoveryId = data.recovery_id || '';
       this.captchaImage = this.imageUri(data.image_base64 || '');
     } catch (error) {
+      if (seq !== this.captchaSeq) return;
       this.showError(error as Error, '图形验证码加载失败');
     } finally { this.busy = false; }
   }
@@ -120,6 +121,7 @@ struct PasswordRecoveryPage {
       this.smsCaptchaImage = this.imageUri(data.image_base64 || '');
       this.smsCaptchaCode = '';
     } catch (error) {
+      if (seq !== this.smsCaptchaSeq) return;
       this.handleRecoveryError(error as Error, '获取短信图形验证码失败');
     }
   }
