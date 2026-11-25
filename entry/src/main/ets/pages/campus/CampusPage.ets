@@ -177,7 +177,8 @@ export struct CampusPage {
         Text('SCHOOL').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#777777').margin({ left: 12 })
         Blank()
       }
-      this.toolbarButton($r('app.media.search'), '搜索校园资讯', () => { this.search(); })
+      this.toolbarButton($r('app.media.refresh'), '刷新校园资讯', () => { this.load(true); })
+    this.toolbarButton($r('app.media.search'), '搜索校园资讯', () => { this.search(); })
       if (this.dashboard) {
         this.toolbarButton($r('app.media.campus_news_list'), '切换为列表', () => { this.dashboard = false; })
       } else {
