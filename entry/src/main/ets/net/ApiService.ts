@@ -333,13 +333,27 @@ export class ApiService {
     password: string,
   ): Promise<boolean> {
     try {
-      const outcome = await UndergradDeviceLogin.login(studentId, password);
-      if (outcome.code === 200 && outcome.data?.token) {
-        const token = outcome.data.token;
-        await storage.setToken(token);
+      try {
+        const outcome = await UndergradDeviceLogin.login(studentId, password);
+        if (outcome.code === 200 && outcome.data?.token) {
+          const token = outcome.data.token;
+          await storage.setToken(token);
+          await storage.setTokenUpdateTime(Date.now());
+          await storage.setTokenLastUseTime(Date.now());
+          await storage.setMessage(outcome.message ?? '');
+          return true;
+        }
+        console.warn('ApiService', 'device refresh unavailable, fallback to legacy login');
+      } catch (error) {
+        console.warn('ApiService', 'device refresh failed, fallback to legacy login');
+      }
+      // 设备登录服务未部署/不可用时，旧 HTTP 登录仍可恢复教务会话。
+      const resp = await ApiService.loginUndergrad(studentId, password);
+      if (resp && resp.data?.token) {
+        await storage.setToken(resp.data.token);
         await storage.setTokenUpdateTime(Date.now());
         await storage.setTokenLastUseTime(Date.now());
-        await storage.setMessage(outcome.message ?? '');
+        await storage.setMessage(resp.msg ?? '');
         return true;
       }
       return false;
