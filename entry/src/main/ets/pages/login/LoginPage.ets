@@ -320,7 +320,7 @@ struct LoginPage {
               await s.setIsLogin(true);
               await s.setPassword(pwd);
               await StorageUtil.saveLoginInfo(tdata.token, sid, sid);
-              console.info(TAG, 'login token saved: ' + tdata.token);
+              console.info(TAG, 'login token saved');
             }
           }
         }
