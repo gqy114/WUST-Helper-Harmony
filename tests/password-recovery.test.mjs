@@ -94,7 +94,8 @@ async function pageHarness(options = {}) {
   await mod.evaluate();
   const page = new mod.namespace.Page();
   Object.assign(page, { studentId: '123', newPassword: 'new-password', confirmPassword: 'new-password',
-    recoveryId: 'session', busy: false, stage: 2, resultMessage: '', cooldown: 0, countdownTimer: -1 });
+    recoveryId: 'session', busy: false, stage: 2, resultMessage: '', cooldown: 0, countdownTimer: -1,
+    captchaSeq: 0, smsCaptchaSeq: 0 });
   return { page, events };
 }
 

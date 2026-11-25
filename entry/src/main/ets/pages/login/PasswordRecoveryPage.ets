@@ -20,6 +20,8 @@ struct PasswordRecoveryPage {
   @State private resultMessage: string = '';
   @State private resultNeedsLogin: boolean = false;
   private recoveryId: string = '';
+  private captchaSeq: number = 0;
+  private smsCaptchaSeq: number = 0;
   private cooldownUntil: number = 0;
   private countdownTimer: number = -1;
 
@@ -62,6 +64,7 @@ struct PasswordRecoveryPage {
 
   private async loadCaptcha(): Promise<void> {
     if (this.busy) return;
+    const seq = ++this.captchaSeq;
     this.busy = true;
     this.stage = 0;
     this.recoveryId = '';
@@ -74,6 +77,7 @@ struct PasswordRecoveryPage {
     this.stopCountdown();
     try {
       const data: RecoveryCaptcha = await PasswordRecoveryApi.captcha();
+      if (seq !== this.captchaSeq) return;
       this.recoveryId = data.recovery_id || '';
       this.captchaImage = this.imageUri(data.image_base64 || '');
     } catch (error) {
@@ -109,8 +113,10 @@ struct PasswordRecoveryPage {
 
   private async loadSmsCaptcha(): Promise<void> {
     if (!this.recoveryId) return;
+    const seq = ++this.smsCaptchaSeq;
     try {
       const data: RecoveryCaptcha = await PasswordRecoveryApi.smsCaptcha(this.recoveryId);
+      if (seq !== this.smsCaptchaSeq) return;
       this.smsCaptchaImage = this.imageUri(data.image_base64 || '');
       this.smsCaptchaCode = '';
     } catch (error) {
