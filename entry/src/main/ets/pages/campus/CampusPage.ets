@@ -202,6 +202,16 @@ export struct CampusPage {
     this.load(true);
   }
 
+  private sourceOptions(): NewsCollege[] {
+    const options: NewsCollege[] = [{ id: '', name: '全部来源' }];
+    return options.concat(this.colleges);
+  }
+
+  private categoryOptions(): NewsCategory[] {
+    const options: NewsCategory[] = [{ college_id: this.collegeId, name: '全部栏目', url: '' }];
+    return options.concat(this.categories);
+  }
+
   private sourceLabel(): string {
     if (!this.collegeId) return '全部来源';
     const college = this.colleges.find((item: NewsCollege) => item.id === this.collegeId);
@@ -238,10 +248,9 @@ export struct CampusPage {
           .padding({ left: 16, top: 14, bottom: 8 })
         Scroll() {
           Column() {
-            this.filterRow('全部来源', this.collegeId.length === 0, () => { this.selectCollege(''); })
-            ForEach(this.colleges, (college: NewsCollege) => {
+            ForEach(this.sourceOptions(), (college: NewsCollege) => {
               this.filterRow(college.name, this.collegeId === college.id, () => { this.selectCollege(college.id); })
-            }, (college: NewsCollege) => college.id)
+            }, (college: NewsCollege) => college.id + (this.collegeId === college.id ? '#on' : '#off'))
             if (this.collegesLoading) {
               Row() {
                 LoadingProgress().width(20).height(20).color('#20C997')
@@ -251,7 +260,7 @@ export struct CampusPage {
           }.width('100%')
         }.layoutWeight(1).scrollBar(BarState.Off)
       }
-      .layoutWeight(1).height('100%').backgroundColor(Color.White).borderRadius(12).clip(true)
+      .width('48%').height('100%').backgroundColor(Color.White).borderRadius(12).clip(true)
 
       Column() {
         Text('栏目').fontSize(12).fontColor('#999999').width('100%')
@@ -261,10 +270,9 @@ export struct CampusPage {
         } else {
           Scroll() {
             Column() {
-              this.filterRow('全部栏目', this.categoryUrl.length === 0, () => { this.selectCategory(''); })
-              ForEach(this.categories, (category: NewsCategory) => {
+              ForEach(this.categoryOptions(), (category: NewsCategory) => {
                 this.filterRow(category.name, this.categoryUrl === category.url, () => { this.selectCategory(category.url); })
-              }, (category: NewsCategory) => category.url)
+              }, (category: NewsCategory) => category.url + (this.categoryUrl === category.url ? '#on' : '#off'))
               if (this.categoriesLoading) {
                 Row() {
                   LoadingProgress().width(20).height(20).color('#20C997')
@@ -275,9 +283,11 @@ export struct CampusPage {
           }.layoutWeight(1).scrollBar(BarState.Off)
         }
       }
-      .layoutWeight(1).height('100%').backgroundColor(Color.White).borderRadius(12).clip(true)
+      .width('48%').height('100%').backgroundColor(Color.White).borderRadius(12).clip(true)
     }
     .width('100%').height(360).padding({ left: 16, right: 16 })
+    .justifyContent(FlexAlign.SpaceBetween)
+    .backgroundColor(Color.White).borderRadius(12).clip(true).zIndex(10)
     .margin({ top: 76 })
   }
 
