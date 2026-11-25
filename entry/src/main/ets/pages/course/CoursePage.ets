@@ -82,8 +82,11 @@ export struct CoursePage {
     await this.loadCurrentArchiveCourses();
     // 切换档案可能换了学期：优先使用档案自己的开学日期，但不改 App 当前学期。
     const storage = PreferenceStorage.getInstance();
-    const archiveStart = (await storage.getSettingString('archiveTermStartDate', '')).trim();
-    const cached = archiveStart.length > 0 ? archiveStart : await storage.getTermStartDate();
+    const archiveId = await storage.getCurrentArchiveId();
+    // 只有查看共享档案时才用档案日期；刷新“我的课表”必须用自己的开学日期。
+    const cached = archiveId === 'mine'
+      ? await storage.getTermStartDate()
+      : (await storage.getSettingString('archiveTermStartDate', '')) || await storage.getTermStartDate();
     if (this.applyTermStartDateFromString(cached)) {
       this.updateWeekDates();
       this.refreshKey = this.refreshKey + 1;
