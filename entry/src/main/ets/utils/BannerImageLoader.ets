@@ -67,6 +67,7 @@ export class BannerImageLoader {
     while (BannerImageLoader.totalBytes > MAX_CACHE_BYTES) {
       let victimKey = '';
       let victim: BannerCacheEntry | undefined = undefined;
+      // 优先淘汰不在展示中的图片；若全部都在展示中，也强制淘汰最旧一张，保证缓存上限。
       for (const pair of BannerImageLoader.cache) {
         if (!BannerImageLoader.isActive(pair[1].url)) {
           victimKey = pair[0];
@@ -74,7 +75,12 @@ export class BannerImageLoader {
           break;
         }
       }
-      if (!victim) break;
+      if (!victim) {
+        const oldest = BannerImageLoader.cache.entries().next();
+        if (oldest.done) break;
+        victimKey = oldest.value[0];
+        victim = oldest.value[1];
+      }
       BannerImageLoader.cache.delete(victimKey);
       BannerImageLoader.totalBytes = Math.max(0, BannerImageLoader.totalBytes - victim.bytes);
       victim.pixelMap.release();
@@ -96,7 +102,10 @@ export class BannerImageLoader {
         readTimeout: 20000,
         usingCache: true,
       });
-      // 某些图床会返回 404 但响应体是完整图片，只以字节能解码为准。
+      if (response.responseCode < 200 || response.responseCode >= 300) {
+        // 图床失败时可能返回 404 + 占位图，不能当作轮播内容展示。
+        return undefined;
+      }
       const body = response.result as ArrayBuffer;
       if (!body || body.byteLength === 0) return undefined;
       const source = image.createImageSource(body);
