@@ -240,6 +240,12 @@ struct MainPage {
         const sinceTeam = await storage.getSettingNumber(this.communitySeenKey(account, 'team'), 0);
         const sinceHelp = await storage.getSettingNumber(this.communitySeenKey(account, 'help'), 0);
         const sinceBook = await storage.getSettingNumber(this.communitySeenKey(account, 'book'), 0);
+        // 记录请求发出时的已读代次：请求期间打开板块，旧统计结果必须丢弃。
+        const revisionMap: Map<string, number> = new Map();
+        for (const key of ['wall', 'lost', 'team', 'help', 'book']) {
+          revisionMap.set(key, this.communitySeenRevision.get(key) ?? 0);
+        }
+        const messageRevision = this.communityMessageRevision;
         const result = await CampusWallApi.badges(sinceWall, sinceLost, sinceTeam, sinceHelp, sinceBook);
         if (!await this.isCommunityAccountCurrent(account, epoch)) return;
         const sinceMap: Map<string, number> = new Map();
@@ -255,13 +261,16 @@ struct MainPage {
         countMap.set('help', result.help);
         countMap.set('book', result.book);
         for (const key of ['wall', 'lost', 'team', 'help', 'book']) {
+          if ((this.communitySeenRevision.get(key) ?? 0) !== (revisionMap.get(key) ?? 0)) continue;
           const since = sinceMap.get(key) ?? 0;
           this.communityCheckedAt.set(key, result.checkedAt);
           // 首次成功取数时，用服务端时间建立账号自己的已读基线。
           if (since <= 0) await storage.setSettingNumber(this.communitySeenKey(account, key), result.checkedAt);
           this.setCommunityUnread(key, since > 0 ? (countMap.get(key) ?? 0) : 0);
         }
-        this.communityMessageUnread = result.messages;
+        if (this.communityMessageRevision === messageRevision) {
+          this.communityMessageUnread = result.messages;
+        }
         this.communityMessagesPolledAt = now;
         return;
       } catch (error) {

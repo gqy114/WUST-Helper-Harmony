@@ -114,3 +114,17 @@ test('聚合接口可用时一次请求拿齐六个未读数', async () => {
   assert.equal(counts.get('wall'), 12);
   assert.equal(counts.get('book'), 6);
 });
+
+test('聚合请求晚返回时，打开板块后的已读状态不被旧统计覆盖', async () => {
+  const { page, api, counts, prefs } = createPage();
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  api.badges = async () => pending;
+  const refresh = page.loadCommunityBadges();
+  await new Promise(resolve => setImmediate(resolve));
+  await page.markCommunitySeen({ title: '校园墙' });
+  release({ wall: 27, lost: 0, team: 0, help: 0, book: 0, messages: 0, checkedAt: 1795551115000 });
+  await refresh;
+  assert.equal(counts.get('wall'), 0);
+  assert.equal(prefs.get('communityBadgeSeenAt_A_wall'), 1795551115000);
+});
