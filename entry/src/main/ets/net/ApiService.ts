@@ -343,7 +343,7 @@ export class ApiService {
           await storage.setMessage(outcome.message ?? '');
           return true;
         }
-        if (outcome.code < 500) {
+        if (outcome.code === 400 || outcome.code === 401 || outcome.code === 403) {
           // 服务明确拒绝密码时不能再拿同一密码试旧接口，避免账号被锁。
           console.warn('ApiService', 'device refresh rejected credentials');
           return false;
