@@ -1,3 +1,4 @@
+import { http } from '@kit.NetworkKit';
 /**
  * UserApi — 用户信息网络接口
  *
@@ -162,6 +163,32 @@ export class UserApi {
     return data;
   }
 
+  static async uploadAppAvatar(jpeg: ArrayBuffer, token: string): Promise<AvatarUploadResponse> {
+    const client = http.createHttp();
+    try {
+      const result = await client.request('https://lyzyy.love:8081/api/v1/profile/avatar', {
+        method: http.RequestMethod.POST,
+        header: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          Platform: 'android',
+          'Content-Type': 'multipart/form-data'
+        },
+        multiFormDataList: [{ name: 'avatar', remoteFileName: 'avatar.jpg', contentType: 'image/jpeg', data: jpeg }],
+        expectDataType: http.HttpDataType.STRING,
+        connectTimeout: 15000,
+        readTimeout: 30000
+      });
+      if (result.responseCode === 401) return { code: 401 };
+      if (result.responseCode !== 200 || typeof result.result !== 'string') {
+        throw new Error('avatar HTTP ' + result.responseCode);
+      }
+      return JSON.parse(result.result) as AvatarUploadResponse;
+    } finally {
+      client.destroy();
+    }
+  }
+
   /** 修改昵称（/api/v1/profile/display-name）：成功后服务端与社区/其他设备才能同步。 */
   static async updateAppDisplayName(displayName: string, tokenSnapshot?: string): Promise<boolean> {
     const token = tokenSnapshot !== undefined
@@ -210,4 +237,12 @@ interface AppProfileResponse {
   message?: string;
   msg?: string;
   data?: AppProfile;
+}
+interface AvatarUploadData {
+  avatarUrl?: string;
+}
+
+export interface AvatarUploadResponse {
+  code?: number;
+  data?: AvatarUploadData;
 }

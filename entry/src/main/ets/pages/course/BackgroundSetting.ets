@@ -1,3 +1,4 @@
+import { PhotoCropImage } from '../../utils/PhotoCropImage';
 import { image } from '@kit.ImageKit';
 import { coverScale, cropOffset, sourceCrop } from '../../utils/ScheduleBackgroundCrop';
 import { router, promptAction } from '@kit.ArkUI';
@@ -26,7 +27,7 @@ struct BackgroundSetting {
   @State private offsetX: number = 0;
   @State private offsetY: number = 0;
   @State private busy: boolean = false;
-  private aspect: number = 0.58;
+  private aspect: number = 0;
   private imageWidth: number = 1;
   private imageHeight: number = 1;
   private stagingUri: string = '';
@@ -79,6 +80,10 @@ struct BackgroundSetting {
 
   private async pickBackgroundImage(): Promise<void> {
     if (this.busy) return;
+    if (this.aspect <= 0) {
+      promptAction.showToast({ message: '请返回课表，等待课表显示后再设置背景' });
+      return;
+    }
     this.busy = true;
     try {
       const options = new photoAccessHelper.PhotoSelectOptions();
@@ -88,7 +93,7 @@ struct BackgroundSetting {
       if (!result.photoUris?.length || !this.active) return;
       const context = getContext(this) as common.UIAbilityContext;
       this.stagingUri = ScheduleBackgroundService.persist(context, result.photoUris[0]);
-      const preview = await ScheduleBackgroundService.decode(this.stagingUri);
+      const preview = await PhotoCropImage.decode(this.stagingUri);
       if (!this.active) {
         await preview.release();
         return;
@@ -198,6 +203,8 @@ struct BackgroundSetting {
                 .scale({ x: this.previewZoom(), y: this.previewZoom() })
             }.width('100%').height('100%').translate({ x: this.offsetX, y: this.offsetY })
             .hitTestBehavior(HitTestMode.None)
+            Column().width('100%').height('100%').border({ width: 2, color: '#FFFFFF' })
+              .hitTestBehavior(HitTestMode.None)
           }.width(this.frameWidth).height(this.frameHeight()).clip(true).backgroundColor(Color.Black)
           .gesture(GestureGroup(GestureMode.Exclusive,
             PinchGesture({ fingers: 2 }).onActionStart(() => { this.gestureZoom = this.zoom; })
@@ -212,6 +219,8 @@ struct BackgroundSetting {
       }.width('100%').layoutWeight(1).backgroundColor('#202124')
       .onAreaChange((_, area) =>
         this.sizeCropFrame(Number.parseFloat(String(area.width)), Number.parseFloat(String(area.height))))
+      Text('白框内区域将按当前课表页的显示比例保存')
+        .fontSize(12).fontColor('#666666').padding({ top: 8 })
       Row({ space: 12 }) {
         Text('缩放').fontSize(14).fontColor('#555555')
         Slider({ value: this.zoom, min: 1, max: 5, step: 0.05 }).layoutWeight(1)

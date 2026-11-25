@@ -1,10 +1,9 @@
+import { PhotoCropImage } from '../../utils/PhotoCropImage';
+import { coverScale, cropOffset, sourceCrop } from '../../utils/ScheduleBackgroundCrop';
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
-import { common } from '@kit.AbilityKit';
-import { fileIo } from '@kit.CoreFileKit';
 import { image } from '@kit.ImageKit';
-import request from '@ohos.request';
 import { AppStorage as PreferenceStorage } from '../../store/AppStorage';
 import { UserApi } from '../../net/UserApi';
 import { StudentApiContent } from '../../model/UserInfoModel';
@@ -27,7 +26,8 @@ struct InfoSettingsPage {
   @State private classes: string = '未获取班级';
   @State private college: string = '未获取院系';
   @State private avatarUrl: string = '';
-  @State private cropImageUri: string = '';
+  private cropImageUri: string = '';
+  @State private cropPreview: image.PixelMap | undefined = undefined;
   @State private cropScale: number = 1;
   @State private cropRotation: number = 0;
   @State private cropOffsetX: number = 0;
@@ -37,8 +37,7 @@ struct InfoSettingsPage {
   // 原图尺寸：用于计算 Cover 填充后左右/上下可平移的范围。
   @State private cropImageWidth: number = 0;
   @State private cropImageHeight: number = 0;
-  // 裁剪框边长（px，vp 同值）：截图按这个尺寸输出方图，展示时再裁圆角。
-  private readonly CROP_SIZE: number = 300;
+  @State private cropSize: number = 280;
   private cropStartOffsetX: number = 0;
   private cropStartOffsetY: number = 0;
   private cropStartScale: number = 1;
@@ -140,43 +139,48 @@ struct InfoSettingsPage {
   }
 
   private async chooseAvatar(): Promise<void> {
+    if (this.cropperBusy) return;
+    this.cropperBusy = true;
     try {
       const options = new photoAccessHelper.PhotoSelectOptions();
       options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
       options.maxSelectNumber = 1;
-      const picker = new photoAccessHelper.PhotoViewPicker();
-      const result = await picker.select(options);
-      if (result.photoUris && result.photoUris.length > 0) {
-        this.cropImageUri = result.photoUris[0];
-        await this.loadCropImageSize(this.cropImageUri);
-        this.resetCrop();
-        this.showingCropper = true;
-      }
-    } catch (error) {
-      console.error('InfoSettingsPage', `choose avatar failed: ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '选择图片失败', duration: 1500 });
-    }
-  }
-
-  /** 读取原图宽高，Cover 填充后按真实溢出量限制拖动范围。 */
-  private async loadCropImageSize(uri: string): Promise<void> {
-    try {
-      const source = image.createImageSource(uri);
-      const info = await source.getImageInfo();
-      this.cropImageWidth = info.size.width;
-      this.cropImageHeight = info.size.height;
-      source.release();
-    } catch (error) {
-      console.warn('InfoSettingsPage', `read avatar size failed: ${JSON.stringify(error)}`);
-      this.cropImageWidth = 0;
-      this.cropImageHeight = 0;
+      const result = await new photoAccessHelper.PhotoViewPicker().select(options);
+      if (!result.photoUris?.length) return;
+      const uri = result.photoUris[0];
+      const preview = await PhotoCropImage.decode(uri);
+      const size = preview.getImageInfoSync().size;
+      this.cropImageUri = uri;
+      this.cropImageWidth = size.width;
+      this.cropImageHeight = size.height;
+      this.cropPreview = preview;
+      this.resetCrop();
+      this.showingCropper = true;
+    } catch {
+      promptAction.showToast({ message: '无法打开这张图片，请换一张试试' });
+    } finally {
+      this.cropperBusy = false;
     }
   }
 
   private cancelCrop(): void {
     this.showingCropper = false;
     this.cropImageUri = '';
+    const preview = this.cropPreview;
+    this.cropPreview = undefined;
+    if (preview) preview.release().catch(() => {});
     this.resetCrop();
+  }
+
+  onBackPress(): boolean {
+    if (this.cropperBusy) return true;
+    if (!this.showingCropper) return false;
+    this.cancelCrop();
+    return true;
+  }
+
+  aboutToDisappear(): void {
+    this.cancelCrop();
   }
 
   private resetCrop(): void {
@@ -186,118 +190,74 @@ struct InfoSettingsPage {
     this.cropOffsetY = 0;
   }
 
-  /** Cover 填充后图片的显示宽度（px）。没有读到原图尺寸时按正方形处理。 */
-  private cropBaseWidth(): number {
-    if (this.cropImageWidth <= 0 || this.cropImageHeight <= 0) return this.CROP_SIZE;
-    return this.CROP_SIZE * Math.max(1, this.cropImageWidth / this.cropImageHeight);
+  private rotatedWidth(): number {
+    return this.cropRotation % 180 === 0 ? this.cropImageWidth : this.cropImageHeight;
   }
 
-  private cropBaseHeight(): number {
-    if (this.cropImageWidth <= 0 || this.cropImageHeight <= 0) return this.CROP_SIZE;
-    return this.CROP_SIZE * Math.max(1, this.cropImageHeight / this.cropImageWidth);
+  private rotatedHeight(): number {
+    return this.cropRotation % 180 === 0 ? this.cropImageHeight : this.cropImageWidth;
   }
 
-  /** 放大后允许平移的范围：图片始终填满裁剪框，不露出底色。 */
-  private cropPanLimitX(): number {
-    return Math.max(0, (this.cropBaseWidth() * this.cropScale - this.CROP_SIZE) / 2);
+  private cover(): number {
+    return coverScale(this.rotatedWidth(), this.rotatedHeight(), this.cropSize, this.cropSize);
   }
 
-  private cropPanLimitY(): number {
-    return Math.max(0, (this.cropBaseHeight() * this.cropScale - this.CROP_SIZE) / 2);
+  private previewZoom(): number {
+    return this.cover() * this.cropScale /
+      Math.min(this.cropSize / this.cropImageWidth, this.cropSize / this.cropImageHeight);
   }
 
-  private clampCropOffset(): void {
-    const limitX = this.cropPanLimitX();
-    const limitY = this.cropPanLimitY();
-    this.cropOffsetX = Math.min(limitX, Math.max(-limitX, this.cropOffsetX));
-    this.cropOffsetY = Math.min(limitY, Math.max(-limitY, this.cropOffsetY));
-  }
-
-  private applyCropPan(offsetX: number, offsetY: number): void {
-    const limitX = this.cropPanLimitX();
-    const limitY = this.cropPanLimitY();
-    this.cropOffsetX = Math.min(limitX, Math.max(-limitX, this.cropStartOffsetX + offsetX));
-    this.cropOffsetY = Math.min(limitY, Math.max(-limitY, this.cropStartOffsetY + offsetY));
+  private moveCrop(x: number, y: number): void {
+    const scale = this.cover() * this.cropScale;
+    this.cropOffsetX = cropOffset(x, this.rotatedWidth() * scale, this.cropSize);
+    this.cropOffsetY = cropOffset(y, this.rotatedHeight() * scale, this.cropSize);
   }
 
   private applyCropScale(scale: number): void {
-    this.cropScale = Math.min(4, Math.max(1, scale));
-    this.clampCropOffset();
+    const previous = this.cropScale;
+    this.cropScale = Math.min(5, Math.max(1, scale));
+    this.moveCrop(this.cropOffsetX * this.cropScale / previous, this.cropOffsetY * this.cropScale / previous);
   }
 
   private rotateCrop(): void {
+    const previousX = this.cropOffsetX;
+    const previousY = this.cropOffsetY;
     this.cropRotation = (this.cropRotation + 90) % 360;
-    // 旋转后可视区域变化，重新把平移量收进允许范围。
-    this.clampCropOffset();
+    this.moveCrop(-previousY, previousX);
   }
 
   private async confirmCrop(): Promise<void> {
-    if (!this.cropImageUri || this.cropperBusy) return;
+    if (!this.cropImageUri || !this.cropPreview || this.cropperBusy) return;
     this.cropperBusy = true;
-    const context = getContext(this) as common.UIAbilityContext;
     const storage = PreferenceStorage.getInstance();
-    // 整次操作绑定发起时的账号与会话代次；切号后旧操作的结果一律丢弃。
-    // 先同步取代次再异步读学号：若两次读取之间切号，代次校验会失败并放弃操作。
     const sessionEpoch = storage.getSessionEpoch();
     const sessionSid = (await storage.getStudentId()).trim();
-    if (storage.getSessionEpoch() !== sessionEpoch) {
-      console.warn('InfoSettingsPage', 'account changed while reading session, avatar upload cancelled');
-      promptAction.showToast({ message: '账号已切换，本次头像修改已取消', duration: 2000 });
-      this.cropperBusy = false;
-      this.cropImageUri = '';
-      return;
-    }
-    const previousAvatar = (await storage.getAvatarUrl()).trim();
-    let localPath = '';
     try {
-      // 先把裁剪框当前画面（含缩放/平移/旋转）截图，再关闭编辑器。
-      const snapshot = await this.getUIContext().getComponentSnapshot().get('avatarCropBox');
-      this.showingCropper = false;
+      if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
+      const region = sourceCrop(this.rotatedWidth(), this.rotatedHeight(), this.cropSize, this.cropSize,
+        this.cropScale, this.cropOffsetX, this.cropOffsetY);
+      const pixels = await PhotoCropImage.crop(this.cropImageUri, region, this.cropRotation);
       const packer = image.createImagePacker();
-      const options: image.PackingOption = { format: 'image/jpeg', quality: 92 };
-      const buffer = await packer.packing(snapshot, options);
-      localPath = `${context.cacheDir}/avatar_${Date.now()}.jpg`;
-      const file = fileIo.openSync(localPath, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
       try {
-        fileIo.writeSync(file.fd, buffer);
+        const size = pixels.getImageInfoSync().size;
+        if (size.width > 640) await pixels.scale(640 / size.width, 640 / size.width);
+        const jpeg = await packer.packing(pixels, { format: 'image/jpeg', quality: 92 });
+        await this.uploadAvatar(jpeg, sessionSid, sessionEpoch);
       } finally {
-        fileIo.closeSync(file);
+        await packer.release().catch(() => {});
+        await pixels.release().catch(() => {});
       }
-      this.avatarUrl = `file://${localPath}`;
-    } catch (error) {
-      console.error('InfoSettingsPage', `crop avatar failed: ${JSON.stringify(error)}`);
-      promptAction.showToast({ message: '裁剪图片失败，请重试', duration: 1500 });
-      this.cropperBusy = false;
-      this.cropImageUri = '';
-      return;
-    }
-
-    try {
-      await this.uploadAvatar(context, localPath, sessionSid, sessionEpoch);
-    } catch (error) {
-      const accountChanged = await this.isAccountChanged(storage, sessionSid, sessionEpoch);
-      if (accountChanged) {
-        // 切号后不能把 A 的结果写到 B 的本机状态，也不能提示 B“同步成功/失败”。
-        console.warn('InfoSettingsPage', 'account changed during avatar upload, result discarded');
-        promptAction.showToast({ message: '账号已切换，本次头像修改已取消', duration: 2000 });
+      this.cancelCrop();
+      promptAction.showToast({ message: '头像已同步' });
+    } catch {
+      if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) {
+        this.cancelCrop();
+        promptAction.showToast({ message: '账号已切换，本次头像修改已取消' });
       } else {
-        // 上传或服务端确认失败时恢复原头像，避免把未同步的本地预览误当成已更新头像。
-        this.avatarUrl = previousAvatar;
-        await storage.setAvatarUrlForAccount(sessionEpoch, sessionSid, previousAvatar);
-        console.warn('InfoSettingsPage', `avatar upload failed: ${JSON.stringify(error)}`);
-        promptAction.showToast({ message: '头像同步失败，已恢复原头像', duration: 1800 });
-      }
-      try {
-        if (localPath && fileIo.accessSync(localPath)) {
-          fileIo.unlinkSync(localPath);
-        }
-      } catch (cleanupError) {
-        console.warn('InfoSettingsPage', `cleanup avatar failed: ${JSON.stringify(cleanupError)}`);
+        promptAction.showToast({ message: '头像未能同步，请检查登录或网络后重试' });
       }
     } finally {
       this.cropperBusy = false;
-      this.cropImageUri = '';
-      this.resetCrop();
     }
   }
 
@@ -307,56 +267,24 @@ struct InfoSettingsPage {
     return (await storage.getStudentId()).trim() !== sid;
   }
 
-  /**
-   * 上传裁剪后的本地文件。
-   *
-   * request.uploadFile 只给任务状态、拿不到响应体，所以“业务是否成功”用
-   * /auth/me 的头像地址确认：地址为空、仍是上传前服务端地址都视为失败。
-   */
-  private async uploadAvatar(context: common.UIAbilityContext, localPath: string,
-    sessionSid: string, sessionEpoch: number): Promise<void> {
+  private async uploadAvatar(jpeg: ArrayBuffer, sessionSid: string, sessionEpoch: number): Promise<void> {
     const storage = PreferenceStorage.getInstance();
+    if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
     let token = (await storage.getAppAuthAccessToken()).trim();
-    if (!token) {
-      // 换设备/重装后内存里的应用令牌可能为空，先用已保存的学校凭据恢复一次。
+    if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
+    let response = token ? await UserApi.uploadAppAvatar(jpeg, token) : undefined;
+    if (!response || response.code === 401) {
+      if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
       await ApiService.loginAppAuthFromSavedCredentials(storage);
+      if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
       token = (await storage.getAppAuthAccessToken()).trim();
+      if (!token) throw new Error('missing app auth token');
+      if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
+      response = await UserApi.uploadAppAvatar(jpeg, token);
     }
-    if (!token) throw new Error('missing app auth token');
+    const updatedAvatar = response.data?.avatarUrl?.trim() || '';
+    if (response.code !== 200 || !updatedAvatar) throw new Error('avatar rejected by server');
     if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
-    // 必须以服务端当前头像为基线。本地缓存可能是上一次失败留下的预览，不能用于判断本次上传成功。
-    // 基线读取失败时无法判断“头像是否真的换了”，宁可按失败处理，也不能拿旧头像冒充成功。
-    // 同时固定使用本次会话的令牌，避免切号后拿新账号资料做判断。
-    let profileBeforeUpload = await UserApi.getAppProfile(token);
-    if (!profileBeforeUpload) {
-      profileBeforeUpload = await UserApi.getAppProfile(token);
-    }
-    if (!profileBeforeUpload) throw new Error('cannot read avatar baseline');
-    const serverAvatarBeforeUpload = (profileBeforeUpload.avatarUrl || '').trim();
-    if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
-    const fileName = localPath.substring(localPath.lastIndexOf('/') + 1);
-    const task = await request.uploadFile(context, {
-      url: 'https://lyzyy.love:8081/api/v1/profile/avatar',
-      method: 'POST',
-      header: { 'Authorization': `Bearer ${token}` },
-      files: [{ filename: fileName, name: 'avatar', uri: `internal://cache/${fileName}`, type: 'image/jpeg' }],
-      data: [],
-    });
-    const states = await new Promise<Array<request.TaskState>>((resolve, reject) => {
-      task.on('complete', (items: Array<request.TaskState>) => resolve(items));
-      task.on('fail', (items: Array<request.TaskState>) => reject(new Error(JSON.stringify(items))));
-    });
-    if (states.length === 0 || states[0].responseCode !== 0) {
-      throw new Error(`avatar upload task failed: ${JSON.stringify(states)}`);
-    }
-    if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
-    const profile = await UserApi.getAppProfile(token);
-    const updatedAvatar = (profile?.avatarUrl || '').trim();
-    if (!updatedAvatar || updatedAvatar === serverAvatarBeforeUpload) {
-      throw new Error('avatar not updated on server');
-    }
-    if (await this.isAccountChanged(storage, sessionSid, sessionEpoch)) throw new Error('account changed');
-    // 最终写入也走会话队列：切号期间的旧写入会被丢弃，不会覆盖新账号。
     if (!(await storage.setAvatarUrlForAccount(sessionEpoch, sessionSid, updatedAvatar))) {
       throw new Error('account changed');
     }
@@ -364,66 +292,62 @@ struct InfoSettingsPage {
       throw new Error('account changed');
     }
     this.avatarUrl = updatedAvatar;
-    promptAction.showToast({ message: '头像已同步', duration: 1200 });
   }
 
   @Builder
   private cropperView(): void {
     Column() {
       Row() {
-        Text('×').fontSize(40).fontColor('#111111').width(64).textAlign(TextAlign.Center)
-          .onClick(() => this.cancelCrop());
-        Text('裁剪').fontSize(25).fontWeight(FontWeight.Bold).fontColor('#111111').layoutWeight(1);
-        Text('✓').fontSize(38).fontColor('#111111').width(64).textAlign(TextAlign.Center)
-          .onClick(() => this.confirmCrop());
-      }.width('100%').height(88).padding({ left: 10, right: 10 });
+        Button('取消').fontColor('#555555').backgroundColor(Color.Transparent)
+          .enabled(!this.cropperBusy).onClick(() => this.cancelCrop())
+        Text('裁剪头像').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#111111')
+          .layoutWeight(1).textAlign(TextAlign.Center)
+        Button(this.cropperBusy ? '上传中' : '上传头像').fontColor('#008E70').backgroundColor(Color.Transparent)
+          .enabled(!this.cropperBusy).onClick(() => this.confirmCrop())
+      }.width('100%').height(56)
       Stack({ alignContent: Alignment.Center }) {
-        Column().width('100%').height('100%').backgroundColor('#111111');
-        Stack() {
-          Image(this.cropImageUri)
-            .width(this.CROP_SIZE).height(this.CROP_SIZE)
-            .objectFit(ImageFit.Cover)
-            .scale({ x: this.cropScale, y: this.cropScale })
-            .translate({ x: this.cropOffsetX, y: this.cropOffsetY })
-            .rotate({ angle: this.cropRotation });
-        }
-        .id('avatarCropBox')
-        .width(this.CROP_SIZE)
-        .height(this.CROP_SIZE)
-        .clip(true)
-        .gesture(
-          GestureGroup(GestureMode.Parallel,
-            PanGesture({ fingers: 1, distance: 1 })
-              .onActionStart(() => {
-                this.cropStartOffsetX = this.cropOffsetX;
-                this.cropStartOffsetY = this.cropOffsetY;
-              })
+        if (this.cropPreview) {
+          Stack({ alignContent: Alignment.Center }) {
+            Stack() {
+              Image(this.cropPreview).width('100%').height('100%').objectFit(ImageFit.Contain).autoResize(false)
+                .scale({ x: this.previewZoom(), y: this.previewZoom() })
+                .rotate({ angle: this.cropRotation })
+            }.width('100%').height('100%').translate({ x: this.cropOffsetX, y: this.cropOffsetY })
+            .hitTestBehavior(HitTestMode.None)
+            Circle().width('100%').height('100%').fill(Color.Transparent)
+              .stroke('#FFFFFF').strokeWidth(1).hitTestBehavior(HitTestMode.None)
+          }.width(this.cropSize).height(this.cropSize).clip(true).backgroundColor(Color.Black)
+          .gesture(GestureGroup(GestureMode.Parallel,
+            PanGesture({ fingers: 1, distance: 3 })
+              .onActionStart(() => { this.cropStartOffsetX = this.cropOffsetX; this.cropStartOffsetY = this.cropOffsetY; })
               .onActionUpdate((event: GestureEvent) => {
-                this.applyCropPan(event.offsetX, event.offsetY);
+                if (!this.cropperBusy) this.moveCrop(this.cropStartOffsetX + event.offsetX, this.cropStartOffsetY + event.offsetY);
               }),
             PinchGesture({ fingers: 2 })
-              .onActionStart(() => {
-                this.cropStartScale = this.cropScale;
-              })
+              .onActionStart(() => { this.cropStartScale = this.cropScale; })
               .onActionUpdate((event: GestureEvent) => {
-                this.applyCropScale(this.cropStartScale * event.scale);
+                if (!this.cropperBusy) this.applyCropScale(this.cropStartScale * event.scale);
               })
-          )
-        );
-        // 圆形提示层只是参考线，不在 avatarCropBox 内，不会进截图。
-        Circle().width(this.CROP_SIZE).height(this.CROP_SIZE).fill('#00000000')
-          .stroke('#ffffffaa').strokeWidth(2);
-      }.width('100%').layoutWeight(1);
-      Row() {
-        Column() {
-          Text('↻').fontSize(42).fontColor('#999999');
-          Text('旋转').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333333');
-        }.width('50%').onClick(() => this.rotateCrop());
-        Column() {
-          Text('⟲').fontSize(42).fontColor('#999999');
-          Text('重置').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333333');
-        }.width('50%').onClick(() => this.resetCrop());
-      }.width('100%').height(130).justifyContent(FlexAlign.SpaceAround).backgroundColor(Color.White);
+          ))
+        }
+      }.width('100%').layoutWeight(1).backgroundColor('#202124')
+      .onAreaChange((_, area) => {
+        const size = Math.min(320, Number.parseFloat(String(area.width)) - 32, Number.parseFloat(String(area.height)) - 24);
+        if (size > 0 && size !== this.cropSize) {
+          const factor = size / this.cropSize;
+          this.cropSize = size;
+          this.moveCrop(this.cropOffsetX * factor, this.cropOffsetY * factor);
+        }
+      })
+      Row({ space: 6 }) {
+        Text('缩放').fontSize(13)
+        Slider({ value: this.cropScale, min: 1, max: 5, step: 0.05 }).layoutWeight(1)
+          .enabled(!this.cropperBusy).onChange((value: number) => this.applyCropScale(value))
+        Button('旋转').backgroundColor(Color.Transparent).fontColor('#008E70')
+          .enabled(!this.cropperBusy).onClick(() => this.rotateCrop())
+        Button('重置').backgroundColor(Color.Transparent).fontColor('#008E70')
+          .enabled(!this.cropperBusy).onClick(() => this.resetCrop())
+      }.width('100%').height(60).padding({ left: 16, right: 8 })
     }.width('100%').height('100%').backgroundColor(Color.White);
   }
 

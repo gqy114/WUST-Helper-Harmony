@@ -45,3 +45,12 @@ test('拖动、缩放与导出共用同一裁剪坐标，横图能够填满竖�
   assert.deepEqual({ ...sourceCrop(600, 1200, 200, 400, 1, 0, 0) },
     { x: 0, y: 0, width: 600, height: 1200 });
 });
+
+test('课表页测量显示比例，并以白框标出固定裁剪区域', async () => {
+  const course = await readFile(new URL('../entry/src/main/ets/pages/course/CoursePage.ets', import.meta.url), 'utf8');
+  assert.match(course, /params: \{ aspect: this\.backgroundAspect \}/);
+  assert.match(course, /this\.backgroundAspect = width \/ height/);
+  assert.match(pageSource, /return this\.frameWidth \/ this\.aspect/);
+  assert.match(pageSource, /border\(\{ width: 2, color: '#FFFFFF' \}\)/);
+  assert.match(pageSource, /if \(this\.aspect <= 0\)/);
+});

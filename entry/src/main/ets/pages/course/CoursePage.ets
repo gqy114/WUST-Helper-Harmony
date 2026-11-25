@@ -770,7 +770,7 @@ export struct CoursePage {
     .width('100%').height('100%').transition(TransitionEffect.OPACITY)
   }
 
-  private backgroundAspect: number = 0.58;
+  private backgroundAspect: number = 0;
 
   private onMoreMenuItemClick(index: number): void {
     if (index === 0) {
