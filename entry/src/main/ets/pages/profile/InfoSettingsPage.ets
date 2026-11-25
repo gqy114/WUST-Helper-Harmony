@@ -106,7 +106,7 @@ struct InfoSettingsPage {
         if (!token) return;
         const response = await UserApi.getUserInfo(token, savedStudentId);
         const data = response.data;
-        console.info('InfoSettingsPage', `apply profile fields=${Object.keys(data).length}`);
+        console.info('InfoSettingsPage', `apply profile fields=${data ? Object.keys(data).length : 0}`);
         if (data) {
         const realName = data.stuName || data.name || '';
         const studentId = data.stuNum || data.studentNumber || data.studentId || '';
