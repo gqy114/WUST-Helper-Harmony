@@ -231,7 +231,7 @@ struct PasswordRecoveryPage {
   }
 
   private async submitPassword(): Promise<void> {
-    if (this.busy) return;
+    if (this.busy || this.stage !== 2 || !this.recoveryId) return;
     if (!this.newPassword || this.newPassword !== this.newPassword.trim()) {
       promptAction.showToast({ message: '请输入新密码，首尾不能有空格', duration: 2000 });
       return;
@@ -252,7 +252,7 @@ struct PasswordRecoveryPage {
       await PasswordRecoveryApi.reset(this.recoveryId, this.newPassword);
       this.resultMessage = '密码修改成功，请使用新密码重新登录教务系统。';
     } catch (error) {
-      if (error instanceof PasswordRecoveryError && error.code > 0) {
+      if (error instanceof PasswordRecoveryError && error.code >= 400 && error.code < 500 && error.code !== 408) {
         if (error.code === 410) {
           // 会话过期：回到第一步并自动换新图，不能卡在设置密码页。
           this.handleRecoveryError(error as Error, '会话已过期');

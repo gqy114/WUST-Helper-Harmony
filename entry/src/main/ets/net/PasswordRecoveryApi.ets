@@ -81,6 +81,10 @@ export class PasswordRecoveryApi {
   static async reset(recoveryId: string, newPassword: string): Promise<void> {
     const response = await HttpRequest.postJsonPinned<RecoveryResponse<RecoveryReset>>(
       `${PasswordRecoveryApi.BASE}/reset`, { recovery_id: recoveryId, new_password: newPassword });
+    const status = response.response.responseCode;
+    if (status === 408 || status >= 500) {
+      throw new PasswordRecoveryError('密码修改结果无法确认', -1);
+    }
     if (!PasswordRecoveryApi.result<RecoveryReset>(response, '密码修改结果无法确认').success) {
       throw new PasswordRecoveryError('密码修改结果无法确认', -1);
     }

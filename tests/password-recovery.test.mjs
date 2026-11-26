@@ -71,23 +71,24 @@ async function pageHarness(options = {}) {
   const events = [];
   const mock = {
     studentId: options.savedStudentId ?? '123', graduate: options.graduate ?? false,
-    resetFails: options.resetFails ?? false, clearFails: options.clearFails ?? false,
+    resetFails: options.resetFails ?? false, resetCode: options.resetCode, clearFails: options.clearFails ?? false,
   };
   const storage = {
     getStudentId: async () => mock.studentId, getIsGraduate: async () => mock.graduate,
     setPassword: async value => { events.push(['password', value]); if (mock.clearFails) throw Error('store'); },
     setToken: async value => events.push(['token', value]), setIsLogin: async value => events.push(['isLogin', value])
   };
+  const PasswordRecoveryError = class extends Error { constructor(message, code) { super(message); this.code = code; } };
   const context = createContext({ Error, Date, Math, setInterval: () => 1, clearInterval: () => {},
     PreferencesStorage: { getInstance: () => storage }, promptAction: { showToast: e => events.push(['toast', e.message]) },
-  PasswordRecoveryError: class extends Error { constructor(message, code) { super(message); this.code = code; } },
+    PasswordRecoveryError,
     PasswordRecoveryApi: {
       captcha: async () => ({ recovery_id: 'session', image_base64: 'iVBORw0KGgo=' }),
       identity: async () => ({ account: '123', masked_phone: '138****0000' }),
     smsCaptcha: async () => ({ recovery_id: 'session', image_base64: 'iVBORw0KGgo=' }),
       sendCode: async () => 60,
       verify: async () => {},
-      reset: async (id, password) => { events.push(['reset', id, password]); if (mock.resetFails) throw Error('timeout'); }
+      reset: async (id, password) => { events.push(['reset', id, password]); if (mock.resetCode) throw new PasswordRecoveryError('timeout', mock.resetCode); if (mock.resetFails) throw Error('timeout'); }
     } });
   const mod = new SourceTextModule(transform(`export class Page {\n${methods}\n}`), { context });
   await mod.link(() => {});
@@ -165,4 +166,17 @@ test('invalid or mismatched new passwords never reach the network or clear saved
     assert.deepEqual(events.map(e => e[0]), ['toast']);
     assert.equal(page.stage, 2);
   }
+});
+
+test('HTTP 504 and JSON 504 cannot be re-submitted from the password page', async () => {
+  const { api, mock } = await apiHarness();
+  mock.response = { response: { responseCode: 504 }, data: { code: 400, message: 'gateway' } };
+  await assert.rejects(api.reset('session', 'pw'), { code: -1 });
+  const { page, events } = await pageHarness({ resetCode: 504 });
+  await page.submitPassword();
+  assert.equal(page.stage, 3);
+  assert.equal(page.recoveryId, '');
+  assert.match(page.resultMessage, /无法确认/);
+  await page.submitPassword();
+  assert.equal(events.filter(e => e[0] === 'reset').length, 1);
 });
