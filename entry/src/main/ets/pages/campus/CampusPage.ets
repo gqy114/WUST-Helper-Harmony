@@ -182,21 +182,18 @@ export struct CampusPage {
     this.collegeId = id;
     this.categoryUrl = '';
     this.categories = [];
-    if (!id) {
-      // 选回“全部来源”时立即按全部来源重新加载列表。
-      this.load(true);
-      return;
-    }
     const generation = ++this.categoryGeneration;
-    this.categoriesLoading = true;
+    this.categoriesLoading = !!id;
+    this.load(true);
+    if (!id) return;
     try {
       const categories = await CampusNewsApi.categories(id);
       if (generation !== this.categoryGeneration) return;
       this.categories = categories;
     } catch (error) {
-      console.warn(TAG, 'load news categories failed');
+      if (generation === this.categoryGeneration) console.warn(TAG, 'load news categories failed');
     } finally {
-      this.categoriesLoading = false;
+      if (generation === this.categoryGeneration) this.categoriesLoading = false;
     }
   }
 
@@ -307,10 +304,7 @@ export struct CampusPage {
         }
         Blank()
         Text('清除').fontSize(12).fontColor('#888888').onClick(() => {
-          this.collegeId = '';
-          this.categoryUrl = '';
-          this.categories = [];
-          this.load(true);
+          this.selectCollege('');
         })
       }.width('100%').padding({ left: 16, right: 16, top: 8 })
     }
