@@ -226,7 +226,7 @@ test('删除当前共享档案前先恢复自己的课程，且保留同账号�
   const epoch = storage.getSessionEpoch();
   const mine = { id: 'mine', name: '我的课表', semester: '2026-2027-1', courses: courses('我的课程'), isMine: true };
   const shared = { id: 'shared_example', name: '同学', semester: '2025-2026-2',
-    courses: courses('共享课程'), isMine: false, relation: '同学课表' };
+    courses: courses('共享课程'), isMine: false, relation: '同学课表', termStartDate: '2026-03-02' };
   const friend = { ...shared, id: 'archive_friend', relation: '朋友课表' };
   await storage.setCourseArchives([mine, shared, friend]);
   assert.equal(await storage.activateCourseArchive(shared, epoch), true);

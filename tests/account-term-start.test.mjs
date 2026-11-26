@@ -19,5 +19,5 @@ test('开学日期按账号隔离，切号后桌面卡片不沿用上一个账�
 test('刷新我的课表时不再读取共享档案的开学日期', async () => {
   const page = await source('pages/course/CoursePage.ets');
   assert.match(page, /archiveId === 'mine'[\s\S]{0,80}getAccountTermStartDate/, '我的课表没有优先使用账号日期');
-  assert.match(page, /archiveId === 'mine'[\s\S]{0,160}archiveTermStartDate/, '共享档案仍会走全局日期回退');
+  assert.match(page, /archiveId === 'mine'[\s\S]{0,160}getSharedArchiveTermStartDate/, '共享档案仍会走全局日期回退');
 });
