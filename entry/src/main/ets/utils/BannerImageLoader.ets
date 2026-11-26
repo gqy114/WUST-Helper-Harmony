@@ -36,6 +36,13 @@ export class BannerImageLoader {
     BannerImageLoader.evictIfNeeded();
   }
 
+  static owns(pixelMap: image.PixelMap): boolean {
+    for (const entry of BannerImageLoader.cache.values()) {
+      if (entry.pixelMap === pixelMap) return true;
+    }
+    return false;
+  }
+
   static clearFailures(): void {
     BannerImageLoader.failedAt.clear();
   }

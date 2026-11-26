@@ -384,7 +384,8 @@ struct MainPage {
   }
 
   private bannerPixel(banner: HomeBanner): image.PixelMap | undefined {
-    return this.bannerPixels.get(this.bannerKey(banner));
+    const pixel = this.bannerPixels.get(this.bannerKey(banner));
+    return pixel && BannerImageLoader.owns(pixel) ? pixel : undefined;
   }
 
   /** 优先用自行解码的图片，没有时退回网络 URL（由 onError 兜底）。 */
@@ -422,6 +423,15 @@ struct MainPage {
   private syncActiveBanner(): void {
     const url = this.activeBannerUrl();
     BannerImageLoader.setActive(url ? [url] : []);
+    this.pruneBannerPixels();
+  }
+
+  private pruneBannerPixels(): void {
+    const next = new Map<string, image.PixelMap>();
+    this.bannerPixels.forEach((pixel, key) => {
+      if (BannerImageLoader.owns(pixel)) next.set(key, pixel);
+    });
+    if (next.size !== this.bannerPixels.size) this.bannerPixels = next;
   }
 
   private async loadBannerPixels(): Promise<void> {
@@ -435,9 +445,10 @@ struct MainPage {
       for (let i = 0; i < banners.length; i++) {
         const banner = banners[i];
         const key = this.bannerKey(banner);
-        if (this.bannerPixels.has(key)) continue;
+        if (this.bannerPixel(banner)) continue;
         const pixel = await BannerImageLoader.load(banner.imageUrl, width, height);
-        if (!pixel) continue;
+        this.pruneBannerPixels();
+        if (!pixel || !BannerImageLoader.owns(pixel)) continue;
         const next = new Map<string, image.PixelMap>(this.bannerPixels);
         next.set(key, pixel);
         this.bannerPixels = next;
@@ -751,6 +762,7 @@ struct MainPage {
         .onChange((index: number) => {
           this.bannerIndex = index;
           this.syncActiveBanner();
+          this.loadBannerPixels();
         })
         .autoPlay(this.visibleBanners().length > 1)
         .interval(4500)
