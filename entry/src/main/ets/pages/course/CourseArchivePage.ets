@@ -1,8 +1,14 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { scanBarcode, scanCore } from '@kit.ScanKit';
 import common from '@ohos.app.ability.common';
+import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
+import { DynamicScheduleApi, readScheduleQrToken } from '../../net/DynamicScheduleApi';
 import { CourseArchive, CourseData, getDefaultArchive } from '../../model/CourseModel';
 import { AppStorage as PreferencesStorage } from '../../store/AppStorage';
+
+interface CourseArchiveParams {
+  scanOnOpen?: boolean;
+}
 
 @Entry
 @Component
@@ -10,38 +16,63 @@ struct CourseArchivePage {
   @State private archives: CourseArchive[] = [];
   @State private currentArchiveId: string = 'mine';
 
+  @State private importing: boolean = false;
+  private active: boolean = false;
+  private scanOpened: boolean = false;
+  // 连点两个档案时只允许第一个切换生效，避免把共享课表当成“我的课表”存回去。
+  private switching: boolean = false;
+  // 每次手动切换档案递增；导入过程中切过档案，旧导入结果必须丢弃。
+  private archiveEpoch: number = 0;
+
   async aboutToAppear(): Promise<void> {
+    this.active = true;
     const storage = PreferencesStorage.getInstance();
     const saved = await storage.getCourseArchives();
     this.archives = saved && saved.length > 0 ? saved : [getDefaultArchive()];
-    await storage.setCourseArchives(this.archives);
-    AppStorage.setOrCreate<CourseArchive[]>('courseArchives', this.archives);
-    const currentId = await storage.getCurrentArchiveId();
-    this.currentArchiveId = currentId || 'mine';
-    const current = this.findArchive(this.currentArchiveId);
-    if (current) {
-      await storage.setCurrentArchiveCourses(this.currentArchiveId, current.courses);
-      AppStorage.setOrCreate('currentCourses', current.courses);
+    this.currentArchiveId = await storage.getCurrentArchiveId();
+  }
+
+  onPageShow(): void {
+    const params = router.getParams() as CourseArchiveParams | undefined;
+    if (params?.scanOnOpen && !this.scanOpened) {
+      this.scanOpened = true;
+      this.addArchiveByScan();
     }
   }
 
-  private findArchive(id: string): CourseArchive | undefined {
-    for (let i = 0; i < this.archives.length; i++) {
-      if (this.archives[i].id === id) {
-        return this.archives[i];
-      }
-    }
-    return undefined;
+  aboutToDisappear(): void {
+    this.active = false;
   }
 
   private async switchArchive(archive: CourseArchive): Promise<void> {
+    if (this.switching) return;
+    this.switching = true;
+    this.archiveEpoch++;
+    const storage = PreferencesStorage.getInstance();
+    try {
+    if (this.currentArchiveId === 'mine') {
+      const myCourses = await storage.getCurrentCourses();
+      const semester = await storage.getSemester();
+      const mine: CourseArchive = {
+        id: 'mine', name: '我的课表', semester, termStartDate: await storage.getTermStartDate(),
+        courses: myCourses, isMine: true
+      };
+      this.archives = this.archives.map((item: CourseArchive) => item.id === 'mine' ? mine : item);
+      await storage.setCourseArchives(this.archives);
+    }
+
+    await storage.setCurrentArchiveId(archive.id);
+    await storage.setCurrentArchiveCourses(archive.id, archive.courses);
     this.currentArchiveId = archive.id;
-    await PreferencesStorage.getInstance().setCurrentArchiveId(archive.id);
-    await PreferencesStorage.getInstance().setCurrentArchiveCourses(archive.id, archive.courses);
     AppStorage.setOrCreate('currentArchiveId', archive.id);
     AppStorage.setOrCreate('currentCourses', archive.courses);
+    const version = AppStorage.get<number>('courseDataVersion') ?? 0;
+    AppStorage.setOrCreate<number>('courseDataVersion', version + 1);
     promptAction.showToast({ message: `已切换到${archive.name}`, duration: 1500 });
     setTimeout(() => router.back(), 800);
+    } finally {
+      this.switching = false;
+    }
   }
 
   /** 解析分享页生成的紧凑课表（WUSTC1|学期|名称|课程…），保留物理实验信息。 */
@@ -91,7 +122,7 @@ struct CourseArchivePage {
     for (let round = 0; round < 12; round++) {
       const content = await this.scanOnce(context);
       if (!content.startsWith('WUSTC2|')) {
-        return content;
+        return total === 0 ? content.trim() : '';
       }
       const match = /^WUSTC2\|([0-9a-z]+)\|(\d+)\/(\d+)\|([\s\S]*)$/.exec(content);
       if (!match) return '';
@@ -100,7 +131,7 @@ struct CourseArchivePage {
       const count = Number(match[3]);
       if (count < 1 || count > 9 || index < 1 || index > count) return '';
       // 不同课表的二维码不能混扫，否则会拼出一份混合课表。
-      if (shareId && scannedId !== shareId) {
+      if (shareId && (scannedId !== shareId || count !== total)) {
         promptAction.showToast({ message: '这些二维码不属于同一份课表，请重新扫码', duration: 2200 });
         return '';
       }
@@ -124,41 +155,88 @@ struct CourseArchivePage {
   }
 
   private async addArchiveByScan(): Promise<void> {
+    if (this.importing) return;
+    this.importing = true;
+    const storage = PreferencesStorage.getInstance();
+    const accountEpoch = storage.getSessionEpoch();
+    // 导入期间用户可能切换到别的档案；记录代次，写回前校验。
+    const importEpoch = this.archiveEpoch;
     try {
       const context = getContext(this) as common.UIAbilityContext;
-      const content = await this.collectQrContent(context);
-      if (!content) {
-        promptAction.showToast({ message: '二维码不完整，请重新扫码', duration: 1800 });
+      const permission = await abilityAccessCtrl.createAtManager().requestPermissionsFromUser(context,
+        ['ohos.permission.CAMERA']);
+      if (permission.authResults[0] !== 0) {
+        promptAction.showToast({ message: '需要相机权限才能扫码' });
         return;
       }
+
+      let content: string;
+      try {
+        content = await this.collectQrContent(context);
+      } catch {
+        promptAction.showToast({ message: '扫码已取消或无法读取二维码' });
+        return;
+      }
+      if (!content) {
+        promptAction.showToast({ message: '二维码不完整，请重新扫码' });
+        return;
+      }
+
       let archive: CourseArchive | null = null;
-      if (content.startsWith('WUSTC1|')) {
-        archive = CourseArchivePage.parseCompact(content);
-      } else {
-        const parsed = JSON.parse(content) as CourseArchive;
-        if (!parsed.name || !parsed.semester || !Array.isArray(parsed.courses) || parsed.courses.length === 0) {
-          promptAction.showToast({ message: '二维码格式不正确', duration: 1500 });
+      if (content.toLowerCase().startsWith('wusthelper://')) {
+        const token = readScheduleQrToken(content);
+        if (!token) {
+          promptAction.showToast({ message: '课表二维码无效，请让分享人重新生成' });
           return;
         }
-        archive = {
-          id: `archive_${Date.now()}`,
-          name: parsed.name,
-          semester: parsed.semester,
-          courses: parsed.courses,
-          isMine: false
-        };
+        archive = await DynamicScheduleApi.redeemInvite(token);
+      } else if (content.startsWith('WUSTC1|')) {
+        archive = CourseArchivePage.parseCompact(content);
+      } else if (content.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(content) as CourseArchive;
+          if (parsed?.name && parsed.semester && Array.isArray(parsed.courses) && parsed.courses.length > 0) {
+            archive = {
+              id: 'archive_' + Date.now(),
+              name: parsed.name,
+              semester: parsed.semester,
+              courses: parsed.courses,
+              isMine: false
+            };
+          }
+        } catch {
+          archive = null;
+        }
       }
       if (!archive) {
-        promptAction.showToast({ message: '二维码格式不正确', duration: 1500 });
+        promptAction.showToast({ message: '这不是有效的课表二维码' });
         return;
       }
-      this.archives = [...this.archives, archive];
-      await PreferencesStorage.getInstance().setCourseArchives(this.archives);
-      AppStorage.setOrCreate<CourseArchive[]>('courseArchives', this.archives);
-      promptAction.showToast({ message: `已添加${archive.name}`, duration: 1500 });
-    } catch (err) {
-      console.error('CourseArchivePage', `扫码或解析失败: ${JSON.stringify(err)}`);
-      promptAction.showToast({ message: '扫码已取消或二维码格式错误', duration: 1500 });
+      if (!archive.termStartDate) archive.termStartDate = PreferencesStorage.archiveTermStartForSemester(archive.semester);
+      if (!this.active || accountEpoch !== storage.getSessionEpoch()) return;
+      if (importEpoch !== this.archiveEpoch) {
+        promptAction.showToast({ message: '档案已切换，请重新扫码导入', duration: 1800 });
+        return;
+      }
+      const archives = await storage.getCourseArchives();
+      if (!this.active || accountEpoch !== storage.getSessionEpoch()) return;
+      if (importEpoch !== this.archiveEpoch) {
+        promptAction.showToast({ message: '档案已切换，请重新扫码导入', duration: 1800 });
+        return;
+      }
+      const next = archives.filter((item: CourseArchive) => item.id !== archive?.id);
+      if (next.length === 0) next.push(getDefaultArchive());
+      next.push(archive);
+      await storage.setCourseArchives(next, accountEpoch);
+      if (!this.active || accountEpoch !== storage.getSessionEpoch()) return;
+      if (importEpoch !== this.archiveEpoch) return;
+      this.archives = next;
+      AppStorage.setOrCreate<CourseArchive[]>('courseArchives', next);
+      promptAction.showToast({ message: '已添加课表，可在档案中切换显示' });
+    } catch (error) {
+      promptAction.showToast({ message: (error as Error).message || '导入失败，请重试' });
+    } finally {
+      this.importing = false;
     }
   }
 
@@ -215,7 +293,8 @@ struct CourseArchivePage {
         Text('←').fontSize(24).fontColor('#FFFFFF').onClick(() => router.back())
         Text('课表档案管理').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
           .layoutWeight(1).textAlign(TextAlign.Center)
-        Text('添加').fontSize(18).fontColor('#FFFFFF').onClick(() => this.addArchiveByScan())
+        Text(this.importing ? '导入中' : '添加').fontSize(18).fontColor('#FFFFFF')
+          .enabled(!this.importing).onClick(() => this.addArchiveByScan())
       }
       .width('100%').height(56).backgroundColor('#4CAF50').padding({ left: 16, right: 16 })
       Scroll() {

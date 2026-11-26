@@ -217,7 +217,8 @@ export struct PhysicalExperimentPage {
         return;
       }
       const existing = await storage.getCurrentCourses();
-      const base = existing.length > 0 ? existing : this.store.courses;
+      const archiveId = await storage.getCurrentArchiveId();
+      const base = existing.length === 0 && archiveId === 'mine' ? this.store.courses : existing;
       const merged: CourseData[] = [...base];
       let added = 0;
       for (let i = 0; i < imported.length; i++) {

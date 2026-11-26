@@ -169,6 +169,7 @@ test('快捷功能电量显示真实零值，缺少读数时显示占位', async
   const WidgetData = await loadWidget();
   const snapshot = (rooms) => WidgetData.build({
     getElectricityRoomsCache: async () => JSON.stringify(rooms),
+      getSettingString: async (key, fallback) => fallback,
   }, false, 'quick');
   const zero = await snapshot([{ name: '1630 房间', remaining: 0 }]);
   assert.equal(zero.title, '1630 房间');
