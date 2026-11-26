@@ -115,6 +115,8 @@ struct PasswordRecoveryPage {
   private async loadSmsCaptcha(): Promise<void> {
     if (!this.recoveryId) return;
     const seq = ++this.smsCaptchaSeq;
+    this.smsCaptchaCode = '';
+    this.smsCaptchaImage = '';
     try {
       const data: RecoveryCaptcha = await PasswordRecoveryApi.smsCaptcha(this.recoveryId);
       if (seq !== this.smsCaptchaSeq) return;
@@ -172,7 +174,7 @@ struct PasswordRecoveryPage {
   }
 
   private async sendSms(): Promise<void> {
-    if (this.busy || this.cooldown > 0 || !this.recoveryId) return;
+    if (this.busy || this.cooldown > 0 || !this.recoveryId || !this.smsCaptchaImage) return;
     const phone = this.phone.trim();
     if (!/^1[0-9]{10}$/.test(phone)) {
       promptAction.showToast({ message: '请输入 11 位中国大陆手机号', duration: 2000 });
@@ -331,7 +333,7 @@ struct PasswordRecoveryPage {
             this.field('短信验证码', this.smsCode, (value: string) => { this.smsCode = value; })
             Button(this.cooldown > 0 ? `${this.cooldown} 秒后重新发送` : '发送短信验证码')
               .width('100%').height(46).margin({ top: 20 }).backgroundColor('#E6F8F1').fontColor('#168F66')
-              .enabled(!this.busy && this.cooldown === 0).onClick(() => this.sendSms())
+              .enabled(!this.busy && this.cooldown === 0 && !!this.smsCaptchaImage).onClick(() => this.sendSms())
             Button(this.busy ? '请稍候…' : '验证短信').width('100%').height(48).margin({ top: 12 })
               .backgroundColor('#20C894').enabled(!this.busy).onClick(() => this.verifySms())
             Text('无法接收短信？请联系学校处理绑定手机问题。').fontSize(13).fontColor('#777777')
