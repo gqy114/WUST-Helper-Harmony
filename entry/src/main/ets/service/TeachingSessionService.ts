@@ -8,6 +8,7 @@ import { AppStorage } from '../store/AppStorage';
 export class TeachingSessionService {
   /** 正在进行的刷新任务。并发调用共享同一个 Promise，避免 return false 让调用方误判。 */
   private static inFlight: Promise<boolean> | null = null;
+  private static inFlightAccount: string = '';
   private static lastAttemptAt: number = 0;
   private static lastSuccessAt: number = 0;
 
@@ -36,11 +37,17 @@ export class TeachingSessionService {
       const sid = await storage.getStudentId();
       const password = await storage.getPassword();
       if (!sid || !password) return false;
+      const account = sid.trim();
+      const epoch = storage.getSessionEpoch();
       try {
         const graduate = await storage.getIsGraduate();
         const refreshed = graduate
-          ? await ApiService.refreshGraduateToken(storage, sid, password)
-          : await ApiService.refreshUndergradToken(storage, sid, password);
+          ? await ApiService.refreshGraduateToken(storage, account, password)
+          : await ApiService.refreshUndergradToken(storage, account, password);
+        // 请求期间切号：旧账号的结果不能改新账号的登录态。
+        if (storage.getSessionEpoch() !== epoch || (await storage.getStudentId()).trim() !== account) {
+          return false;
+        }
         if (refreshed) {
           await storage.setIsLogin(true);
           TeachingSessionService.lastSuccessAt = Date.now();
@@ -51,10 +58,14 @@ export class TeachingSessionService {
       }
     })();
     TeachingSessionService.inFlight = task;
+    TeachingSessionService.inFlightAccount = (await storage.getStudentId()).trim();
     try {
       return await task;
     } finally {
-      TeachingSessionService.inFlight = null;
+      if (TeachingSessionService.inFlight === task) {
+        TeachingSessionService.inFlight = null;
+        TeachingSessionService.inFlightAccount = '';
+      }
     }
   }
 

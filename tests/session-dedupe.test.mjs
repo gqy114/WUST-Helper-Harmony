@@ -17,6 +17,7 @@ async function createSession() {
       getStudentId: async () => { await new Promise((r) => setTimeout(r, 5)); return '20240001'; },
       getPassword: async () => { await new Promise((r) => setTimeout(r, 5)); return 'pwd'; },
       getIsGraduate: async () => false,
+      getSessionEpoch: () => 1,
       setIsLogin: async () => {},
     };
     this.setExport('AppStorage', { getInstance: () => instance });
