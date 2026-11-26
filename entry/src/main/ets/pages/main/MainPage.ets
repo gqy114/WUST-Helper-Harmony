@@ -131,6 +131,7 @@ struct MainPage {
   private communityMessagesPolledAt: number = 0;
   private communityMessageRevision: number = 0;
   private communityCheckedAt: Map<string, number> = new Map();
+  private readonly communityLocalSeen: Map<string, number> = new Map();
   private communitySeenRevision: Map<string, number> = new Map();
 
   // ═══════════════════════════════════════════════ 生命周期 ═══════════════════════════════════════════════
@@ -235,17 +236,17 @@ struct MainPage {
       this.communityPostsPolledAt = now;
       // 优先请求聚合接口，一次拿齐五个板块 + 通知未读数。
       try {
-        const sinceWall = await storage.getSettingNumber(this.communitySeenKey(account, 'wall'), 0);
-        const sinceLost = await storage.getSettingNumber(this.communitySeenKey(account, 'lost'), 0);
-        const sinceTeam = await storage.getSettingNumber(this.communitySeenKey(account, 'team'), 0);
-        const sinceHelp = await storage.getSettingNumber(this.communitySeenKey(account, 'help'), 0);
-        const sinceBook = await storage.getSettingNumber(this.communitySeenKey(account, 'book'), 0);
         // 记录请求发出时的已读代次：请求期间打开板块，旧统计结果必须丢弃。
         const revisionMap: Map<string, number> = new Map();
         for (const key of ['wall', 'lost', 'team', 'help', 'book']) {
           revisionMap.set(key, this.communitySeenRevision.get(key) ?? 0);
         }
         const messageRevision = this.communityMessageRevision;
+        const sinceWall = await this.readCommunitySeen(account, 'wall');
+        const sinceLost = await this.readCommunitySeen(account, 'lost');
+        const sinceTeam = await this.readCommunitySeen(account, 'team');
+        const sinceHelp = await this.readCommunitySeen(account, 'help');
+        const sinceBook = await this.readCommunitySeen(account, 'book');
         const result = await CampusWallApi.badges(sinceWall, sinceLost, sinceTeam, sinceHelp, sinceBook);
         if (!await this.isCommunityAccountCurrent(account, epoch)) return;
         const sinceMap: Map<string, number> = new Map();
@@ -307,12 +308,18 @@ struct MainPage {
     return 'communityBadgeSeenAt_' + encodeURIComponent(account) + '_' + key;
   }
 
+  private async readCommunitySeen(account: string, key: string): Promise<number> {
+    const storageKey = this.communitySeenKey(account, key);
+    const persisted = await AppStorage.getInstance().getSettingNumber(storageKey, 0);
+    return Math.max(persisted, this.communityLocalSeen.get(storageKey) ?? 0);
+  }
+
   private async loadCommunityPostBadge(account: string, epoch: number, key: string): Promise<void> {
     const storage = AppStorage.getInstance();
     const revision = this.communitySeenRevision.get(key) ?? 0;
     try {
       const storageKey = this.communitySeenKey(account, key);
-      const since = await storage.getSettingNumber(storageKey, 0);
+      const since = await this.readCommunitySeen(account, key);
       const result = await CampusWallApi.postUnreadCount(this.communityTag(key), since > 0 ? since : Date.now());
       if (!await this.isCommunityAccountCurrent(account, epoch) ||
         (this.communitySeenRevision.get(key) ?? 0) !== revision) return;
@@ -384,13 +391,16 @@ struct MainPage {
     const account = this.communityBadgeAccount;
     const checkedAt = this.communityCheckedAt.get(key) ?? 0;
     this.setCommunityUnread(key, 0);
-    if (!account || checkedAt <= 0) return;
+    if (!account) return;
+    const seenAt = checkedAt > 0 ? checkedAt : Date.now();
+    const storageKey = this.communitySeenKey(account, key);
+    this.communityLocalSeen.set(storageKey, seenAt);
     this.communitySeenRevision.set(key, (this.communitySeenRevision.get(key) ?? 0) + 1);
     const storage = AppStorage.getInstance();
     const epoch = storage.getSessionEpoch();
     try {
       if (await this.isCommunityAccountCurrent(account, epoch)) {
-        await storage.setSettingNumber(this.communitySeenKey(account, key), checkedAt);
+        await storage.setSettingNumber(storageKey, seenAt);
       }
     } catch {
       console.warn(TAG, 'mark community seen failed: ' + key);

@@ -37,12 +37,12 @@ function createPage() {
     console, TAG: 'test' });
   const page = Object.assign(new Page(), {
     communityBadgeTimer: 1, communityBadgeAccount: '', communityCheckedAt: new Map(),
-    communitySeenRevision: new Map(), communityMessagesPolledAt: 0, communityPostsPolledAt: 0,
+    communitySeenRevision: new Map(), communityLocalSeen: new Map(), communityMessagesPolledAt: 0, communityPostsPolledAt: 0,
     communityMessageRevision: 0,
     setCommunityUnread: (key, value) => counts.set(key, value),
     communityKey: () => 'wall',
   });
-  return { page, api, counts, prefs, requests, setAccount: (value) => { account = value; epoch++; } };
+  return { page, api, storage, counts, prefs, requests, setAccount: (value) => { account = value; epoch++; } };
 }
 
 test('按账号建立已读基线，精确显示超过一页的未读数，短时间进入首页不重复请求', async () => {
@@ -126,5 +126,25 @@ test('聚合请求晚返回时，打开板块后的已读状态不被旧统计�
   release({ wall: 27, lost: 0, team: 0, help: 0, book: 0, messages: 0, checkedAt: 1795551115000 });
   await refresh;
   assert.equal(counts.get('wall'), 0);
-  assert.equal(prefs.get('communityBadgeSeenAt_A_wall'), 1795551115000);
+  assert.ok(prefs.get('communityBadgeSeenAt_A_wall') >= 1795551115000);
+});
+
+test('读取已读时间期间打开版块，聚合结果不恢复红点', async () => {
+  const { page, api, storage, prefs, counts } = createPage();
+  prefs.set('communityBadgeSeenAt_A_wall', 1000);
+  let release;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const read = storage.getSettingNumber;
+  storage.getSettingNumber = async (key, fallback) => {
+    if (key.endsWith('_wall')) { await blocked; return 1000; }
+    return read(key, fallback);
+  };
+  api.badges = async () => ({ wall: 10, lost: 0, team: 0, help: 0, book: 0, messages: 0, checkedAt: 2000 });
+  const refresh = page.loadCommunityBadges();
+  await new Promise(resolve => setImmediate(resolve));
+  await page.markCommunitySeen({ title: '校园墙' });
+  release();
+  await refresh;
+  assert.equal(counts.get('wall'), 0);
+  assert.ok(prefs.get('communityBadgeSeenAt_A_wall') > 1000);
 });
