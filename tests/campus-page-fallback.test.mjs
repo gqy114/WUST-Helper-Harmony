@@ -104,3 +104,36 @@ test('搜索分页沿用已提交的关键词，并忽略清除搜索后的迟�
   assert.deepEqual(items, [{ id: 'feed' }]);
   assert.equal(page.loadingMore, false);
 });
+
+test('换来源后直接关闭筛选，迟到的旧来源分页不会混进新来源', async () => {
+  const code = await source('pages/campus/CampusPage.ets');
+  const load = code.match(/  private async load\(reset: boolean\): Promise<void> \{[\s\S]*?\n  \}/)[0];
+  const select = code.match(/  private async selectCollege\(id: string\): Promise<void> \{[\s\S]*?\n  \}/)[0];
+  let finishOldPage;
+  const calls = [];
+  const api = {
+    categories: async () => [],
+    articles(page, _, college) {
+      calls.push([page, college]);
+      if (college === 'old' && page === 2) return new Promise(resolve => { finishOldPage = resolve; });
+      return { items: [{ id: college + page }], total: 2 };
+    },
+  };
+  const Page = runInNewContext(stripTypeScriptTypes('class Page {\n' + load + select + '\n}; Page;'), {
+    CampusNewsApi: api, PAGE_SIZE: 20,
+  });
+  const items = [];
+  const newsSource = { clear: () => { items.length = 0; }, append: (batch) => items.push(...batch),
+    totalCount: () => items.length };
+  const page = Object.assign(new Page(), { collegeId: 'old', requestGeneration: 0,
+    categoryGeneration: 0, keyword: '', newsSource });
+  await page.load(true);
+  const stale = page.load(false);
+  await page.selectCollege('new');
+  page.filterOpen = false;
+  finishOldPage({ items: [{ id: 'old2' }], total: 2 });
+  await stale;
+  await page.load(false);
+  assert.deepEqual(calls, [[1, 'old'], [2, 'old'], [1, 'new'], [2, 'new']]);
+  assert.deepEqual(items, [{ id: 'new1' }, { id: 'new2' }]);
+});
