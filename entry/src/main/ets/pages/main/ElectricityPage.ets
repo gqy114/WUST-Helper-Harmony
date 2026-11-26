@@ -37,7 +37,8 @@ struct ElectricityPage {
       try { cloudRooms = await ElectricityApi.savedRooms(); } catch { console.warn('ElectricityPage', 'cloud rooms unavailable'); }
       const localRooms = await this.localSavedRooms();
       if (!await this.isRoomSessionCurrent()) return;
-      const rooms: YKTSavedRoom[] = cloudRooms.length > 0 ? cloudRooms : localRooms;
+      const rooms: YKTSavedRoom[] = cloudRooms.concat(localRooms.filter(local =>
+        !cloudRooms.some(cloud => cloud.id === local.id)));
       this.savedRooms = rooms;
       for (let i = 0; i < rooms.length; i++) {
         const room: YKTSavedRoom = rooms[i];
