@@ -182,6 +182,16 @@ export class AppStorage {
     });
   }
 
+  async setTeachingSessionIfCurrent(epoch: number, sid: string, token: string, message: string): Promise<boolean> {
+    return this.commitSessionWrite(epoch, sid, async (): Promise<void> => {
+      const now = Date.now();
+      await this.setToken(token);
+      await this.setTokenUpdateTime(now);
+      await this.setTokenLastUseTime(now);
+      await this.setMessage(message);
+    });
+  }
+
   private commitSessionWrite(epoch: number, sid: string, writer: () => Promise<void>): Promise<boolean> {
     const account = (sid || '').trim();
     if (!account) return Promise.resolve(false);
@@ -297,6 +307,7 @@ export class AppStorage {
       const identityVersion = this.authIdentityVersion;
       // 资料刷新会重复保存相同学号；只有身份确实改变时才清除令牌。
       if (previousSid !== (v || '').trim() || identityVersion !== this.authIdentityAppliedVersion) {
+        await this.putStr('token', '');
         await this.putStr('appAuthAccessToken', '');
         await this.putStr('appAuthRefreshToken', '');
       }
@@ -334,6 +345,7 @@ export class AppStorage {
       const previous = await this.getIsGraduate();
       if (previous !== v) {
         this.authIdentityVersion++;
+        await this.putStr('token', '');
         await this.putStr('appAuthAccessToken', '');
         await this.putStr('appAuthRefreshToken', '');
       }

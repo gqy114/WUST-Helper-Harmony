@@ -339,11 +339,11 @@ struct LoginPage {
           } else {
             const tdata = resp.data as TokenDataContent;
             if (tdata.token) {
+              await s.setStudentId(sid);
               await s.setToken(tdata.token);
               await s.setIsLogin(true);
               await s.setTokenUpdateTime(Date.now());
               await s.setTokenLastUseTime(Date.now());
-              await s.setStudentId(sid);
               await s.setPassword(pwd);
               if (deviceData?.appAuth) await this.saveDeviceAppAuth(deviceData.appAuth, sid);
               await StorageUtil.saveLoginInfo(tdata.token, sid, sid);
@@ -501,12 +501,12 @@ struct LoginPage {
     try {
     const s = AppStorage.getInstance();
     const now = Date.now();
+    await s.setStudentId(sid);
     await s.setToken(token);
     await s.setTokenUpdateTime(now);
     await s.setTokenLastUseTime(now);
     await s.setMessage(msg);
     await s.setIsLogin(true);
-    await s.setStudentId(sid);
     await s.setPassword(pwd);
     await s.setSelectSemester(this.semesterStr);
     await s.setSemester(this.semesterStr);

@@ -332,16 +332,13 @@ export class ApiService {
     studentId: string,
     password: string,
   ): Promise<boolean> {
+    const epoch = storage.getSessionEpoch();
+    if ((await storage.getStudentId()).trim() !== studentId.trim() || storage.getSessionEpoch() !== epoch) return false;
     try {
       try {
         const outcome = await UndergradDeviceLogin.login(studentId, password);
         if (outcome.code === 200 && outcome.data?.token) {
-          const token = outcome.data.token;
-          await storage.setToken(token);
-          await storage.setTokenUpdateTime(Date.now());
-          await storage.setTokenLastUseTime(Date.now());
-          await storage.setMessage(outcome.message ?? '');
-          return true;
+          return await storage.setTeachingSessionIfCurrent(epoch, studentId, outcome.data.token, outcome.message ?? '');
         }
         if (outcome.code === 400 || outcome.code === 401 || outcome.code === 403) {
           // 服务明确拒绝密码时不能再拿同一密码试旧接口，避免账号被锁。
@@ -353,13 +350,10 @@ export class ApiService {
         console.warn('ApiService', 'device refresh failed, fallback to legacy login');
       }
       // 设备登录服务未部署/不可用时，旧 HTTP 登录仍可恢复教务会话。
+      if (storage.getSessionEpoch() !== epoch) return false;
       const resp = await ApiService.loginUndergrad(studentId, password);
       if (resp && resp.data?.token) {
-        await storage.setToken(resp.data.token);
-        await storage.setTokenUpdateTime(Date.now());
-        await storage.setTokenLastUseTime(Date.now());
-        await storage.setMessage(resp.msg ?? '');
-        return true;
+        return await storage.setTeachingSessionIfCurrent(epoch, studentId, resp.data.token, resp.msg ?? '');
       }
       return false;
     } catch {
@@ -374,16 +368,12 @@ export class ApiService {
     studentId: string,
     password: string,
   ): Promise<boolean> {
+    const epoch = storage.getSessionEpoch();
+    if ((await storage.getStudentId()).trim() !== studentId.trim() || storage.getSessionEpoch() !== epoch) return false;
     try {
       const resp = await ApiService.loginGraduate(studentId, password);
       if (resp && resp.code === 200) {
-        const token = 'grad_' + studentId;
-        const msg = resp.msg ?? '';
-        await storage.setToken(token);
-        await storage.setTokenUpdateTime(Date.now());
-        await storage.setTokenLastUseTime(Date.now());
-        await storage.setMessage(msg);
-        return true;
+        return await storage.setTeachingSessionIfCurrent(epoch, studentId, 'grad_' + studentId, resp.msg ?? '');
       }
       return false;
     } catch {
