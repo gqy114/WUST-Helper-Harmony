@@ -87,6 +87,8 @@ export interface CourseArchive {
   id: string;
   name: string;
   semester: string;
+  // 该档案所属学期的开学日期；切换档案时用它更新表头周次日期。
+  termStartDate?: string;
   courses: CourseData[];
   isMine: boolean;
 }

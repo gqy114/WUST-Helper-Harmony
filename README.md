@@ -1,4 +1,4 @@
-# WUST Helper · HarmonyOS 版
+﻿# WUST Helper · HarmonyOS 版
 ![](https://img.shields.io/badge/Platform-HarmonyOS-0A59F7?logo=harmonyos&logoColor=white)
 ![](https://img.shields.io/badge/Language-ArkTS%2FTypeScript-3178C6?logo=typescript&logoColor=white)
 ![](https://img.shields.io/badge/DevEco%20Studio-5.0+-black?logo=harmonyos&logoColor=white)
@@ -59,3 +59,15 @@ git clone https://github.com/gqy114/WUST-Helper-Harmony.git
 
 # 用 DevEco Studio 打开项目根目录
 # 等待依赖下载完成后，点击 Run 即可运行到模拟器/真机
+```
+
+---
+
+## 持续集成
+
+`.github/workflows/pr-checks.yml` 使用 GitHub 托管的运行器执行自动测试。
+
+- **Node regression tests** 在 PR 创建或更新、分支推送、每日定时或手动触发时运行 `tests` 下的 Node 测试。合并到 `main` 前，GitHub 会检查 PR 最新提交的测试结果。
+- **Stacked PR tests** 在分支推送后，检出以该分支为目标的待合并 PR 的合并结果并运行测试。
+
+在本地用 DevEco Studio 构建鸿蒙安装包。
