@@ -130,6 +130,15 @@ export interface CampusWallNotification {
   readAt?: string; actor?: CampusWallNotificationActor; postTitle?: string; postTag?: string; content?: string;
   mentionUsers?: CampusMentionUser[];
 }
+export interface CampusUnreadCount { count: number; checkedAt: number; }
+export interface CampusBadgeCounts {
+  wall: number; lost: number; team: number; help: number; book: number; messages: number; checkedAt: number;
+}
+interface CampusBadgeCountsData { counts?: Record<string, number>; }
+interface CampusBadgeCountsResponse { code?: number; timestamp?: number; data?: CampusBadgeCountsData; }
+interface CampusUnreadCountData { count?: number; }
+interface CampusUnreadCountResponse { code?: number; timestamp?: number; data?: CampusUnreadCountData; }
+
 export interface CampusWallNotificationPage { items: CampusWallNotification[]; latestId: number; unreadCount: number; }
 export function decodeHtmlEntities(value: string): string {
   let result = value.replace(/<br\s*\/?>/gi, '\n');
@@ -240,6 +249,62 @@ export class CampusWallApi {
   static async detail(id: number): Promise<CampusWallPost> {
     const response = await HttpRequest.get<WallDetailResponse>(`https://lyzyy.love:8081/api/v1/campus-wall/posts/${id}`, await CampusWallApi.headers());
     return CampusWallApi.normalizePost(response.data.data || {});
+  }
+
+  static async postUnreadCount(tag: string, since: number): Promise<CampusUnreadCount> {
+    const cursor = encodeURIComponent(new Date(since).toISOString());
+    return CampusWallApi.readUnreadCount('/unread-count?tag=' + encodeURIComponent(tag) + '&since=' + cursor);
+  }
+
+  /** 一次请求返回五个板块 + 通知未读数；后端未部署时调用方回退旧接口。 */
+  static async badges(sinceWall: number, sinceLost: number, sinceTeam: number, sinceHelp: number,
+    sinceBook: number): Promise<CampusBadgeCounts> {
+    const params: string[] = [];
+    if (sinceWall > 0) params.push('wall=' + sinceWall);
+    if (sinceLost > 0) params.push('lost=' + sinceLost);
+    if (sinceTeam > 0) params.push('team=' + sinceTeam);
+    if (sinceHelp > 0) params.push('help=' + sinceHelp);
+    if (sinceBook > 0) params.push('book=' + sinceBook);
+    const query = params.length > 0 ? '?' + params.join('&') : '';
+    const response = await HttpRequest.get<CampusBadgeCountsResponse>(
+      'https://lyzyy.love:8081/api/v1/campus-wall/badges' + query, await CampusWallApi.headers());
+    const body = response.data;
+    const counts = body?.data?.counts;
+    const timestamp = body?.timestamp;
+    const keys: string[] = ['wall', 'lost', 'team', 'help', 'book', 'messages'];
+    if (response.response.responseCode !== 200 || (body?.code !== 200 && body?.code !== 0) ||
+      !counts || typeof timestamp !== 'number' || !Number.isSafeInteger(timestamp) || timestamp <= 0) {
+      throw new Error('校园社区未读数加载失败');
+    }
+    for (let i = 0; i < keys.length; i++) {
+      const value = counts[keys[i]];
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+        throw new Error('校园社区未读数格式异常');
+      }
+    }
+    return {
+      wall: counts['wall'], lost: counts['lost'], team: counts['team'], help: counts['help'],
+      book: counts['book'], messages: counts['messages'], checkedAt: timestamp
+    };
+  }
+
+  static async notificationUnreadCount(): Promise<CampusUnreadCount> {
+    return CampusWallApi.readUnreadCount('/notifications/unread-count?includeCat=1');
+  }
+
+  private static async readUnreadCount(path: string): Promise<CampusUnreadCount> {
+    const response = await HttpRequest.get<CampusUnreadCountResponse>(
+      'https://lyzyy.love:8081/api/v1/campus-wall' + path, await CampusWallApi.headers());
+    const body = response.data;
+    const code = body?.code;
+    const count = body?.data?.count;
+    const timestamp = body?.timestamp;
+    if (response.response.responseCode !== 200 || (code !== 200 && code !== 0) ||
+      typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0 ||
+      typeof timestamp !== 'number' || !Number.isSafeInteger(timestamp) || timestamp <= 0) {
+      throw new Error('校园社区未读数加载失败');
+    }
+    return { count, checkedAt: timestamp };
   }
 
   static async notifications(beforeId: number = 0, limit: number = 30): Promise<CampusWallNotificationPage> {
