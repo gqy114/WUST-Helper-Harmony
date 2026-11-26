@@ -816,6 +816,8 @@ export struct CoursePage {
     .width('100%').height('100%').transition(TransitionEffect.OPACITY)
   }
 
+  private backgroundAspect: number = 0;
+
   private onMoreMenuItemClick(index: number): void {
     if (index === 0) {
       this.onlyThisWeek = !this.onlyThisWeek;
@@ -850,7 +852,7 @@ export struct CoursePage {
       return;
     }
     if (index === 6) {
-      router.pushUrl({ url: 'pages/course/BackgroundSetting' });
+      router.pushUrl({ url: 'pages/course/BackgroundSetting', params: { aspect: this.backgroundAspect } });
       return;
     }
     console.info('CoursePage', `more menu clicked index=${index}`);
@@ -1232,5 +1234,10 @@ export struct CoursePage {
       }
     }
     .width('100%').height('100%')
+    .onAreaChange((_, area) => {
+      const width = Number.parseFloat(String(area.width));
+      const height = Number.parseFloat(String(area.height));
+      if (width > 0 && height > 0) this.backgroundAspect = width / height;
+    })
   }
 }

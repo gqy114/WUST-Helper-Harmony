@@ -1,3 +1,6 @@
+import { image } from '@kit.ImageKit';
+import { PhotoCropImage } from './PhotoCropImage';
+import { CropRectangle } from './ScheduleBackgroundCrop';
 import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
 
@@ -51,6 +54,31 @@ export class ScheduleBackgroundService {
     }
 
     return `file://${targetPath}`;
+  }
+
+  static async saveCropped(context: common.UIAbilityContext, sourceUri: string,
+    crop: CropRectangle): Promise<string> {
+    const pixelMap = await PhotoCropImage.crop(sourceUri, crop);
+    try {
+      const path = `${ScheduleBackgroundService.getDirectory(context)}/schedule_crop_${Date.now()}.jpg`;
+      const packer = image.createImagePacker();
+      try {
+        const file = fileIo.openSync(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
+        try {
+          await packer.packToFile(pixelMap, file.fd, { format: 'image/jpeg', quality: 94 });
+        } finally {
+          fileIo.closeSync(file);
+        }
+        return `file://${path}`;
+      } catch (err) {
+        ScheduleBackgroundService.removeOwned(context, path);
+        throw ScheduleBackgroundService.asError(err);
+      } finally {
+        await packer.release();
+      }
+    } finally {
+      await pixelMap.release();
+    }
   }
 
   /** 只删除本服务创建的文件，避免误删系统相册内容。 */
