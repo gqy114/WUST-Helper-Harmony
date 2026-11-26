@@ -173,6 +173,7 @@ struct MainPage {
     if (this.homeBanners.length > 0 &&
       this.homeBanners.some((banner: HomeBanner) => !this.bannerPixels.has(this.bannerKey(banner)))) {
       BannerImageLoader.clearFailures();
+      this.failedBannerKeys = [];
       this.loadBannerPixels();
     }
   }
@@ -417,7 +418,9 @@ struct MainPage {
 
   private syncActiveBanner(): void {
     const banner = this.activeBanner();
-    BannerImageLoader.setActive(banner ? [banner.imageUrl] : []);
+    BannerImageLoader.setActive(banner
+      ? [BannerImageLoader.displayKey(banner.imageUrl, this.bannerDecodeWidth(), this.bannerDecodeHeight())]
+      : []);
     this.pruneBannerPixels();
   }
 
@@ -657,6 +660,7 @@ struct MainPage {
         if (index === TabIndex.HOME && this.homeBanners.length > 0 &&
           this.homeBanners.some((banner: HomeBanner) => !this.bannerPixels.has(this.bannerKey(banner)))) {
           BannerImageLoader.clearFailures();
+          this.failedBannerKeys = [];
           this.loadBannerPixels();
         }
       })

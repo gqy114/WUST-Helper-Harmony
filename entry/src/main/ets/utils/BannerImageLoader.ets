@@ -11,7 +11,6 @@ const MAX_DECODE_WIDTH: number = 1440;
 const MAX_DECODE_HEIGHT: number = 720;
 
 interface BannerCacheEntry {
-  url: string;
   pixelMap: image.PixelMap;
   bytes: number;
 }
@@ -26,13 +25,13 @@ interface BannerCacheEntry {
 export class BannerImageLoader {
   private static readonly cache: Map<string, BannerCacheEntry> = new Map();
   private static readonly inflight: Map<string, Promise<image.PixelMap | undefined>> = new Map();
-  // 当前轮播仍可能展示的 URL；淘汰时跳过，避免释放使用中的图片。
-  private static activeUrls: string[] = [];
+  // 当前轮播展示的 URL 和解码尺寸；淘汰时跳过，避免释放使用中的图片。
+  private static activeKeys: string[] = [];
   private static totalBytes: number = 0;
   private static readonly failedAt: Map<string, number> = new Map();
 
-  static setActive(urls: string[]): void {
-    BannerImageLoader.activeUrls = urls.slice();
+  static setActive(keys: string[]): void {
+    BannerImageLoader.activeKeys = keys.slice();
     BannerImageLoader.evictIfNeeded();
   }
 
@@ -61,8 +60,8 @@ export class BannerImageLoader {
     BannerImageLoader.failedAt.set(key, Date.now());
   }
 
-  private static isActive(url: string): boolean {
-    return BannerImageLoader.activeUrls.indexOf(url) >= 0;
+  private static isActive(key: string): boolean {
+    return BannerImageLoader.activeKeys.indexOf(key) >= 0;
   }
 
   private static touch(key: string, entry: BannerCacheEntry): void {
@@ -75,22 +74,29 @@ export class BannerImageLoader {
       let victimKey = '';
       let victim: BannerCacheEntry | undefined = undefined;
       for (const pair of BannerImageLoader.cache) {
-        if (!BannerImageLoader.isActive(pair[1].url)) {
+        if (!BannerImageLoader.isActive(pair[0])) {
           victimKey = pair[0];
           victim = pair[1];
           break;
         }
       }
-      // 展示中的图片不能释放，否则轮播到该张时会空白；宁可暂时超过上限。
-      if (!victim) break;
+      if (!victim) {
+        // 调用方只保护当前显示的一张；即使误传多个键，缓存也必须维持上限。
+        const oldest = BannerImageLoader.cache.entries().next();
+        if (oldest.done) break;
+        victimKey = oldest.value[0];
+        victim = oldest.value[1];
+      }
       BannerImageLoader.cache.delete(victimKey);
       BannerImageLoader.totalBytes = Math.max(0, BannerImageLoader.totalBytes - victim.bytes);
       victim.pixelMap.release();
     }
   }
 
-  private static cacheKey(url: string, width: number, height: number): string {
-    return `${url}@${width}x${height}`;
+  static displayKey(url: string, width: number, height: number): string {
+    const decodeWidth = Math.max(1, Math.min(Math.round(width > 0 ? width : 360), MAX_DECODE_WIDTH));
+    const decodeHeight = Math.max(1, Math.min(Math.round(height > 0 ? height : 150), MAX_DECODE_HEIGHT));
+    return `${url.trim()}@${decodeWidth}x${decodeHeight}`;
   }
 
   private static async fetchPixelMap(url: string, width: number, height: number): Promise<image.PixelMap | undefined> {
@@ -133,7 +139,7 @@ export class BannerImageLoader {
     if (!key) return undefined;
     const width = displayWidth > 0 ? displayWidth : 360;
     const height = displayHeight > 0 ? displayHeight : 150;
-    const cacheKey = BannerImageLoader.cacheKey(key, Math.round(width), Math.round(height));
+    const cacheKey = BannerImageLoader.displayKey(key, width, height);
     const cached = BannerImageLoader.cache.get(cacheKey);
     if (cached) {
       BannerImageLoader.touch(cacheKey, cached);
@@ -151,12 +157,16 @@ export class BannerImageLoader {
         return undefined;
       }
       const bytes = pixelMap.getPixelBytesNumber();
-      const entry: BannerCacheEntry = { url: key, pixelMap, bytes };
+      if (bytes > MAX_CACHE_BYTES) {
+        pixelMap.release();
+        return undefined;
+      }
+      const entry: BannerCacheEntry = { pixelMap, bytes };
       BannerImageLoader.cache.set(cacheKey, entry);
       BannerImageLoader.totalBytes += bytes;
       BannerImageLoader.evictIfNeeded();
       BannerImageLoader.failedAt.delete(cacheKey);
-      return pixelMap;
+      return BannerImageLoader.cache.has(cacheKey) ? pixelMap : undefined;
     })();
     BannerImageLoader.inflight.set(cacheKey, task);
     try {

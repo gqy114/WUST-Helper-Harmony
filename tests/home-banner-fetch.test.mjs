@@ -60,6 +60,7 @@ test('返回仍在运行的首页会触发失败图片重试', async () => {
   assert.match(onShow, /this\.homeBanners\.some\(/, 'onPageShow 没有检查缺失的轮播图');
   assert.match(onShow, /BannerImageLoader\.clearFailures\(\)/, 'onPageShow 没有清掉失败缓存');
   assert.match(onShow, /this\.loadBannerPixels\(\)/, 'onPageShow 没有重新发起加载');
+  assert.match(onShow, /this\.failedBannerKeys = \[\]/, '页面仍然隐藏失败横幅，无法重试');
   // 已完全加载时不再重复下载
   assert.match(page, /pendingBannerKeys/, '缺少并发保护');
 });
