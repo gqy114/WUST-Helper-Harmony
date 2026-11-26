@@ -110,7 +110,7 @@ struct MainPage {
   @State private failedBannerKeys: string[] = [];
   // 自己抓取解码后的 banner 图：状态码异常但响应体是图片时也能显示。
   @State private bannerPixels: Map<string, image.PixelMap> = new Map();
-  private bannerLoading: boolean = false;
+  private readonly pendingBannerKeys: Set<string> = new Set();
   @State private homeNoticeText: string = '公告：欢迎使用武科大助手，随时随地开启校园之旅';
   @State private campusWallUnread: number = 0;
   @State private campusLostUnread: number = 0;
@@ -388,14 +388,10 @@ struct MainPage {
     return pixel && BannerImageLoader.owns(pixel) ? pixel : undefined;
   }
 
-  /** 优先用自行解码的图片，没有时退回网络 URL（由 onError 兜底）。 */
-  private bannerSource(banner: HomeBanner): image.PixelMap | string {
-    const pixel = this.bannerPixel(banner);
-    if (pixel) return pixel;
-    return banner.imageUrl;
+  private bannerSource(banner: HomeBanner): image.PixelMap | Resource {
+    return this.bannerPixel(banner) ?? $r('app.media.default_banner');
   }
 
-  /** 逐张抓取 banner 图片字节并解码，成功后替换 Image 的网络加载。 */
   private bannerDecodeWidth(): number {
     try {
       const screen = display.getDefaultDisplaySync();
@@ -413,16 +409,15 @@ struct MainPage {
     }
   }
 
-  private activeBannerUrl(): string {
+  private activeBanner(): HomeBanner | undefined {
     const banners = this.visibleBanners();
-    if (banners.length === 0) return '';
     const index = Math.max(0, Math.min(this.bannerIndex, banners.length - 1));
-    return banners[index].imageUrl;
+    return banners[index];
   }
 
   private syncActiveBanner(): void {
-    const url = this.activeBannerUrl();
-    BannerImageLoader.setActive(url ? [url] : []);
+    const banner = this.activeBanner();
+    BannerImageLoader.setActive(banner ? [banner.imageUrl] : []);
     this.pruneBannerPixels();
   }
 
@@ -435,30 +430,32 @@ struct MainPage {
   }
 
   private async loadBannerPixels(): Promise<void> {
-    if (this.bannerLoading) return;
-    this.bannerLoading = true;
+    this.syncActiveBanner();
+    const banner = this.activeBanner();
+    if (!banner || this.bannerPixel(banner)) return;
+    const key = this.bannerKey(banner);
+    if (this.pendingBannerKeys.has(key)) return;
+    this.pendingBannerKeys.add(key);
     try {
-      const banners = this.homeBanners;
-      this.syncActiveBanner();
       const width = this.bannerDecodeWidth();
       const height = this.bannerDecodeHeight();
-      for (let i = 0; i < banners.length; i++) {
-        const banner = banners[i];
-        const key = this.bannerKey(banner);
-        if (this.bannerPixel(banner)) continue;
-        const pixel = await BannerImageLoader.load(banner.imageUrl, width, height);
-        this.pruneBannerPixels();
-        if (!pixel || !BannerImageLoader.owns(pixel)) continue;
-        const next = new Map<string, image.PixelMap>(this.bannerPixels);
-        next.set(key, pixel);
-        this.bannerPixels = next;
-        // 之前网络加载失败被隐藏的 banner，解码成功后要重新显示。
-        if (this.failedBannerKeys.indexOf(key) >= 0) {
-          this.failedBannerKeys = this.failedBannerKeys.filter((value: string) => value !== key);
-        }
+      const pixel = await BannerImageLoader.load(banner.imageUrl, width, height);
+      this.pruneBannerPixels();
+      if (!this.homeBanners.some((item: HomeBanner) => this.bannerKey(item) === key)) return;
+      if (!pixel) {
+        this.markBannerFailed(banner);
+        if (this.activeBanner()) this.loadBannerPixels();
+        return;
+      }
+      if (!BannerImageLoader.owns(pixel)) return;
+      const next = new Map<string, image.PixelMap>(this.bannerPixels);
+      next.set(key, pixel);
+      this.bannerPixels = next;
+      if (this.failedBannerKeys.indexOf(key) >= 0) {
+        this.failedBannerKeys = this.failedBannerKeys.filter((value: string) => value !== key);
       }
     } finally {
-      this.bannerLoading = false;
+      this.pendingBannerKeys.delete(key);
     }
   }
 
@@ -761,7 +758,6 @@ struct MainPage {
         .height(150)
         .onChange((index: number) => {
           this.bannerIndex = index;
-          this.syncActiveBanner();
           this.loadBannerPixels();
         })
         .autoPlay(this.visibleBanners().length > 1)

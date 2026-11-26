@@ -104,10 +104,9 @@ export class BannerImageLoader {
         readTimeout: 20000,
         usingCache: true,
       });
-      if (response.responseCode < 200 || response.responseCode >= 300) {
-        // 图床失败时可能返回 404 + 占位图，不能当作轮播内容展示。
-        return undefined;
-      }
+      const status = response.responseCode;
+      // 部分图床用 404 返回有效图片，交给解码器判断；HTML 等错误响应无法解码。
+      if (status !== 404 && (status < 200 || status >= 300)) return undefined;
       const body = response.result as ArrayBuffer;
       if (!body || body.byteLength === 0) return undefined;
       const source = image.createImageSource(body);

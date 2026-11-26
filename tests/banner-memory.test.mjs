@@ -28,3 +28,12 @@ test('MainPage 传入实际显示尺寸并标记当前轮播 URL', async () => {
   assert.match(page, /screen\.width - 32 \* screen\.densityPixels/, '宽度未按屏幕尺寸换算');
   assert.match(page, /150 \* display\.getDefaultDisplaySync\(\)\.densityPixels/, '高度未按 150vp 换算');
 });
+
+test('只加载当前横幅，未解码时用本地占位，404 图片仍可解码', async () => {
+  const page = await source('pages/main/MainPage.ets');
+  const loader = await source('utils/BannerImageLoader.ets');
+  assert.match(loader, /status !== 404 &&/);
+  assert.match(page, /const banner = this\.activeBanner\(\)/);
+  assert.match(page, /this\.pendingBannerKeys\.has\(key\)/);
+  assert.match(page, /return this\.bannerPixel\(banner\) \?\? \$r\('app\.media\.default_banner'\)/);
+});

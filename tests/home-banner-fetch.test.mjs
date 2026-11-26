@@ -19,7 +19,7 @@ test('BannerImageLoader 自行抓取字节解码，不依赖 HTTP 状态码', as
 test('主页先用默认 banner 垫底，再用解码后的图片覆盖', async () => {
   const page = await source(`${root}/pages/main/MainPage.ets`);
   assert.match(page, /this\.loadBannerPixels\(\)/, 'banner 拉取后没有异步解码');
-  assert.match(page, /private bannerSource\(banner: HomeBanner\): image\.PixelMap \| string/, '缺少图片来源选择');
+  assert.match(page, /private bannerSource\(banner: HomeBanner\): image\.PixelMap \| Resource/, '缺少图片来源选择');
   const block = page.slice(page.indexOf('// ── Banner ──'), page.indexOf('// ── 公告栏 ──'));
   assert.match(block, /\$r\('app\.media\.default_banner'\)/, '缺少默认 banner 兜底');
   assert.ok(block.indexOf('app.media.default_banner') < block.indexOf('Image(this.bannerSource'),
