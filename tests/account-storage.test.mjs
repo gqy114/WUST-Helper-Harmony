@@ -279,3 +279,16 @@ test('共享档案开学日期从当前账号档案取得，不读取全局缓�
   assert.equal(await storage.getSharedArchiveTermStartDate('shared_same'), '2026-09-07');
   assert.equal(await storage.getSharedArchiveTermStartDate('shared_missing'), '');
 });
+
+test('当前我的课表在升级后采用当前课程的学期，不沿用旧档案日期', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  await storage.setSemester('2026-2027-1');
+  await storage.setCourseArchives([{ id: 'mine', name: '我的课表', isMine: true, semester: '2025-2026-2',
+    termStartDate: '2026-03-02', courses: courses('旧课程') }]);
+  await storage.setCurrentCourses(courses('当前课表'));
+  const widget = await storage.getWidgetSchedule('weekly');
+  assert.equal(widget.semester, '2026-2027-1');
+  assert.equal(widget.termStart, '');
+  assert.equal(widget.courses[0].courseName, '当前课表');
+});

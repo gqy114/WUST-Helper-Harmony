@@ -762,11 +762,14 @@ export class AppStorage {
         const experiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
         courses = this.mergePhysicalExperiments(selected?.courses ?? [], experiments);
       }
-      const ownStart = archiveId === 'mine' ? await this.getAccountTermStartDate(studentId) : '';
-      const termStart = archiveId === 'mine' ? ownStart || selected?.termStartDate || ''
-        : selected?.termStartDate || '';
-      const semester = archiveId === 'mine' ? (selected?.semester || await this.getSemester())
-        : (selected?.semester || '');
+      const currentSemester = archiveId === 'mine' ? await this.getSemester() : '';
+      const liveOwn = archiveId === 'mine' && current === 'mine';
+      const semester = liveOwn ? currentSemester
+        : (selected?.semester || currentSemester);
+      const ownStart = archiveId === 'mine' && semester === currentSemester
+        ? await this.getAccountTermStartDate(studentId) : '';
+      const matchingArchiveStart = selected?.semester === semester ? selected?.termStartDate : '';
+      const termStart = ownStart || matchingArchiveStart || '';
       if (epoch !== this.sessionEpoch) return { archiveId: '', archives: [], courses: [], termStart: '', semester: '' };
       if (formId && saved !== archiveId) await this.putStr(key, archiveId);
       return { archiveId, archives, courses, termStart, semester };
