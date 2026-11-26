@@ -30,6 +30,8 @@ async function createService(scenario) {
       getCourseCacheMarker: () => marker,
       getStudentId: async () => (switched ? 'new-sid' : 'old-sid'),
       getCourseAsHome: async () => true,
+      getCurrentArchiveId: async () => scenario === 'shared-at-launch' || switched && scenario === 'shared-during-request'
+        ? 'shared_test' : 'mine',
       getToken: async () => 'token',
       getIsGraduate: async () => false,
       getSemester: async () => '2026-2027-1',
@@ -66,6 +68,7 @@ async function createService(scenario) {
   });
   const courseApi = new SyntheticModule(['CourseApi'], function () {
     const fetchCourses = async () => {
+      if (scenario === 'shared-during-request') switched = true;
       if (scenario === 'switch-during-request') {
         switched = true;
         epoch += 1;
@@ -137,4 +140,14 @@ test('课表页先等预取结束再决定是否复用', async () => {
   const code = await source('../entry/src/main/ets/pages/course/CoursePage.ets');
   assert.match(code, /await LaunchPrefetchService\.awaitPrefetch\(\)/);
   assert.match(code, /await this\.loadCurrentArchiveCourses\(\)/);
+});
+
+test('选中共享档案时启动或预取在途都不覆盖共享课表', async () => {
+  for (const scenario of ['shared-at-launch', 'shared-during-request']) {
+    const { writes, service } = await createService(scenario);
+    service.start();
+    await service.awaitPrefetch(3000);
+    assert.equal(writes.length, 0);
+    assert.equal(service.coursePrefetchedRecently('old-sid', false, '2026-2027-1'), false);
+  }
 });

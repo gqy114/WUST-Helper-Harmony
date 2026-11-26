@@ -79,7 +79,7 @@ export class LaunchPrefetchService {
     // 先同步记下版本号，再读账号/学期：期间任何切号或切学期都会让它对不上。
     const epoch = storage.getSessionEpoch();
     const expectedSid = await storage.getStudentId();
-    if (!expectedSid) return;
+    if (!expectedSid || await storage.getCurrentArchiveId() !== 'mine') return;
     const expectedGraduate = await storage.getIsGraduate();
     const semester = (await storage.getSemester()) || LaunchPrefetchService.semesterFallback();
 
@@ -107,7 +107,7 @@ export class LaunchPrefetchService {
     } catch {
       return;
     }
-    if (list.length === 0) return;
+    if (list.length === 0 || await storage.getCurrentArchiveId() !== 'mine') return;
 
     // 写入前用内存版本号做一次同步校验：账号或学期在这期间被切换过就丢弃结果。
     if (storage.getSessionEpoch() !== epoch) {
@@ -115,12 +115,7 @@ export class LaunchPrefetchService {
       return;
     }
     const writeMarker = `prefetch_${epoch}_${Date.now()}`;
-    await storage.setCurrentCourses(list, writeMarker);
-    LaunchPrefetchService.prefetchedSid = expectedSid;
-    LaunchPrefetchService.prefetchedGraduate = expectedGraduate;
-    LaunchPrefetchService.prefetchedSemester = semester;
-    LaunchPrefetchService.coursePrefetchedAt = Date.now();
-    console.info(TAG, `prefetched ${list.length} courses`);
+    await storage.setCurrentCourses(list, writeMarker, 'mine');
 
     // 写入过程本身也可能是异步的：写完再核对一次，若期间切号/切学期就把刚写的数据撤掉。
     // 判断「是否仍是我的写入」必须和清空一起放进写入队列，否则旧任务的清空会排在
@@ -134,6 +129,13 @@ export class LaunchPrefetchService {
       LaunchPrefetchService.prefetchedSemester = '';
       return;
     }
+
+    if (await storage.getCurrentArchiveId() !== 'mine') return;
+    LaunchPrefetchService.prefetchedSid = expectedSid;
+    LaunchPrefetchService.prefetchedGraduate = expectedGraduate;
+    LaunchPrefetchService.prefetchedSemester = semester;
+    LaunchPrefetchService.coursePrefetchedAt = Date.now();
+    console.info(TAG, `prefetched ${list.length} courses`);
 
     // 学期起始日决定当前周次，缓存里没有时顺手补上。
     try {

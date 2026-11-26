@@ -1094,7 +1094,6 @@ struct MainPage {
           }
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
-          .margin({ left: 10 })
           Image(item.icon)
             .width(54)
             .height(54)
@@ -1103,7 +1102,7 @@ struct MainPage {
         }
         .width('100%')
         .height('100%')
-        .padding({ left: 12, right: 12, top: 14, bottom: 14 })
+        .padding({ left: 12, right: 8, top: 14, bottom: 14 })
         .alignItems(VerticalAlign.Center)
 
         if (this.communityBadgeCount(item) > 0) {
