@@ -32,6 +32,9 @@ struct PasswordRecoveryPage {
 
   aboutToDisappear(): void {
     this.stopCountdown();
+    ++this.captchaSeq;
+    ++this.smsCaptchaSeq;
+    this.busy = false;
     this.recoveryId = '';
     this.smsCaptchaCode = '';
     this.smsCaptchaImage = '';
@@ -65,6 +68,9 @@ struct PasswordRecoveryPage {
   private async loadCaptcha(): Promise<void> {
     if (this.busy) return;
     const seq = ++this.captchaSeq;
+    ++this.smsCaptchaSeq;
+    this.smsCaptchaCode = '';
+    this.smsCaptchaImage = '';
     this.busy = true;
     this.stage = 0;
     this.recoveryId = '';
@@ -83,7 +89,9 @@ struct PasswordRecoveryPage {
     } catch (error) {
       if (seq !== this.captchaSeq) return;
       this.showError(error as Error, '图形验证码加载失败');
-    } finally { this.busy = false; }
+    } finally {
+      if (seq === this.captchaSeq) this.busy = false;
+    }
   }
 
   private handleRecoveryError(error: Error, fallback: string): void {
@@ -113,17 +121,18 @@ struct PasswordRecoveryPage {
   }
 
   private async loadSmsCaptcha(): Promise<void> {
-    if (!this.recoveryId) return;
+    if (!this.recoveryId || this.stage !== 1) return;
+    const recoveryId = this.recoveryId;
     const seq = ++this.smsCaptchaSeq;
     this.smsCaptchaCode = '';
     this.smsCaptchaImage = '';
     try {
-      const data: RecoveryCaptcha = await PasswordRecoveryApi.smsCaptcha(this.recoveryId);
-      if (seq !== this.smsCaptchaSeq) return;
+      const data: RecoveryCaptcha = await PasswordRecoveryApi.smsCaptcha(recoveryId);
+      if (seq !== this.smsCaptchaSeq || this.stage !== 1 || this.recoveryId !== recoveryId) return;
       this.smsCaptchaImage = this.imageUri(data.image_base64 || '');
       this.smsCaptchaCode = '';
     } catch (error) {
-      if (seq !== this.smsCaptchaSeq) return;
+      if (seq !== this.smsCaptchaSeq || this.stage !== 1 || this.recoveryId !== recoveryId) return;
       this.handleRecoveryError(error as Error, '获取短信图形验证码失败');
     }
   }

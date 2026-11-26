@@ -85,7 +85,7 @@ async function pageHarness(options = {}) {
     PasswordRecoveryApi: {
       captcha: async () => ({ recovery_id: 'session', image_base64: 'iVBORw0KGgo=' }),
       identity: async () => ({ account: '123', masked_phone: '138****0000' }),
-    smsCaptcha: async () => ({ recovery_id: 'session', image_base64: 'iVBORw0KGgo=' }),
+    smsCaptcha: options.smsCaptcha ?? (async () => ({ recovery_id: 'session', image_base64: 'iVBORw0KGgo=' })),
       sendCode: async () => 60,
       verify: async () => {},
       reset: async (id, password) => { events.push(['reset', id, password]); if (mock.resetCode) throw new PasswordRecoveryError('timeout', mock.resetCode); if (mock.resetFails) throw Error('timeout'); }
@@ -97,7 +97,7 @@ async function pageHarness(options = {}) {
   Object.assign(page, { studentId: '123', newPassword: 'new-password', confirmPassword: 'new-password',
     recoveryId: 'session', busy: false, stage: 2, resultMessage: '', cooldown: 0, countdownTimer: -1,
     captchaSeq: 0, smsCaptchaSeq: 0 });
-  return { page, events };
+  return { page, events, PasswordRecoveryError };
 }
 
 test('identity, SMS, and new password flow advances only after each successful step', async () => {
@@ -179,4 +179,19 @@ test('HTTP 504 and JSON 504 cannot be re-submitted from the password page', asyn
   assert.match(page.resultMessage, /无法确认/);
   await page.submitPassword();
   assert.equal(events.filter(e => e[0] === 'reset').length, 1);
+});
+
+test('重新开始后迟到的短信图形码过期结果不清空新验证码', async () => {
+  let rejectOld;
+  const pending = new Promise((_resolve, reject) => { rejectOld = reject; });
+  const { page, events, PasswordRecoveryError } = await pageHarness({ smsCaptcha: () => pending });
+  page.stage = 1;
+  const old = page.loadSmsCaptcha();
+  await page.loadCaptcha();
+  page.captchaCode = 'new-captcha';
+  rejectOld(new PasswordRecoveryError('expired', 410));
+  await old;
+  assert.equal(page.captchaCode, 'new-captcha');
+  assert.equal(page.stage, 0);
+  assert.deepEqual(events, []);
 });
