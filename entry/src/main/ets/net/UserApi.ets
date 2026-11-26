@@ -1,3 +1,4 @@
+import { http } from '@kit.NetworkKit';
 /**
  * UserApi — 用户信息网络接口
  *
@@ -58,8 +59,9 @@ export class UserApi {
    * @param token 登录后保存的教务 Cookie
    */
   static async getUserInfo(token: string, studentId: string = ''): Promise<StudentApiResponse> {
+    const startedAt = Date.now();
     try {
-      console.info('UserApi', `getStudentInfoPage start tokenLen=${token.length} studentId=${studentId}`);
+      console.info('UserApi', 'getStudentInfoPage start');
       const result = await HttpRequest.request<StudentApiResponse>(
         UG_STUDENT_INFO_URL, 'GET',
         { headers: {
@@ -75,13 +77,14 @@ export class UserApi {
         return await UserApi.parseStudentPage(rawData, studentId);
       }
       const respData: StudentApiResponse = rawData;
-      console.info('UserApi', `getStudentInfoPage response code=${String(respData.code)} hasData=${respData.data !== undefined}`);
+      console.info('UserApi',
+        `getStudentInfoPage response code=${String(respData.code)} hasData=${respData.data !== undefined} elapsedMs=${Date.now() - startedAt}`);
       const pageResponse: StudentPageResponse = respData as StudentPageResponse;
       if (typeof pageResponse.data === 'string' && pageResponse.data.length > 0) {
         return await UserApi.parseStudentPage(pageResponse.data, studentId);
       }
       const normalized = normalizeStudentInfo(respData);
-      console.info('UserApi', `normalized student info=${JSON.stringify(normalized)}`);
+      console.info('UserApi', `normalize stage=direct hasFields=${normalized ? Object.keys(normalized).length : 0}`);
       if (respData && (respData.code === 200 || respData.code === 0 || respData.code === 10000 ||
         String(respData.code) === '200' || respData.data !== undefined ||
         respData.dataObject !== undefined || respData.value !== undefined || respData.name !== undefined ||
@@ -105,13 +108,15 @@ export class UserApi {
       }
       // 部分环境返回 HTML 页面串，按接口文档补走解析服务。
       return { code: respData?.code ?? -1, msg: respData?.msg ?? respData?.message ?? '请求失败' };
-    } catch {
-      console.warn('UserApi', 'getUserInfo error');
+    } catch (error) {
+      console.warn('UserApi',
+        `getUserInfo error stage=request type=${error instanceof Error ? error.name : typeof error} elapsedMs=${Date.now() - startedAt}`);
       return { code: -1, msg: '网络请求失败' };
     }
   }
 
   private static async parseStudentPage(page: string, studentId: string): Promise<StudentApiResponse> {
+    const startedAt = Date.now();
     const login = await HttpRequest.request<ParseTokenResponse>(
       UG_PARSE_LOGIN_URL + encodeURIComponent(studentId), 'POST',
       { headers: { Accept: 'application/json' }, secure: true });
@@ -123,7 +128,8 @@ export class UserApi {
     }, undefined, true);
     const parsedResponse = parsed.data;
     const parsedInfo = normalizeStudentInfo(parsedResponse);
-    console.info('UserApi', `parsed student info=${JSON.stringify(parsedInfo)}`);
+    console.info('UserApi',
+      `parse stage=studentPage hasFields=${parsedInfo ? Object.keys(parsedInfo).length : 0} elapsedMs=${Date.now() - startedAt}`);
     if (parsedInfo) parsedResponse.data = parsedInfo;
     return parsedResponse;
   }
@@ -155,6 +161,32 @@ export class UserApi {
     const data = result.data?.data;
     if (!data) return null;
     return data;
+  }
+
+  static async uploadAppAvatar(jpeg: ArrayBuffer, token: string): Promise<AvatarUploadResponse> {
+    const client = http.createHttp();
+    try {
+      const result = await client.request('https://lyzyy.love:8081/api/v1/profile/avatar', {
+        method: http.RequestMethod.POST,
+        header: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          Platform: 'android',
+          'Content-Type': 'multipart/form-data'
+        },
+        multiFormDataList: [{ name: 'avatar', remoteFileName: 'avatar.jpg', contentType: 'image/jpeg', data: jpeg }],
+        expectDataType: http.HttpDataType.STRING,
+        connectTimeout: 15000,
+        readTimeout: 30000
+      });
+      if (result.responseCode === 401) return { code: 401 };
+      if (result.responseCode !== 200 || typeof result.result !== 'string') {
+        throw new Error('avatar HTTP ' + result.responseCode);
+      }
+      return JSON.parse(result.result) as AvatarUploadResponse;
+    } finally {
+      client.destroy();
+    }
   }
 
   /** 修改昵称（/api/v1/profile/display-name）：成功后服务端与社区/其他设备才能同步。 */
@@ -205,4 +237,12 @@ interface AppProfileResponse {
   message?: string;
   msg?: string;
   data?: AppProfile;
+}
+interface AvatarUploadData {
+  avatarUrl?: string;
+}
+
+export interface AvatarUploadResponse {
+  code?: number;
+  data?: AvatarUploadData;
 }
