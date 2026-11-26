@@ -10,7 +10,7 @@ import {
   AppAuthDataContent,
 } from '../model/BaseResponse';
 import { AppStorage } from '../store/AppStorage';
-import type { DeviceAppAuth } from './UndergradDeviceLogin';
+import type { DeviceAppAuth, DeviceLoginOutcome } from './UndergradDeviceLogin';
 import { UndergradDeviceLogin } from './UndergradDeviceLogin';
 
 // 从 WustApi.java 抽取的常量子集
@@ -306,13 +306,20 @@ export class ApiService {
       const cookie = (await storage.getToken()).trim();
       if (!storage.isSessionCurrent(sessionEpoch)) return;
       if (cookie) {
-        const outcome = await UndergradDeviceLogin.complete(studentId, cookie);
+        let outcome: DeviceLoginOutcome;
+        try {
+          outcome = await UndergradDeviceLogin.complete(studentId, cookie);
+        } catch {
+          // 换取会话只提交了 Cookie，新服务不可达时可以走原有凭据恢复。
+          await ApiService.restoreLegacyAppAuth(storage, sessionEpoch, studentId, isGraduate);
+          return;
+        }
         if (!storage.isSessionCurrent(sessionEpoch)) return;
         if (outcome.code === 200 && outcome.data?.appAuth?.accessToken?.trim()) {
           await ApiService.saveRestoredAppAuth(storage, sessionEpoch, studentId, outcome.data.appAuth);
           return;
         }
-        if (outcome.code === 404 || outcome.code === 501) {
+        if (outcome.code === 404 || outcome.code === 408 || (outcome.code >= 500 && outcome.code < 600)) {
           await ApiService.restoreLegacyAppAuth(storage, sessionEpoch, studentId, isGraduate);
           return;
         }

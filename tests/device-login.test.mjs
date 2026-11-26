@@ -171,3 +171,32 @@ test('设备登录只在发送凭据前断开时允许回退', async () => {
     assert.equal(sent, submitted ? 2 : 0);
   }
 });
+
+test('新接口超时或返回 503 时回退旧 App 登录，切号后不提交保存的密码', async () => {
+  for (const outage of ['timeout', '503', 'account changed']) {
+    let epoch = 1;
+    let fallbackCalls = 0;
+    const storage = {
+      getSessionEpoch: () => epoch,
+      isSessionCurrent: requested => requested === epoch,
+      getStudentId: async () => 'A',
+      getIsGraduate: async () => false,
+      getUseMock: async () => false,
+      getToken: async () => 'cookie-A',
+      getPassword: async () => 'pwd-A',
+      setAppAuthTokensIfSession: async (_epoch, _sid, access) => access === 'legacy-token',
+    };
+    const api = await loadApi({ complete: async () => {
+      if (outage === '503') return { code: 503 };
+      if (outage === 'account changed') epoch++;
+      throw new Error('timeout');
+    } }, storage);
+    api.loginAppAuth = async (sid, password) => {
+      assert.deepEqual([sid, password], ['A', 'pwd-A']);
+      fallbackCalls++;
+      return { code: 200, data: { accessToken: 'legacy-token' } };
+    };
+    await api.loginAppAuthFromSavedCredentials(storage);
+    assert.equal(fallbackCalls, outage === 'account changed' ? 0 : 1);
+  }
+});
