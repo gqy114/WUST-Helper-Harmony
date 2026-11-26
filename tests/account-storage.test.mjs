@@ -289,6 +289,22 @@ test('当前我的课表在升级后采用当前课程的学期，不沿用旧�
   await storage.setCurrentCourses(courses('当前课表'));
   const widget = await storage.getWidgetSchedule('weekly');
   assert.equal(widget.semester, '2026-2027-1');
-  assert.equal(widget.termStart, '');
+  assert.match(widget.termStart, /^2026-(08|09)-/);
   assert.equal(widget.courses[0].courseName, '当前课表');
+});
+
+test('同一账号切换学期后桌面周次只使用所选学期的开学日', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  await storage.setSettingString('termStartDate_A', '2026-09-07');
+  await storage.setSemester('2026-2027-1');
+  assert.equal((await storage.getWidgetSchedule()).termStart, '2026-09-07');
+  await storage.setSemester('2026-2027-2');
+  const spring = await storage.getWidgetSchedule();
+  assert.equal(spring.semester, '2026-2027-2');
+  assert.match(spring.termStart, /^2027-/);
+  await storage.setAccountTermStartDate('A', '2026-2027-2', '2027-03-01');
+  assert.equal((await storage.getWidgetSchedule()).termStart, '2027-03-01');
+  await storage.setSemester('2026-2027-1');
+  assert.equal((await storage.getWidgetSchedule()).termStart, '2026-09-07');
 });

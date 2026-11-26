@@ -86,9 +86,9 @@ export struct CoursePage {
     const storage = PreferenceStorage.getInstance();
     const archiveId = await storage.getCurrentArchiveId();
     const sid = (await storage.getStudentId()).trim();
-    // 共享档案用档案日期；自己的课表用当前账号的日期，避免切号沿用上一个账号的开学日。
+    const semester = await storage.getSemester();
     const cached = archiveId === 'mine'
-      ? await storage.getAccountTermStartDate(sid)
+      ? await storage.getAccountTermStartDate(sid, semester) || PreferenceStorage.archiveTermStartForSemester(semester)
       : await storage.getSharedArchiveTermStartDate(archiveId);
     if (this.applyTermStartDateFromString(cached)) {
       await this.syncActualWeekWithClock(true);
@@ -133,36 +133,33 @@ export struct CoursePage {
         if (!this.applyTermStartDateFromString(archiveStart)) this.semesterStart = new Date(2025, 8, 1);
         return;
       }
+      const epoch = s.getSessionEpoch();
       const sid = (await s.getStudentId()).trim();
-      const cached = archiveId === 'mine'
-        ? await s.getAccountTermStartDate(sid)
-        : await s.getTermStartDate();
-      if (this.applyTermStartDateFromString(cached)) {
-        console.info(TAG, `resolveSemesterStart from cache: ${cached}`);
-        return;
-      }
-    } catch {
-      // 忽略缓存读取异常。
-    }
+      const semester = await s.getSemester();
+      const cached = await s.getAccountTermStartDate(sid, semester);
+      if (s.getSessionEpoch() !== epoch || await s.getCurrentArchiveId() !== archiveId) return;
+      if (this.applyTermStartDateFromString(cached)) return;
+      this.applyTermStartDateFromString(PreferenceStorage.archiveTermStartForSemester(semester));
 
-    try {
       const token = await s.getToken();
       if (!token) {
         return;
       }
       const resp = await CourseApi.getTermStartDate(token);
+      if (await s.getCurrentArchiveId() !== archiveId || s.getSessionEpoch() !== epoch) return;
       if (resp.code === 10000 || resp.code === 200 || resp.code === 0) {
         if (resp.data) {
           const year = resp.data.year;
           const month = resp.data.month;
           const day = resp.data.day;
           if (year > 0 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-            this.semesterStart = new Date(year, month - 1, day);
             const mm = month < 10 ? `0${month}` : `${month}`;
             const dd = day < 10 ? `0${day}` : `${day}`;
-            await s.setTermStartDate(`${year}-${mm}-${dd}`);
-          await s.setAccountTermStartDate((await s.getStudentId()).trim(), `${year}-${mm}-${dd}`);
-            console.info(TAG, `resolveSemesterStart from api: ${year}-${mm}-${dd}`);
+            const termStart = `${year}-${mm}-${dd}`;
+            // 接口只返回学校当前学期，查询历史课表时不能把它当成所选学期。
+            if (!PreferenceStorage.isTermStartForSemester(termStart, semester)) return;
+            this.applyTermStartDateFromString(termStart);
+            await s.setAccountTermStartDate(sid, semester, termStart);
           }
         }
       }
@@ -905,6 +902,7 @@ export struct CoursePage {
     this.errorMsg = '';
     try {
       await this.fetchCourses();
+      await this.resolveSemesterStartAndRefreshWeek();
       this.refreshKey = this.refreshKey + 1;
       if (!this.errorMsg) {
         promptAction.showToast({ message: `已切换到${semester}`, duration: 1500 });

@@ -41,21 +41,11 @@ struct CourseArchivePage {
     const previous = saved.find(item => item.id === 'mine');
     const isMine = this.currentArchiveId === 'mine';
     const semester = isMine ? await storage.getSemester() : (previous?.semester || await storage.getSemester());
-    let termStartDate = previous?.termStartDate;
-    if (isMine) {
-      const sid = (await storage.getStudentId()).trim();
-      const accountStart = (await storage.getAccountTermStartDate(sid)).trim();
-      const globalStart = (await storage.getTermStartDate()).trim();
-      // 升级后保留的旧“我的课表”可能没有单独开学日期：按当前学期补一个，
-      // 不能继续沿用上学期档案里的日期算周次。
-      const fallback = accountStart ||
-        (previous?.semester === semester ? (previous?.termStartDate || '') : '') ||
-        globalStart || PreferencesStorage.archiveTermStartForSemester(semester);
-      termStartDate = fallback;
-      if (fallback) await storage.setAccountTermStartDate(sid, fallback);
-    } else {
-      termStartDate = previous?.termStartDate;
-    }
+    const sid = (await storage.getStudentId()).trim();
+    const previousStart = previous?.semester === semester ? previous?.termStartDate || '' : '';
+    const termStartDate = await storage.getAccountTermStartDate(sid, semester) ||
+      (PreferencesStorage.isTermStartForSemester(previousStart, semester) ? previousStart : '') ||
+      PreferencesStorage.archiveTermStartForSemester(semester);
     const own: CourseArchive = {
       id: 'mine', name: '我的课表', isMine: true,
       semester: semester,

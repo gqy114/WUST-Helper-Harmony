@@ -287,13 +287,31 @@ export class AppStorage {
   async getTermStartDate(): Promise<string> { return this.getStr('termStartDate'); }
   async setTermStartDate(v: string): Promise<void> { return this.putStr('termStartDate', v); }
 
-  // 开学日期按账号隔离，避免切号后桌面卡片沿用上一个账号的周次基准。
-  async getAccountTermStartDate(studentId: string): Promise<string> {
-    return this.getStr('termStartDate_' + encodeURIComponent(studentId), '');
+  static isTermStartForSemester(value: string, semester: string): boolean {
+    const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    const term = /^(\d{4})-(\d{4})-([12])$/.exec(semester);
+    if (!date || !term) return false;
+    const year = Number(date[1]);
+    const month = Number(date[2]);
+    const day = Number(date[3]);
+    const parsed = new Date(year, month - 1, day);
+    if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) return false;
+    return term[3] === '1' ? date[1] === term[1] && month >= 7 : date[1] === term[2] && month <= 6;
   }
 
-  async setAccountTermStartDate(studentId: string, value: string): Promise<void> {
-    return this.putStr('termStartDate_' + encodeURIComponent(studentId), value);
+  async getAccountTermStartDate(studentId: string, semester: string): Promise<string> {
+    if (!studentId || !semester) return '';
+    const key = 'termStartDate_' + encodeURIComponent(studentId);
+    const exact = await this.getStr(key + '_' + semester, '');
+    if (AppStorage.isTermStartForSemester(exact, semester)) return exact;
+    // 旧缓存只有学号，日期能确认属于所查学期时才读取。
+    const legacy = await this.getStr(key, '');
+    return AppStorage.isTermStartForSemester(legacy, semester) ? legacy : '';
+  }
+
+  async setAccountTermStartDate(studentId: string, semester: string, value: string): Promise<void> {
+    if (!studentId || !AppStorage.isTermStartForSemester(value, semester)) return;
+    await this.putStr('termStartDate_' + encodeURIComponent(studentId) + '_' + semester, value);
   }
 
   // ── 登录与 Token ──
@@ -766,10 +784,11 @@ export class AppStorage {
       const liveOwn = archiveId === 'mine' && current === 'mine';
       const semester = liveOwn ? currentSemester
         : (selected?.semester || currentSemester);
-      const ownStart = archiveId === 'mine' && semester === currentSemester
-        ? await this.getAccountTermStartDate(studentId) : '';
-      const matchingArchiveStart = selected?.semester === semester ? selected?.termStartDate : '';
-      const termStart = ownStart || matchingArchiveStart || '';
+      const ownStart = archiveId === 'mine' ? await this.getAccountTermStartDate(studentId, semester) : '';
+      const archiveStart = selected?.semester === semester ? selected?.termStartDate || '' : '';
+      const matchingArchiveStart = archiveId !== 'mine' || AppStorage.isTermStartForSemester(archiveStart, semester)
+        ? archiveStart : '';
+      const termStart = ownStart || matchingArchiveStart || AppStorage.archiveTermStartForSemester(semester);
       if (epoch !== this.sessionEpoch) return { archiveId: '', archives: [], courses: [], termStart: '', semester: '' };
       if (formId && saved !== archiveId) await this.putStr(key, archiveId);
       return { archiveId, archives, courses, termStart, semester };
