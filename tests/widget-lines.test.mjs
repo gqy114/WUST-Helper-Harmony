@@ -168,7 +168,7 @@ test('周课表以本周为默认滑页，前后周各自显示课程并共用�
 test('快捷功能电量显示真实零值，缺少读数时显示占位', async () => {
   const WidgetData = await loadWidget();
   const snapshot = (rooms) => WidgetData.build({
-    getSettingString: async (key, fallback) => key === 'electricityRooms' ? JSON.stringify(rooms) : fallback,
+    getElectricityRoomsCache: async () => JSON.stringify(rooms),
   }, false, 'quick');
   const zero = await snapshot([{ name: '1630 房间', remaining: 0 }]);
   assert.equal(zero.title, '1630 房间');
@@ -188,4 +188,18 @@ test('房间名和电量数字在浅蓝底上使用深色文字', async () => {
   const card = await source('../entry/src/main/ets/widget/WidgetCard.ets');
   assert.match(card, /Text\(this\.title\)\.fontSize\(11\)\.fontColor\('#123A66'\)/, '房间名不是深色');
   assert.match(card, /Text\(this\.subtitle\)\.fontSize\(18\)\.fontWeight\(FontWeight\.Medium\)\.fontColor\('#123A66'\)/, '电量数字不是深色');
+});
+
+test('当前账号没有电表时，快捷卡片不会读取旧版共享电表', async () => {
+  const WidgetData = await loadWidget();
+  let legacyReads = 0;
+  const snapshot = await WidgetData.build({
+    getElectricityRoomsCache: async () => '',
+    getSettingString: async (key, fallback) => {
+      if (key === 'electricityRooms') { legacyReads++; return '[{"name":"旧账号","remaining":20}]'; }
+      return fallback;
+    },
+  }, false, 'quick');
+  assert.equal(snapshot.title, '未绑定房间');
+  assert.equal(legacyReads, 0);
 });

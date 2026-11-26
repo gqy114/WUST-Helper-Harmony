@@ -481,7 +481,6 @@ export class WidgetData {
       } catch (error) {
         raw = '';
       }
-      if (!raw) raw = await storage.getSettingString('electricityRooms', '[]');
       const rooms = JSON.parse(raw || '[]') as QuickRoomPref[];
       if (Array.isArray(rooms) && rooms.length > 0) {
         const room = rooms[0];
