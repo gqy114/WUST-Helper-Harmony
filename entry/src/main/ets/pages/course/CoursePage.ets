@@ -7,6 +7,7 @@ import { AppStorage as PreferenceStorage } from '../../store/AppStorage';
 import { TeachingSessionService } from '../../service/TeachingSessionService';
 import { LaunchPrefetchService } from '../../service/LaunchPrefetchService';
 import { CourseApi } from '../../net/CourseApi';
+import { DynamicScheduleApi } from '../../net/DynamicScheduleApi';
 import { CourseStore } from '../../store/CourseStore';
 import { WeekSelector } from '../../components/WeekSelector';
 import { CourseCalendar } from '../../components/CourseCalendar';
@@ -16,9 +17,6 @@ import { SemesterPicker } from '../../components/SemesterPicker';
 import { WeekAdjustPicker } from '../../components/WeekAdjustPicker';
 import { CourseData, isCourseInWeek, getTimeSlotsByCampus, ScheduleSettings, DEFAULT_SETTINGS } from '../../model/CourseModel';
 import { router, promptAction } from '@kit.ArkUI';
-import { scanBarcode, scanCore } from '@kit.ScanKit';
-import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
-import common from '@ohos.app.ability.common';
 
 const TAG = 'CoursePage';
 
@@ -80,8 +78,19 @@ export struct CoursePage {
     this.initializeWeek();
   }
 
-  private onCourseDataVersionChanged(): void {
-    this.loadCurrentArchiveCourses();
+  private async onCourseDataVersionChanged(): Promise<void> {
+    await this.loadCurrentArchiveCourses();
+    // 切换档案可能换了学期：优先使用档案自己的开学日期，但不改 App 当前学期。
+    const storage = PreferenceStorage.getInstance();
+    const archiveId = await storage.getCurrentArchiveId();
+    // 只有查看共享档案时才用档案日期；刷新“我的课表”必须用自己的开学日期。
+    const cached = archiveId === 'mine'
+      ? await storage.getTermStartDate()
+      : await storage.getSharedArchiveTermStartDate(archiveId);
+    if (this.applyTermStartDateFromString(cached)) {
+      this.updateWeekDates();
+      this.refreshKey = this.refreshKey + 1;
+    }
   }
 
   private async initializeWeek(): Promise<void> {
@@ -112,6 +121,15 @@ export struct CoursePage {
   private async resolveSemesterStart(): Promise<void> {
     const s = PreferenceStorage.getInstance();
     try {
+      // 当前查看的是共享档案时，优先使用该档案的开学日期，重启后也不能退回自己的学期。
+      const archiveId = (await s.getCurrentArchiveId()).trim();
+      if (archiveId.length > 0 && archiveId !== 'mine') {
+        const epoch = s.getSessionEpoch();
+        const archiveStart = await s.getSharedArchiveTermStartDate(archiveId);
+        if (await s.getCurrentArchiveId() !== archiveId || s.getSessionEpoch() !== epoch) return;
+        if (!this.applyTermStartDateFromString(archiveStart)) this.semesterStart = new Date(2025, 8, 1);
+        return;
+      }
       const cached = await s.getTermStartDate();
       if (this.applyTermStartDateFromString(cached)) {
         console.info(TAG, `resolveSemesterStart from cache: ${cached}`);
@@ -417,6 +435,10 @@ export struct CoursePage {
   private async fetchCourses(retried: boolean = false): Promise<void> {
     try {
       const s = PreferenceStorage.getInstance();
+      if (await s.getCurrentArchiveId() !== 'mine') {
+        await this.loadCurrentArchiveCourses();
+        return;
+      }
       const token = await s.getToken();
       if (!token) {
         this.showCachedCourses();
@@ -460,14 +482,19 @@ export struct CoursePage {
           ? (undergradResult.data ?? []) : null;
       }
 
+      if (await s.getCurrentArchiveId() !== 'mine') return;
       if (responseCode === 10000 || responseCode === 200 || responseCode === 0) {
         const list: CourseData[] = resp ? resp : [];
         const savedCourses = await s.getCurrentCourses();
         for (let i = 0; i < savedCourses.length; i++) {
           if (savedCourses[i].isPhysicalExperiment) list.push(savedCourses[i]);
         }
+        await s.setCurrentCourses(list, undefined, 'mine');
+        if (await s.getCurrentArchiveId() !== 'mine') {
+          await this.loadCurrentArchiveCourses();
+          return;
+        }
         this.store.setCourses(list);
-        await s.setCurrentCourses(this.store.courses);
         const colored = this.store.courses;
         this.allCourseList = Array.isArray(colored) ? [...colored] : [...list];
         this.applyOnlyThisWeekFilter();
@@ -555,11 +582,15 @@ export struct CoursePage {
   }
 
   private async loadCurrentArchiveCourses(): Promise<boolean> {
-    const currentCourses = await PreferenceStorage.getInstance().getCurrentCourses();
-    if (!currentCourses || currentCourses.length === 0) {
+    const storage = PreferenceStorage.getInstance();
+    const archiveId = await storage.getCurrentArchiveId();
+    const currentCourses = await storage.getCurrentCourses();
+    if (await storage.getCurrentArchiveId() !== archiveId) return false;
+    if (currentCourses.length === 0 && archiveId === 'mine') {
       return false;
     }
     this.store.setCourses(currentCourses);
+    this.errorMsg = '';
     // 必须用 store 里重新上过色的列表：本地存档没有 color 字段，
     // 直接用原数组会让所有课程都落到默认绿色。
     this.allCourseList = [...this.store.courses];
@@ -611,31 +642,8 @@ export struct CoursePage {
     console.info(TAG, `updateWeekDates: week=${this.currentWeek}, dates=${JSON.stringify(this.weekDates)}, month=${this.monthLabel}`);
   }
 
-  private async startScan(): Promise<void> {
-    try {
-      const context = getContext(this) as common.UIAbilityContext;
-      const atManager = abilityAccessCtrl.createAtManager();
-      const permissionResult = await atManager.requestPermissionsFromUser(context, [
-        'ohos.permission.CAMERA'
-      ]);
-      if (!permissionResult.authResults || permissionResult.authResults[0] !== 0) {
-        promptAction.showToast({ message: '需要相机权限才能扫码', duration: 1500 });
-        return;
-      }
-      const options: scanBarcode.ScanOptions = {
-        scanTypes: [scanCore.ScanType.ALL],
-        enableMultiMode: false,
-        enableAlbum: true
-      };
-      const result = await scanBarcode.startScanForResult(context, options);
-      console.info('CoursePage', `扫码结果: ${JSON.stringify(result)}`);
-      if (result.originalValue) {
-        promptAction.showToast({ message: `扫码结果: ${result.originalValue}`, duration: 2000 });
-      }
-    } catch (err) {
-      console.error('CoursePage', `扫码失败: ${JSON.stringify(err)}`);
-      promptAction.showToast({ message: '扫码已取消', duration: 1500 });
-    }
+  private startScan(): void {
+    router.pushUrl({ url: 'pages/course/CourseArchivePage', params: { scanOnOpen: true } });
   }
 
   /** 周切换回调 */
@@ -644,6 +652,20 @@ export struct CoursePage {
     this.currentWeek = week;
     this.updateWeekDates();
     console.info(TAG, `week changed to ${week}`);
+  }
+
+  private async refreshSharedArchive(archiveId: string): Promise<void> {
+    const storage = PreferenceStorage.getInstance();
+    const accountEpoch = storage.getSessionEpoch();
+    const archive = await DynamicScheduleApi.getSharedSchedule(archiveId);
+    const archives = await storage.getCourseArchives();
+    if (await storage.getCurrentArchiveId() !== archiveId || storage.getSessionEpoch() !== accountEpoch) return;
+    const updated = archives.map(item => item.id === archive.id ? archive : item);
+    await storage.setCourseArchives(updated, accountEpoch);
+    if (await storage.getCurrentArchiveId() !== archiveId || storage.getSessionEpoch() !== accountEpoch) return;
+    await storage.setCurrentArchiveCourses(archiveId, archive.courses);
+    AppStorage.setOrCreate('courseArchives', updated);
+    await this.loadCurrentArchiveCourses();
   }
 
   /** 右上角刷新课表 */
@@ -660,6 +682,7 @@ export struct CoursePage {
     });
 
     setTimeout(async () => {
+      let message = '刷新成功';
       if (this.isUseMockData) {
         this.store.setCourses(mockCourseList);
         this.allCourseList = [...mockCourseList];
@@ -669,9 +692,19 @@ export struct CoursePage {
         this.refreshKey = this.refreshKey + 1;
         console.info('CoursePage', 'mock data refreshed');
       } else {
-        await this.fetchCourses();
-        this.refreshKey = this.refreshKey + 1;
-        console.info('CoursePage', 'api data refreshed');
+        try {
+          const archiveId = await PreferenceStorage.getInstance().getCurrentArchiveId();
+          if (archiveId.startsWith('shared_')) {
+            await this.refreshSharedArchive(archiveId);
+          } else if (archiveId === 'mine') {
+            await this.fetchCourses();
+          } else {
+            await this.loadCurrentArchiveCourses();
+          }
+          this.refreshKey = this.refreshKey + 1;
+        } catch (error) {
+          message = (error as Error).message || '刷新共享课表失败，请稍后重试';
+        }
       }
 
       if (this.refreshTimer !== -1) {
@@ -681,8 +714,8 @@ export struct CoursePage {
       this.refreshRotate = 0;
       this.isRefreshing = false;
 
-      promptAction.showToast({ message: '刷新成功', duration: 1500 });
-      console.info('CoursePage', 'refresh success');
+      promptAction.showToast({ message, duration: 1500 });
+
     }, 800);
   }
 
@@ -785,7 +818,7 @@ export struct CoursePage {
       return;
     }
     if (index === 1) {
-      this.showSemesterPicker = true;
+      this.openSemesterPicker();
       return;
     }
     if (index === 2) {
@@ -826,8 +859,17 @@ export struct CoursePage {
     this.fetchCourses().finally(() => { this.loading = false; });
   }
 
+  private async openSemesterPicker(): Promise<void> {
+    if (await PreferenceStorage.getInstance().getCurrentArchiveId() !== 'mine') {
+      promptAction.showToast({ message: '导入的课表按分享学期显示，请先切回我的课表再切换学期' });
+      return;
+    }
+    this.showSemesterPicker = true;
+  }
+
   /** 保存所选学期并重新请求该学期课表。 */
   private async switchSemester(semester: string): Promise<void> {
+    if (await PreferenceStorage.getInstance().getCurrentArchiveId() !== 'mine') return;
     if (!semester || semester === this.store.semester) {
       this.currentSemester = semester || this.currentSemester;
       return;
