@@ -486,6 +486,26 @@ export class AppStorage {
     return this.getStr(await this.archiveKey('currentArchiveId'), 'mine');
   }
 
+  static archiveTermStartForSemester(semester: string): string {
+    const parts = semester.split('-');
+    if (parts.length < 3) return '';
+    const year = Number(parts[0]);
+    const term = parts[2].trim();
+    if (!year || (term !== '1' && term !== '2')) return '';
+    const start = term === '1' ? new Date(year, 8, 1) : new Date(year + 1, 1, 15);
+    while (start.getDay() !== 1) start.setDate(start.getDate() + 1);
+    const mm = (start.getMonth() + 1).toString().padStart(2, '0');
+    const dd = start.getDate().toString().padStart(2, '0');
+    return `${start.getFullYear()}-${mm}-${dd}`;
+  }
+
+  async getSharedArchiveTermStartDate(archiveId: string): Promise<string> {
+    const epoch = this.sessionEpoch;
+    const archive = (await this.getCourseArchives()).find(item => item.id === archiveId && !item.isMine);
+    if (epoch !== this.sessionEpoch || !archive) return '';
+    return archive.termStartDate || AppStorage.archiveTermStartForSemester(archive.semester);
+  }
+
   async setCurrentArchiveId(value: string): Promise<void> {
     return this.putStr(await this.archiveKey('currentArchiveId'), value);
   }

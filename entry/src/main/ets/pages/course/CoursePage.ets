@@ -86,7 +86,7 @@ export struct CoursePage {
     // 只有查看共享档案时才用档案日期；刷新“我的课表”必须用自己的开学日期。
     const cached = archiveId === 'mine'
       ? await storage.getTermStartDate()
-      : (await storage.getSettingString('archiveTermStartDate', '')) || await storage.getTermStartDate();
+      : await storage.getSharedArchiveTermStartDate(archiveId);
     if (this.applyTermStartDateFromString(cached)) {
       this.updateWeekDates();
       this.refreshKey = this.refreshKey + 1;
@@ -124,8 +124,11 @@ export struct CoursePage {
       // 当前查看的是共享档案时，优先使用该档案的开学日期，重启后也不能退回自己的学期。
       const archiveId = (await s.getCurrentArchiveId()).trim();
       if (archiveId.length > 0 && archiveId !== 'mine') {
-        const archiveStart = (await s.getSettingString('archiveTermStartDate', '')).trim();
-        if (this.applyTermStartDateFromString(archiveStart)) return;
+        const epoch = s.getSessionEpoch();
+        const archiveStart = await s.getSharedArchiveTermStartDate(archiveId);
+        if (await s.getCurrentArchiveId() !== archiveId || s.getSessionEpoch() !== epoch) return;
+        if (!this.applyTermStartDateFromString(archiveStart)) this.semesterStart = new Date(2025, 8, 1);
+        return;
       }
       const cached = await s.getTermStartDate();
       if (this.applyTermStartDateFromString(cached)) {

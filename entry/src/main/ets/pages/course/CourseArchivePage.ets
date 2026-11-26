@@ -24,19 +24,6 @@ struct CourseArchivePage {
   // 每次手动切换档案递增；导入过程中切过档案，旧导入结果必须丢弃。
   private archiveEpoch: number = 0;
 
-  private termStartForSemester(semester: string): string {
-    const parts = semester.split('-');
-    if (parts.length < 3) return '';
-    const year = Number(parts[0]);
-    const term = parts[2].trim();
-    if (!year) return '';
-    const start = term === '1' ? new Date(year, 8, 1) : new Date(year + 1, 1, 15);
-    while (start.getDay() !== 1) start.setDate(start.getDate() + 1);
-    const mm = (start.getMonth() + 1).toString().padStart(2, '0');
-    const dd = start.getDate().toString().padStart(2, '0');
-    return `${start.getFullYear()}-${mm}-${dd}`;
-  }
-
   async aboutToAppear(): Promise<void> {
     this.active = true;
     const storage = PreferencesStorage.getInstance();
@@ -72,19 +59,10 @@ struct CourseArchivePage {
       };
       this.archives = this.archives.map((item: CourseArchive) => item.id === 'mine' ? mine : item);
       await storage.setCourseArchives(this.archives);
-      await storage.setSettingString('archiveSemester', semester);
-      const ownStart = (await storage.getTermStartDate()).trim();
-      // 切回自己的课表时必须清掉共享档案的开学日期，避免旧学期缓存串用。
-      await storage.setSettingString('archiveTermStartDate', ownStart);
     }
 
     await storage.setCurrentArchiveId(archive.id);
     await storage.setCurrentArchiveCourses(archive.id, archive.courses);
-    // 只记录档案自己的学期/开学日期，不覆盖 App 的当前学期，
-    // 否则空教室、成绩等其它功能会按别人的旧学期查询。
-    await storage.setSettingString('archiveSemester', archive.semester);
-    const termStart = archive.termStartDate || this.termStartForSemester(archive.semester);
-    if (termStart) await storage.setSettingString('archiveTermStartDate', termStart);
     this.currentArchiveId = archive.id;
     AppStorage.setOrCreate('currentArchiveId', archive.id);
     AppStorage.setOrCreate('currentCourses', archive.courses);
@@ -234,7 +212,7 @@ struct CourseArchivePage {
         promptAction.showToast({ message: '这不是有效的课表二维码' });
         return;
       }
-      if (!archive.termStartDate) archive.termStartDate = this.termStartForSemester(archive.semester);
+      if (!archive.termStartDate) archive.termStartDate = PreferencesStorage.archiveTermStartForSemester(archive.semester);
       if (!this.active || accountEpoch !== storage.getSessionEpoch()) return;
       if (importEpoch !== this.archiveEpoch) {
         promptAction.showToast({ message: '档案已切换，请重新扫码导入', duration: 1800 });
