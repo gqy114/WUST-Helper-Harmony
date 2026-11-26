@@ -6,66 +6,55 @@ import { AppStorage } from '../store/AppStorage';
  * 刷新失败时保留旧 Token、缓存和 AppAuth，供离线功能继续使用。
  */
 export class TeachingSessionService {
-  /** 正在进行的刷新任务。并发调用共享同一个 Promise，避免 return false 让调用方误判。 */
   private static inFlight: Promise<boolean> | null = null;
-  private static inFlightAccount: string = '';
+  private static refreshEpoch: number = -1;
   private static lastAttemptAt: number = 0;
   private static lastSuccessAt: number = 0;
 
   static async hasSavedIdentity(): Promise<boolean> {
     const storage = AppStorage.getInstance();
+    const epoch = storage.getSessionEpoch();
     const sid = await storage.getStudentId();
     const password = await storage.getPassword();
-    return sid.trim().length > 0 && password.length > 0;
+    return storage.isSessionCurrent(epoch) && sid.trim().length > 0 && password.length > 0;
   }
 
   static async ensureSession(force: boolean = false): Promise<boolean> {
     const storage = AppStorage.getInstance();
+    const epoch = storage.getSessionEpoch();
     const token = (await storage.getToken()).trim();
+    if (!storage.isSessionCurrent(epoch)) return false;
     if (!force && token.length > 0) return true;
 
-    // 已有刷新在进行时直接等待它，不要返回 false：调用方会据此认为会话不可用。
-    if (TeachingSessionService.inFlight) return TeachingSessionService.inFlight;
-
     const now = Date.now();
-    if (!force && now - TeachingSessionService.lastAttemptAt < 30_000) return false;
+    if (TeachingSessionService.refreshEpoch === epoch) {
+      if (TeachingSessionService.inFlight) return TeachingSessionService.inFlight;
+      if (!force && now - TeachingSessionService.lastAttemptAt < 30_000) return false;
+    }
 
-    // 先把共享任务挂上去，再读凭据：读凭据是异步的，
-    // 若等读完再赋值，并发调用会同时通过上面的检查、发出两次登录。
+    TeachingSessionService.refreshEpoch = epoch;
     TeachingSessionService.lastAttemptAt = now;
     const task: Promise<boolean> = (async (): Promise<boolean> => {
-      const sid = await storage.getStudentId();
-      const password = await storage.getPassword();
-      if (!sid || !password) return false;
-      const account = sid.trim();
-      const epoch = storage.getSessionEpoch();
       try {
+        const sid = (await storage.getStudentId()).trim();
+        const password = await storage.getPassword();
         const graduate = await storage.getIsGraduate();
+        if (!sid || !password || !storage.isSessionCurrent(epoch)) return false;
         const refreshed = graduate
-          ? await ApiService.refreshGraduateToken(storage, account, password)
-          : await ApiService.refreshUndergradToken(storage, account, password);
-        // 请求期间切号：旧账号的结果不能改新账号的登录态。
-        if (storage.getSessionEpoch() !== epoch || (await storage.getStudentId()).trim() !== account) {
-          return false;
-        }
-        if (refreshed) {
-          await storage.setIsLogin(true);
-          TeachingSessionService.lastSuccessAt = Date.now();
-        }
-        return refreshed;
+          ? await ApiService.refreshGraduateToken(storage, sid, password, epoch)
+          : await ApiService.refreshUndergradToken(storage, sid, password, epoch);
+        if (!refreshed || !storage.isSessionCurrent(epoch)) return false;
+        TeachingSessionService.lastSuccessAt = Date.now();
+        return true;
       } catch {
         return false;
       }
     })();
     TeachingSessionService.inFlight = task;
-    TeachingSessionService.inFlightAccount = (await storage.getStudentId()).trim();
     try {
       return await task;
     } finally {
-      if (TeachingSessionService.inFlight === task) {
-        TeachingSessionService.inFlight = null;
-        TeachingSessionService.inFlightAccount = '';
-      }
+      if (TeachingSessionService.inFlight === task) TeachingSessionService.inFlight = null;
     }
   }
 
@@ -75,9 +64,12 @@ export class TeachingSessionService {
    */
   static async ensureFreshSession(maxAgeMs: number = 6 * 60 * 60 * 1000): Promise<boolean> {
     const storage = AppStorage.getInstance();
+    const epoch = storage.getSessionEpoch();
     const token = (await storage.getToken()).trim();
+    if (!storage.isSessionCurrent(epoch)) return false;
     if (token.length === 0) return TeachingSessionService.ensureSession(true);
     const updatedAt = await storage.getTokenUpdateTime();
+    if (!storage.isSessionCurrent(epoch)) return false;
     if (updatedAt > 0 && Date.now() - updatedAt < maxAgeMs) return true;
     return TeachingSessionService.ensureSession(true);
   }

@@ -136,6 +136,9 @@ async function relaySchoolRequest(request: RelayRequest): Promise<RelayResponse>
 
   let body: ArrayBuffer | undefined = undefined;
   if (request.body_base64 && request.body_base64.length > 0) {
+    if (request.body_base64.length > Math.ceil(MAX_BODY_BYTES / 3) * 4) {
+      return { kind: 'response', id, error: '请求体过大' };
+    }
     const bytes = base64Decode(request.body_base64);
     if (bytes.length > MAX_BODY_BYTES) {
       return { kind: 'response', id, error: '请求体过大' };
@@ -152,6 +155,7 @@ async function relaySchoolRequest(request: RelayRequest): Promise<RelayResponse>
       expectDataType: http.HttpDataType.ARRAY_BUFFER,
       connectTimeout: 15000,
       readTimeout: 30000,
+      maxLimit: MAX_BODY_BYTES,
       maxRedirects: 0
     });
     let encoded = '';
@@ -178,38 +182,55 @@ async function relaySchoolRequest(request: RelayRequest): Promise<RelayResponse>
  * 本科设备登录：WebSocket + RSA-OAEP + AES-256-GCM。
  * 失败时抛出 Error，由调用方决定是否回退旧登录。
  */
+class DeviceLoginUnavailableError extends Error {}
+
 export class UndergradDeviceLogin {
+  static canFallback(error: Error): boolean {
+    return error instanceof DeviceLoginUnavailableError;
+  }
+
   static async login(studentId: string, password: string): Promise<DeviceLoginOutcome> {
     const username = studentId.trim();
     const pwd = password.trim();
     const socket = webSocket.createWebSocket();
     let sessionKey: Uint8Array | undefined = undefined;
     let settled = false;
+    let startSubmitted = false;
     let timer: number = -1;
+    let startTimer: number = -1;
 
     return new Promise<DeviceLoginOutcome>((resolve, reject) => {
+      const cleanup = (): void => {
+        settled = true;
+        clearTimeout(timer);
+        clearTimeout(startTimer);
+        try {
+          socket.close().catch((): void => {});
+        } catch {}
+      };
       const finish = (outcome: DeviceLoginOutcome): void => {
         if (settled) return;
-        settled = true;
-        if (timer !== -1) clearTimeout(timer);
-        try { socket.close(); } catch (error) {}
+        cleanup();
         resolve(outcome);
       };
       const fail = (message: string): void => {
         if (settled) return;
-        settled = true;
-        if (timer !== -1) clearTimeout(timer);
-        try { socket.close(); } catch (error) {}
-        reject(new Error(message));
+        cleanup();
+        reject(startSubmitted ? new Error(message) : new DeviceLoginUnavailableError(message));
       };
-      const sendJson = async (payload: string): Promise<void> => {
+      const sendJson = async (payload: string, isStart: boolean = false): Promise<void> => {
         if (!sessionKey) throw new Error('加密通道尚未建立');
         const nonce = randomBytes(12);
         const encrypted = await aesGcmEncrypt(sessionKey, nonce, CLIENT_AAD, payload);
-        await socket.send(JSON.stringify({ nonce: base64Encode(nonce), data: base64Encode(encrypted) }));
+        if (settled) return;
+        if (isStart) startSubmitted = true;
+        const sent = await socket.send(JSON.stringify({ nonce: base64Encode(nonce), data: base64Encode(encrypted) }));
+        if (!sent) throw new Error('登录消息发送失败');
+        if (isStart) clearTimeout(startTimer);
       };
 
       timer = setTimeout(() => fail('登录超时，请检查网络后重试'), SESSION_TIMEOUT_MS);
+      startTimer = setTimeout(() => fail('登录服务响应超时，请重试'), START_TIMEOUT_MS);
 
       socket.on('open', () => {
         // 连接已建立，等待后端下发 RSA 公钥。
@@ -222,18 +243,23 @@ export class UndergradDeviceLogin {
       });
       socket.on('message', async (error: BusinessError, data: string | ArrayBuffer) => {
         try {
-          if (typeof data !== 'string') return;
-          const message = JSON.parse(data) as ServerMessage;
+          if (settled) return;
+          if (error) throw error;
+          const raw = typeof data === 'string' ? data : bytesToString(new Uint8Array(data));
+          const message = JSON.parse(raw) as ServerMessage;
           if (message.kind === 'key' && message.public_key && !sessionKey) {
             sessionKey = randomBytes(32);
             const encryptedKey = await encryptSessionKey(base64Decode(message.public_key), sessionKey);
-            await socket.send(JSON.stringify({ kind: 'key', encrypted_key: encryptedKey }));
-            await sendJson(JSON.stringify({ kind: 'start', username, password: pwd }));
+            if (settled) return;
+            const sent = await socket.send(JSON.stringify({ kind: 'key', encrypted_key: encryptedKey }));
+            if (!sent) throw new Error('登录密钥发送失败');
+            await sendJson(JSON.stringify({ kind: 'start', username, password: pwd }), true);
             return;
           }
-          if (!sessionKey || !message.nonce || !message.data) return;
+          if (!startSubmitted || !sessionKey || !message.nonce || !message.data) return;
           const plain = await aesGcmDecrypt(sessionKey, base64Decode(message.nonce), SERVER_AAD,
             base64Decode(message.data));
+          if (settled) return;
           const payload = JSON.parse(plain) as DevicePayload;
           if (payload.kind === 'request') {
             const response = await relaySchoolRequest(payload as RelayRequest);
@@ -248,12 +274,11 @@ export class UndergradDeviceLogin {
         }
       });
 
-      socket.connect(DEVICE_LOGIN_WS, { header: { Platform: 'harmony' } }).catch((error: Error) => {
-        fail(`无法连接登录服务：${error.message ?? ''}`);
+      socket.connect(DEVICE_LOGIN_WS, { header: { Platform: 'harmony' } }).then((connected: boolean): void => {
+        if (!connected) fail('无法连接登录服务，请检查网络');
+      }).catch((): void => {
+        fail('无法连接登录服务，请检查网络');
       });
-      setTimeout(() => {
-        if (!settled && !sessionKey) fail('登录服务响应超时，请重试');
-      }, START_TIMEOUT_MS);
     });
   }
 
@@ -271,8 +296,12 @@ export class UndergradDeviceLogin {
         extraData: JSON.stringify({ student_id: studentId, cookie }),
         expectDataType: http.HttpDataType.STRING,
         connectTimeout: 15000,
-        readTimeout: 30000
+        readTimeout: 30000,
+        maxRedirects: 0
       });
+      if (response.responseCode !== 200) {
+        return { code: response.responseCode, message: '登录服务未能恢复会话' };
+      }
       const body = typeof response.result === 'string' ? response.result : bytesToString(new Uint8Array(response.result as ArrayBuffer));
       const parsed = JSON.parse(body) as DeviceLoginOutcome;
       return parsed;

@@ -189,6 +189,7 @@ export class AppStorage {
       await this.setTokenUpdateTime(now);
       await this.setTokenLastUseTime(now);
       await this.setMessage(message);
+      await this.setIsLogin(true);
     });
   }
 
@@ -263,6 +264,9 @@ export class AppStorage {
   private courseCacheMarker: string = '';
 
   getSessionEpoch(): number { return this.sessionEpoch; }
+  isSessionCurrent(epoch: number): boolean {
+    return this.accountChangesPending === 0 && this.sessionEpoch === epoch;
+  }
 
   getCourseCacheMarker(): string { return this.courseCacheMarker; }
 
@@ -308,6 +312,7 @@ export class AppStorage {
       // 资料刷新会重复保存相同学号；只有身份确实改变时才清除令牌。
       if (previousSid !== (v || '').trim() || identityVersion !== this.authIdentityAppliedVersion) {
         await this.putStr('token', '');
+        await this.putStr('password', '');
         await this.putStr('appAuthAccessToken', '');
         await this.putStr('appAuthRefreshToken', '');
       }
@@ -346,6 +351,7 @@ export class AppStorage {
       if (previous !== v) {
         this.authIdentityVersion++;
         await this.putStr('token', '');
+        await this.putStr('password', '');
         await this.putStr('appAuthAccessToken', '');
         await this.putStr('appAuthRefreshToken', '');
       }

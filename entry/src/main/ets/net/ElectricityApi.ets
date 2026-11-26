@@ -1,7 +1,6 @@
 import { HttpRequest } from './HttpRequest';
 import { AppStorage } from '../store/AppStorage';
 import { ApiService } from './ApiService';
-import { DeviceAuthRestore } from './DeviceAuthRestore';
 export interface YKTLocationItem { id: string; name: string; }
 export interface YKTLocationPage { type: string; end: boolean; items: YKTLocationItem[]; }
 export interface YKTLocationResponse { code: number; message: string; data?: YKTLocationPage; }
@@ -19,7 +18,7 @@ export class ElectricityApi {
     const result = await HttpRequest.get<T>(`https://lyzyy.love:8081/api/v1/ykt/${path}`, { Authorization: `Bearer ${token}`, Accept: 'application/json' });
     const body = result.data as T;
     const envelope = result.data as YKTResponseEnvelope;
-    if (envelope.code === 401 && retry) { await storage.setAppAuthAccessToken(''); await DeviceAuthRestore.restore(storage); return ElectricityApi.get<T>(path, false); }
+    if (envelope.code === 401 && retry) { await storage.setAppAuthAccessToken(''); await ApiService.loginAppAuthFromSavedCredentials(storage); return ElectricityApi.get<T>(path, false); }
     return body;
   }
   static async locations(parentId: string = ''): Promise<YKTLocationPage> { const suffix = parentId ? `?parentId=${encodeURIComponent(parentId)}` : ''; const response = await ElectricityApi.get<YKTLocationResponse>(`locations${suffix}`); if (response.code !== 200 || !response.data) throw new Error(response.message || 'locations failed'); return response.data; }
@@ -30,14 +29,14 @@ export class ElectricityApi {
     let token = await storage.getAppAuthAccessToken();
     if (!studentId) return [];
     if (!token && retry) {
-      await DeviceAuthRestore.restore(storage);
+      await ApiService.loginAppAuthFromSavedCredentials(storage);
       token = await storage.getAppAuthAccessToken();
     }
     if (!token) return [];
     const result = await HttpRequest.get<YKTCloudResponse>(`https://lyzyy.love:8081/Misc/Support/sync?studentId=${encodeURIComponent(studentId)}`, { Authorization: `Bearer ${token}`, Accept: 'application/json' });
     if (result.data.code === 401 && retry) {
       await storage.setAppAuthAccessToken('');
-      await DeviceAuthRestore.restore(storage);
+      await ApiService.loginAppAuthFromSavedCredentials(storage);
       return ElectricityApi.savedRooms(false);
     }
     return result.data.data?.data?.electricity?.rooms || [];
