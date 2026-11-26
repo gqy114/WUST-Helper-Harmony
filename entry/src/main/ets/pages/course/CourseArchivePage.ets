@@ -28,19 +28,6 @@ struct CourseArchivePage {
   // 每次手动切换档案递增；导入过程中切过档案，旧导入结果必须丢弃。
   private archiveEpoch: number = 0;
 
-  private termStartForSemester(semester: string): string {
-    const parts = semester.split('-');
-    if (parts.length < 3) return '';
-    const year = Number(parts[0]);
-    const term = parts[2].trim();
-    if (!year) return '';
-    const start = term === '1' ? new Date(year, 8, 1) : new Date(year + 1, 1, 15);
-    while (start.getDay() !== 1) start.setDate(start.getDate() + 1);
-    const mm = (start.getMonth() + 1).toString().padStart(2, '0');
-    const dd = start.getDate().toString().padStart(2, '0');
-    return `${start.getFullYear()}-${mm}-${dd}`;
-  }
-
   async aboutToAppear(): Promise<void> {
     this.active = true;
     const storage = PreferencesStorage.getInstance();
@@ -99,8 +86,7 @@ struct CourseArchivePage {
     if (epoch !== storage.getSessionEpoch()) return;
     await storage.setCourseArchives(archives, epoch);
     const target = archives.find(item => item.id === archive.id) || archive;
-    const start = target.termStartDate || (target.id === 'mine' ? '' : this.termStartForSemester(target.semester));
-    if (!await storage.activateCourseArchive(target, start, epoch)) return;
+    if (!await storage.activateCourseArchive(target, epoch)) return;
     const courses = await storage.getCurrentCourses();
     if (epoch !== storage.getSessionEpoch()) return;
     this.archives = archives;
@@ -284,7 +270,7 @@ struct CourseArchivePage {
         promptAction.showToast({ message: '这不是有效的课表二维码' });
         return;
       }
-      if (!archive.termStartDate) archive.termStartDate = this.termStartForSemester(archive.semester);
+      if (!archive.termStartDate) archive.termStartDate = PreferencesStorage.archiveTermStartForSemester(archive.semester);
       if (!this.active || accountEpoch !== storage.getSessionEpoch()) return;
       if (importEpoch !== this.archiveEpoch) {
         promptAction.showToast({ message: '档案已切换，请重新扫码导入', duration: 1800 });

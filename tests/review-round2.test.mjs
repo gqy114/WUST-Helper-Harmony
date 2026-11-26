@@ -92,7 +92,7 @@ test('实验课缓存按档案隔离，打开档案页不会清掉已有实验�
   assert.match(store, /readPhysicalExperimentCoursesUnlocked\(archiveId: string = 'mine'\)/, '读取实验课没有按档案区分');
   assert.match(store, /mergePhysicalExperiments\(savedExperiments, incomingExperiments\)/, '切换档案时应保留该档案自己的实验课');
   const page = await source('pages/course/CourseArchivePage.ets');
-  assert.match(page, /activateCourseArchive\(target, start, epoch\)/, '切换档案没有走按档案缓存逻辑');
+  assert.match(page, /activateCourseArchive\(target, epoch\)/, '切换档案没有走按档案缓存逻辑');
 });
 
 test('多张二维码按码点拆分，不会把表情/生僻字截断', async () => {
