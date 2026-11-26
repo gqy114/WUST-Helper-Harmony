@@ -292,7 +292,7 @@ struct LoginPage {
           resp = await ApiService.loginUndergrad(sid, pwd);
         }
       }
-      if (attempt !== this.loginAttempt) return;
+      if (!this.isPageAlive || attempt !== this.loginAttempt) return;
       this.clearLoginTimer();
 
       if (!this.isGraduate) {
@@ -319,7 +319,7 @@ struct LoginPage {
           CourseStore.getInstance().setCourses([]);
           console.info(TAG, `account switched ${prevSid} -> ${sid}, cached timetable cleared`);
         }
-        if (attempt !== this.loginAttempt) return;
+        if (!this.isPageAlive || attempt !== this.loginAttempt) return;
         if (resp.data) {
           if (this.isGraduate) {
             const gdata = resp.data as GraduateLoginDataContent;
@@ -368,7 +368,7 @@ struct LoginPage {
         this.handleLoginFail(sid, resp?.msg ?? '\u767b\u5f55\u5931\u8d25');
       }
     } catch {
-      if (attempt !== this.loginAttempt) return;
+      if (!this.isPageAlive || attempt !== this.loginAttempt) return;
       this.clearLoginTimer();
       this.hideLoading();
       this.isLoggingIn = false;
@@ -593,11 +593,7 @@ private async fetchUserInfo(_sid: string): Promise<void> {
     this.clearLoginTimer();
     this.loginTimer = setTimeout(() => {
       if (!this.isPageAlive) return;
-      this.hideLoading();
-      promptAction.showToast({ message: '登录超时，请检查网络或稍后再试', duration: 3000 });
-      // 让仍在运行的旧请求失效，避免它稍后覆盖新登录状态。
-      this.loginAttempt++;
-      this.isLoggingIn = false;
+      this.updateLoading('教务系统响应较慢，仍在登录…');
     }, timeoutMs);
   }
 
