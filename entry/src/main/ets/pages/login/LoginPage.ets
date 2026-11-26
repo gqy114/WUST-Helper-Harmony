@@ -347,7 +347,7 @@ struct LoginPage {
               await s.setPassword(pwd);
               if (deviceData?.appAuth) await this.saveDeviceAppAuth(deviceData.appAuth, sid);
               await StorageUtil.saveLoginInfo(tdata.token, sid, sid);
-              console.info(TAG, 'login token saved: ' + tdata.token);
+              console.info(TAG, 'login token saved');
             }
           }
         }
