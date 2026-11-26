@@ -35,8 +35,12 @@ struct ElectricityPage {
     try {
       let cloudRooms: YKTSavedRoom[] = [];
       try { cloudRooms = await ElectricityApi.savedRooms(); } catch { console.warn('ElectricityPage', 'cloud rooms unavailable'); }
-      const localRooms = await this.localSavedRooms();
+      // 缓存读取期间重登时，存储层可能临时返回空值。等同账号的新会话稳定后再读。
+      const readEpoch = storage.getSessionEpoch();
+      let localRooms = await this.localSavedRooms();
       if (!await this.isRoomSessionCurrent()) return;
+      if (readEpoch !== this.roomEpoch) localRooms = await this.localSavedRooms();
+      const snapshotEpoch = this.roomEpoch;
       const rooms: YKTSavedRoom[] = cloudRooms.concat(localRooms.filter(local =>
         !cloudRooms.some(cloud => cloud.id === local.id)));
       this.savedRooms = rooms;
@@ -50,7 +54,8 @@ struct ElectricityPage {
           room.unit = balance.unit;
         } catch { console.warn('ElectricityPage', `room query failed: ${room.id}`); }
       }
-      await this.saveLocalRooms();
+      // 后台读到空列表不代表用户删除了电表；迟到的快照也不能覆盖重登后的缓存。
+      if (rooms.length > 0) await this.saveLocalRooms(snapshotEpoch);
     } catch { console.warn('ElectricityPage', 'saved rooms unavailable'); }
     finally { this.loading = false; }
     if (!await this.isRoomSessionCurrent()) return;
@@ -65,9 +70,9 @@ struct ElectricityPage {
     try { return JSON.parse(raw) as YKTSavedRoom[]; } catch { return []; }
   }
 
-  private async saveLocalRooms(): Promise<void> {
+  private async saveLocalRooms(epoch: number = this.roomEpoch): Promise<void> {
     await AppStorage.getInstance().setElectricityRoomsCache(
-      this.roomAccount, this.roomEpoch, JSON.stringify(this.savedRooms));
+      this.roomAccount, epoch, JSON.stringify(this.savedRooms));
   }
 
   private async isRoomSessionCurrent(): Promise<boolean> {
