@@ -2,6 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { stripTypeScriptTypes } from 'node:module';
+import { runInNewContext } from 'node:vm';
 
 const root = '../entry/src/main';
 const source = (path) => readFile(new URL(`${root}/ets/${path}`, import.meta.url), 'utf8');
@@ -58,14 +60,80 @@ test('主节点 404 时校园资讯自动切换备用节点', async () => {
 test('加载更多进行中重复点击不会把请求代次推进导致卡在加载中', async () => {
   const page = await source('pages/campus/CampusPage.ets');
   const load = page.match(/private async load\(reset: boolean\): Promise<void> \{[\s\S]*?\n  \}/)?.[0] || '';
-  const guardIndex = load.indexOf('!reset && (this.loadingMore || !this.hasMore)');
+  const guardIndex = load.indexOf('!reset && (this.loadingMore || !this.hasMore || this.loading)');
   const generationIndex = load.indexOf('++this.requestGeneration');
   assert.ok(guardIndex >= 0 && generationIndex > guardIndex, '应先判断是否正在加载，再推进请求代次');
 });
 
 test('校园资讯为空时显示占位与刷新，不出现整页空白', async () => {
   const page = await readFile(new URL('../entry/src/main/ets/pages/campus/CampusPage.ets', import.meta.url), 'utf8');
-  assert.match(page, /else if \(this\.articles\.length === 0\)/, '缺少空列表状态');
+  assert.match(page, /else if \(this\.articleCount === 0\)/, '缺少空列表状态');
   assert.match(page, /暂无校园资讯/, '空列表没有提示文案');
   assert.match(page, /Text\('刷新'\)/, '空列表没有刷新入口');
+});
+
+test('搜索分页沿用已提交的关键词，并忽略清除搜索后的迟到结果', async () => {
+  const code = await source('pages/campus/CampusPage.ets');
+  const load = code.match(/  private async load\(reset: boolean\): Promise<void> \{[\s\S]*?\n  \}/)[0];
+  const calls = [];
+  let resolveNextPage;
+  const nextPage = new Promise(resolve => { resolveNextPage = resolve; });
+  const api = {
+    search(keyword, page) {
+      calls.push([keyword, page]);
+      return page === 1 ? { items: [{ id: 'search' }], total: 2 } : nextPage;
+    },
+    articles: async () => ({ items: [{ id: 'feed' }], total: 1 }),
+  };
+  const nearEnd = code.match(/  private loadNearEnd\(lastVisible: number\): void \{[\s\S]*?\n  \}/)[0];
+  const Page = runInNewContext(stripTypeScriptTypes('class Page {\n' + load + nearEnd + '\n}; Page;'), {
+    CampusNewsApi: api, PAGE_SIZE: 20, PREFETCH_REMAINING: 3,
+  });
+  const items = [];
+  const newsSource = { clear: () => { items.length = 0; }, append: (batch) => items.push(...batch),
+    totalCount: () => items.length };
+  const page = Object.assign(new Page(), { keyword: '研究生', requestGeneration: 0, newsSource });
+  await page.load(true);
+  page.loadNearEnd(0);
+  page.loadNearEnd(0);
+  assert.deepEqual(calls, [['研究生', 1], ['研究生', 2]]);
+  page.keyword = '';
+  await page.load(true);
+  resolveNextPage({ items: [{ id: 'old' }], total: 2 });
+  await nextPage;
+  assert.deepEqual(items, [{ id: 'feed' }]);
+  assert.equal(page.loadingMore, false);
+});
+
+test('换来源后直接关闭筛选，迟到的旧来源分页不会混进新来源', async () => {
+  const code = await source('pages/campus/CampusPage.ets');
+  const load = code.match(/  private async load\(reset: boolean\): Promise<void> \{[\s\S]*?\n  \}/)[0];
+  const select = code.match(/  private async selectCollege\(id: string\): Promise<void> \{[\s\S]*?\n  \}/)[0];
+  let finishOldPage;
+  const calls = [];
+  const api = {
+    categories: async () => [],
+    articles(page, _, college) {
+      calls.push([page, college]);
+      if (college === 'old' && page === 2) return new Promise(resolve => { finishOldPage = resolve; });
+      return { items: [{ id: college + page }], total: 2 };
+    },
+  };
+  const Page = runInNewContext(stripTypeScriptTypes('class Page {\n' + load + select + '\n}; Page;'), {
+    CampusNewsApi: api, PAGE_SIZE: 20,
+  });
+  const items = [];
+  const newsSource = { clear: () => { items.length = 0; }, append: (batch) => items.push(...batch),
+    totalCount: () => items.length };
+  const page = Object.assign(new Page(), { collegeId: 'old', requestGeneration: 0,
+    categoryGeneration: 0, keyword: '', newsSource });
+  await page.load(true);
+  const stale = page.load(false);
+  await page.selectCollege('new');
+  page.filterOpen = false;
+  finishOldPage({ items: [{ id: 'old2' }], total: 2 });
+  await stale;
+  await page.load(false);
+  assert.deepEqual(calls, [[1, 'old'], [2, 'old'], [1, 'new'], [2, 'new']]);
+  assert.deepEqual(items, [{ id: 'new1' }, { id: 'new2' }]);
 });

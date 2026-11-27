@@ -2,6 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { stripTypeScriptTypes } from 'node:module';
+import { runInNewContext } from 'node:vm';
 
 const src = (path) => readFile(new URL(`../entry/src/main/ets/${path}`, import.meta.url), 'utf8');
 
@@ -99,6 +101,41 @@ test('取消指定专业会恢复原来的筛选模式', async () => {
   assert.match(page, /this\.pendingMajors = \[\];\s*this\.pendingMajor = this\.pendingMajorMode;/, '恢复非指定专业模式时没有清空专业列表');
   const saves = page.match(/this\.majorPickerOriginalMode = this\.pendingMajorMode;/g) || [];
   assert.ok(saves.length >= 2, '修改入口没有保存本次打开前的模式');
+});
+
+test('二手书筛选确认后同时应用专业、校区和排序，取消后保留上次确认项', async () => {
+  const source = await src('pages/campus/SecondHandBookPage.ets');
+  const methods = source.slice(source.indexOf('  private campusMatches('), source.indexOf('  private togglePendingMajor('));
+  const Page = runInNewContext(stripTypeScriptTypes('class Page {\n' + methods + '\n}; Page;'), {
+    animateTo: (_, task) => task(), Curve: { EaseInOut: 0 },
+  });
+  const page = Object.assign(new Page(), {
+    activeMajorMode: '全部专业', activeMajors: [], activeCampus: '全部校区', activeSort: '默认排序',
+    selfMajor: '计算机科学与技术',
+    listings: [
+      { id: 1, major: '计算机科学与技术', campus: '青山', price: 22 },
+      { id: 2, major: '计算机科学与技术', campusName: '青山', price: 12 },
+      { id: 3, major: '自动化', campus: '青山', price: 5 },
+      { id: 4, major: '计算机科学与技术', campus: '黄家湖', price: 8 },
+    ],
+  });
+  page.openFilter();
+  page.chooseMajorMode('我的专业');
+  page.pendingCampus = '青山';
+  page.pendingSort = '价格升序';
+  assert.deepEqual(page.visibleListings().map(item => item.id), [1, 2, 3, 4]);
+  page.applyFilter();
+  assert.deepEqual(page.visibleListings().map(item => item.id), [2, 1]);
+
+  page.openFilter();
+  page.chooseMajorMode('全部专业');
+  page.pendingCampus = '全部校区';
+  page.pendingSort = '价格降序';
+  page.closeFilter();
+  page.openFilter();
+  assert.equal(page.pendingMajorMode, '我的专业');
+  assert.equal(page.pendingCampus, '青山');
+  assert.equal(page.pendingSort, '价格升序');
 });
 
 test('@ 昵称使用接口 mentionUsers，列表和通知也会转换', async () => {

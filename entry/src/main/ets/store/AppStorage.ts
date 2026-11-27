@@ -476,12 +476,34 @@ export class AppStorage {
     return this.parseArchives(raw);
   }
 
-  async setCourseArchives(value: CourseArchive[]): Promise<void> {
-    return this.putStr(await this.archiveKey('courseArchives'), JSON.stringify(value));
+  async setCourseArchives(value: CourseArchive[], expectedEpoch: number = this.sessionEpoch): Promise<void> {
+    const key = await this.archiveKey('courseArchives');
+    if (this.sessionEpoch !== expectedEpoch) return;
+    await this.putStr(key, JSON.stringify(value));
   }
 
   async getCurrentArchiveId(): Promise<string> {
     return this.getStr(await this.archiveKey('currentArchiveId'), 'mine');
+  }
+
+  static archiveTermStartForSemester(semester: string): string {
+    const parts = semester.split('-');
+    if (parts.length < 3) return '';
+    const year = Number(parts[0]);
+    const term = parts[2].trim();
+    if (!year || (term !== '1' && term !== '2')) return '';
+    const start = term === '1' ? new Date(year, 8, 1) : new Date(year + 1, 1, 15);
+    while (start.getDay() !== 1) start.setDate(start.getDate() + 1);
+    const mm = (start.getMonth() + 1).toString().padStart(2, '0');
+    const dd = start.getDate().toString().padStart(2, '0');
+    return `${start.getFullYear()}-${mm}-${dd}`;
+  }
+
+  async getSharedArchiveTermStartDate(archiveId: string): Promise<string> {
+    const epoch = this.sessionEpoch;
+    const archive = (await this.getCourseArchives()).find(item => item.id === archiveId && !item.isMine);
+    if (epoch !== this.sessionEpoch || !archive) return '';
+    return archive.termStartDate || AppStorage.archiveTermStartForSemester(archive.semester);
   }
 
   async setCurrentArchiveId(value: string): Promise<void> {
@@ -703,6 +725,12 @@ export class AppStorage {
   }
 
   private async readCurrentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {
+    if (archiveId.startsWith('shared_')) {
+      const archives = await this.getCourseArchives();
+      const shared = archives.find(archive => archive.id === archiveId);
+      const experiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
+      return this.mergePhysicalExperiments(shared?.courses ?? [], experiments);
+    }
     const current = await this.getStoredCourses('currentCourses');
     // 别人的课表只用自己的数据：绝不把自己的实验课合进去。
     if (archiveId !== 'mine') {
@@ -728,13 +756,14 @@ export class AppStorage {
     return run;
   }
 
-  async setCurrentCourses(value: CourseData[], marker?: string): Promise<void> {
+  async setCurrentCourses(value: CourseData[], marker?: string, expectedArchive: string = ''): Promise<void> {
     // 写入是异步的：期间若切换账号/学期，就放弃这次写入，
     // 避免旧请求的结果覆盖新账号刚保存的课表。
     const epochAtStart = this.sessionEpoch;
     return this.enqueueCourseWrite(async () => {
       if (this.sessionEpoch !== epochAtStart) return;
       const archiveId = await this.getCurrentArchiveId();
+      if (expectedArchive && archiveId !== expectedArchive) return;
       const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
       const incomingExperiments: CourseData[] = [];
       for (let i = 0; i < value.length; i++) {
@@ -743,6 +772,8 @@ export class AppStorage {
       const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
       if (this.sessionEpoch !== epochAtStart) return;
       await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId);
+      if (this.sessionEpoch !== epochAtStart) return;
+      if (expectedArchive && await this.getCurrentArchiveId() !== expectedArchive) return;
       if (this.sessionEpoch !== epochAtStart) return;
       const merged = this.mergePhysicalExperiments(value, experiments);
       // 记录这次写入的标记，异步任务可以用它判断自己是不是「最后一次写入」。
@@ -785,7 +816,9 @@ export class AppStorage {
    */
   async removePhysicalExperimentCourses(): Promise<number> {
     return this.enqueueCourseWrite(async () => {
-      const current = await this.getStoredCourses('currentCourses');
+      const archiveId = await this.getCurrentArchiveId();
+      const current = archiveId.startsWith('shared_') ? await this.readCurrentCoursesUnlocked(archiveId)
+        : await this.getStoredCourses('currentCourses');
       const remaining: CourseData[] = [];
       let removed = 0;
       for (let i = 0; i < current.length; i++) {
@@ -797,7 +830,6 @@ export class AppStorage {
       }
       if (removed === 0) return 0;
       this.courseCacheMarker = `remove_experiments_${Date.now()}`;
-      const archiveId = await this.getCurrentArchiveId();
       // 只清当前档案的实验课缓存；在别人的课表里删除，不能动「我的课表」。
       await this.putStr(await this.physicalExperimentKey(archiveId), '[]');
       // 同时清掉旧版全局缓存，避免下次读取把已删除的实验课重新迁移回来。

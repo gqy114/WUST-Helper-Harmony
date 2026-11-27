@@ -21,6 +21,17 @@ export interface NewsArticle {
   cover_url?: string;
 }
 
+export interface NewsCollege {
+  id: string;
+  name: string;
+}
+
+export interface NewsCategory {
+  college_id: string;
+  name: string;
+  url: string;
+}
+
 export interface NewsListPage {
   items?: NewsArticle[];
   page?: number;
@@ -102,6 +113,18 @@ export class CampusNewsApi {
 
   static async detail(id: string): Promise<NewsDetail> {
     return CampusNewsApi.get<NewsDetail>(`/articles/${encodeURIComponent(id)}`);
+  }
+
+  static async colleges(): Promise<NewsCollege[]> {
+    const colleges = await CampusNewsApi.get<NewsCollege[]>('/colleges');
+    return (colleges || []).filter((item: NewsCollege) => (item.id || '').trim().length > 0 && (item.name || '').trim().length > 0);
+  }
+
+  static async categories(collegeId: string = ''): Promise<NewsCategory[]> {
+    const query = collegeId ? `?college_id=${encodeURIComponent(collegeId)}` : '';
+    const categories = await CampusNewsApi.get<NewsCategory[]>('/categories' + query);
+    return (categories || []).filter((item: NewsCategory) =>
+      (item.college_id || '').trim().length > 0 && (item.name || '').trim().length > 0 && (item.url || '').trim().length > 0);
   }
 
   static async search(keyword: string, page: number = 1, pageSize: number = 20): Promise<NewsListPage> {

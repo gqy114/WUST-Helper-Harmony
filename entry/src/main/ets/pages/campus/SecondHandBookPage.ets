@@ -4,6 +4,23 @@ import { SecondHandBookApi, SecondhandListing } from '../../net/SecondHandBookAp
 import { AppStorage } from '../../store/AppStorage';
 import { CommunityNavigationStore } from '../../store/CommunityNavigationStore';
 
+@Component
+struct SecondHandFilterChip {
+  @Prop label: string = '';
+  @Prop selected: boolean = false;
+  onSelect: (label: string) => void = () => {};
+
+  build() {
+    Button(this.label, { type: ButtonType.Capsule, stateEffect: false })
+      .fontSize(17).fontWeight(FontWeight.Medium).fontColor(this.selected ? '#20C894' : '#777777')
+      .backgroundColor(this.selected ? '#E7F8F2' : '#F5F5F5')
+      .padding({ left: 18, right: 18, top: 9, bottom: 9 })
+      .margin({ right: 10, bottom: 10 })
+      .accessibilitySelected(this.selected)
+      .onClick(() => this.onSelect(this.label))
+  }
+}
+
 @Entry
 @Component
 struct SecondHandBookPage {
@@ -295,14 +312,6 @@ struct SecondHandBookPage {
     this.majorPickerOpen = false;
   }
 
-  @Builder
-  private optionTag(label: string, selected: boolean, action: () => void) {
-    Text(label).fontSize(17).fontWeight(FontWeight.Medium).fontColor(selected ? '#20C894' : '#777777')
-      .backgroundColor(selected ? '#E7F8F2' : '#F5F5F5').borderRadius(20)
-      .padding({ left: 18, right: 18, top: 9, bottom: 9 }).margin({ right: 10, bottom: 10 })
-      .onClick(() => action())
-  }
-
   build() {
     Stack({ alignContent: Alignment.Center }) {
     Column() {
@@ -366,7 +375,10 @@ struct SecondHandBookPage {
                 Text('选择专业').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
                 Flex({ wrap: FlexWrap.Wrap }) {
                   ForEach(['全部专业', '我的专业', '指定专业'], (item: string) => {
-                    this.optionTag(item, this.pendingMajorMode === item, () => this.chooseMajorMode(item));
+                    SecondHandFilterChip({
+                      label: item, selected: this.pendingMajorMode === item,
+                      onSelect: (value: string) => { this.chooseMajorMode(value); }
+                    })
                   })
                 }.width('100%');
                 if (this.pendingMajorMode === '指定专业') {
@@ -387,13 +399,19 @@ struct SecondHandBookPage {
                 Text('选择校区').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ bottom: 10 });
                 Flex({ wrap: FlexWrap.Wrap }) {
                   ForEach(['全部校区', '黄家湖', '青山', '洪山'], (item: string) => {
-                    this.optionTag(item, this.pendingCampus === item, () => { this.pendingCampus = item; });
+                    SecondHandFilterChip({
+                      label: item, selected: this.pendingCampus === item,
+                      onSelect: (value: string) => { this.pendingCampus = value; }
+                    })
                   })
                 }.width('100%');
                 Text('排序方式').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#555555').width('100%').margin({ top: 6, bottom: 10 });
                 Flex({ wrap: FlexWrap.Wrap }) {
                   ForEach(['默认排序', '最新发布', '价格升序', '价格降序'], (item: string) => {
-                    this.optionTag(item, this.pendingSort === item, () => { this.pendingSort = item; });
+                    SecondHandFilterChip({
+                      label: item, selected: this.pendingSort === item,
+                      onSelect: (value: string) => { this.pendingSort = value; }
+                    })
                   })
                 }.width('100%');
               }.width('100%').padding({ left: 16, right: 16, top: 16, bottom: 8 })
@@ -416,7 +434,7 @@ struct SecondHandBookPage {
         .backgroundColor('#66000000')
       }
 
-      if (this.majorPickerOpen) {
+      if (this.filterOpen && this.majorPickerOpen) {
         Stack({ alignContent: Alignment.Center }) {
           Column().width('100%').height('100%').backgroundColor('#66000000');
           Column() {
