@@ -1,16 +1,16 @@
 import { promptAction, router } from '@kit.ArkUI';
-import { PasswordRecoveryApi, RecoveryCaptcha, RecoveryIdentity } from '../../net/PasswordRecoveryApi';
+import { PasswordRecoveryApi, PasswordRecoveryError, RecoveryCaptcha, RecoveryIdentity } from '../../net/PasswordRecoveryApi';
 import { AppStorage as PreferencesStorage } from '../../store/AppStorage';
 
 @Entry
 @Component
 struct PasswordRecoveryPage {
   @State private studentId: string = '';
-  @State private realName: string = '';
-  @State private idCard: string = '';
   @State private captchaCode: string = '';
   @State private captchaImage: string = '';
   @State private phone: string = '';
+  @State private smsCaptchaCode: string = '';
+  @State private smsCaptchaImage: string = '';
   @State private smsCode: string = '';
   @State private newPassword: string = '';
   @State private confirmPassword: string = '';
@@ -20,6 +20,8 @@ struct PasswordRecoveryPage {
   @State private resultMessage: string = '';
   @State private resultNeedsLogin: boolean = false;
   private recoveryId: string = '';
+  private captchaSeq: number = 0;
+  private smsCaptchaSeq: number = 0;
   private cooldownUntil: number = 0;
   private countdownTimer: number = -1;
 
@@ -30,8 +32,12 @@ struct PasswordRecoveryPage {
 
   aboutToDisappear(): void {
     this.stopCountdown();
+    ++this.captchaSeq;
+    ++this.smsCaptchaSeq;
+    this.busy = false;
     this.recoveryId = '';
-    this.idCard = '';
+    this.smsCaptchaCode = '';
+    this.smsCaptchaImage = '';
     this.smsCode = '';
     this.newPassword = '';
     this.confirmPassword = '';
@@ -61,6 +67,10 @@ struct PasswordRecoveryPage {
 
   private async loadCaptcha(): Promise<void> {
     if (this.busy) return;
+    const seq = ++this.captchaSeq;
+    ++this.smsCaptchaSeq;
+    this.smsCaptchaCode = '';
+    this.smsCaptchaImage = '';
     this.busy = true;
     this.stage = 0;
     this.recoveryId = '';
@@ -73,11 +83,58 @@ struct PasswordRecoveryPage {
     this.stopCountdown();
     try {
       const data: RecoveryCaptcha = await PasswordRecoveryApi.captcha();
+      if (seq !== this.captchaSeq) return;
       this.recoveryId = data.recovery_id || '';
       this.captchaImage = this.imageUri(data.image_base64 || '');
     } catch (error) {
+      if (seq !== this.captchaSeq) return;
       this.showError(error as Error, '图形验证码加载失败');
-    } finally { this.busy = false; }
+    } finally {
+      if (seq === this.captchaSeq) this.busy = false;
+    }
+  }
+
+  private handleRecoveryError(error: Error, fallback: string): void {
+    const code = error instanceof PasswordRecoveryError ? error.code : -1;
+    if (code === 410) {
+      promptAction.showToast({ message: '验证已过期，请重新开始', duration: 2000 });
+      this.resetToFirstStep();
+      return;
+    }
+    promptAction.showToast({ message: error.message || fallback, duration: 2400 });
+  }
+
+  private resetToFirstStep(): void {
+    this.stopCountdown();
+    this.recoveryId = '';
+    this.stage = 0;
+    this.captchaCode = '';
+    this.captchaImage = '';
+    this.smsCaptchaCode = '';
+    this.smsCaptchaImage = '';
+    this.smsCode = '';
+    this.newPassword = '';
+    this.confirmPassword = '';
+    // 正在处理的请求会先释放 busy，否则 loadCaptcha 会直接返回，页面停在空白第一步。
+    this.busy = false;
+    this.loadCaptcha();
+  }
+
+  private async loadSmsCaptcha(): Promise<void> {
+    if (!this.recoveryId || this.stage !== 1) return;
+    const recoveryId = this.recoveryId;
+    const seq = ++this.smsCaptchaSeq;
+    this.smsCaptchaCode = '';
+    this.smsCaptchaImage = '';
+    try {
+      const data: RecoveryCaptcha = await PasswordRecoveryApi.smsCaptcha(recoveryId);
+      if (seq !== this.smsCaptchaSeq || this.stage !== 1 || this.recoveryId !== recoveryId) return;
+      this.smsCaptchaImage = this.imageUri(data.image_base64 || '');
+      this.smsCaptchaCode = '';
+    } catch (error) {
+      if (seq !== this.smsCaptchaSeq || this.stage !== 1 || this.recoveryId !== recoveryId) return;
+      this.handleRecoveryError(error as Error, '获取短信图形验证码失败');
+    }
   }
 
   private async verifyIdentity(): Promise<void> {
@@ -86,22 +143,25 @@ struct PasswordRecoveryPage {
       promptAction.showToast({ message: '请先获取图形验证码', duration: 2000 });
       return;
     }
-    if (!this.studentId.trim() || !this.realName.trim() || !this.idCard.trim() || !this.captchaCode.trim()) {
-      promptAction.showToast({ message: '请填写学号、姓名、身份证号和图形验证码', duration: 2000 });
+    if (!this.studentId.trim() || !this.captchaCode.trim()) {
+      promptAction.showToast({ message: '请填写学号和图形验证码', duration: 2000 });
       return;
     }
     this.busy = true;
     try {
-      const data: RecoveryIdentity = await PasswordRecoveryApi.identity(this.recoveryId, this.studentId.trim(),
-        this.realName.trim(), this.idCard.trim(), this.captchaCode.trim());
+      const data: RecoveryIdentity = await PasswordRecoveryApi.identity(this.recoveryId,
+        this.studentId.trim(), this.captchaCode.trim());
       this.studentId = data.account || this.studentId.trim();
       this.phone = data.masked_phone || '';
-      this.idCard = '';
       this.captchaCode = '';
       this.captchaImage = '';
       this.stage = 1;
+      await this.loadSmsCaptcha();
     } catch (error) {
-      this.showError(error as Error, '身份验证失败');
+      this.handleRecoveryError(error as Error, '账号核对失败');
+      // 账号核对失败需要换第一张图重新开始；先释放 busy，否则 loadCaptcha 会直接返回。
+      this.busy = false;
+      await this.loadCaptcha();
     } finally { this.busy = false; }
   }
 
@@ -123,16 +183,31 @@ struct PasswordRecoveryPage {
   }
 
   private async sendSms(): Promise<void> {
-    if (this.busy || this.cooldown > 0 || !this.recoveryId) return;
+    if (this.busy || this.cooldown > 0 || !this.recoveryId || !this.smsCaptchaImage) return;
+    const phone = this.phone.trim();
+    if (!/^1[0-9]{10}$/.test(phone)) {
+      promptAction.showToast({ message: '请输入 11 位中国大陆手机号', duration: 2000 });
+      return;
+    }
+    if (!this.smsCaptchaCode.trim()) {
+      promptAction.showToast({ message: '请输入图形验证码', duration: 1800 });
+      return;
+    }
     this.busy = true;
     try {
-      const seconds = await PasswordRecoveryApi.sendCode(this.recoveryId);
+      const seconds = await PasswordRecoveryApi.sendCode(this.recoveryId, phone, this.smsCaptchaCode.trim());
       this.startCountdown(seconds);
+      this.smsCaptchaCode = '';
+      this.smsCaptchaImage = '';
       promptAction.showToast({ message: '验证码已发送', duration: 1800 });
     } catch (error) {
-      // The server reserves its cooldown before contacting the school, including on timeout.
-      this.startCountdown(60);
-      this.showError(error as Error, '短信发送失败');
+      const recoveryError = error as PasswordRecoveryError;
+      // 图形验证码可能已被消耗，失败后先换一张再重试。
+      await this.loadSmsCaptcha();
+      if (recoveryError instanceof PasswordRecoveryError && recoveryError.code === 429) {
+        this.startCountdown(recoveryError.cooldown > 0 ? recoveryError.cooldown : 60);
+      }
+      this.handleRecoveryError(error as Error, '短信发送失败');
     } finally { this.busy = false; }
   }
 
@@ -149,7 +224,7 @@ struct PasswordRecoveryPage {
       this.stopCountdown();
       this.stage = 2;
     } catch (error) {
-      this.showError(error as Error, '短信验证码验证失败');
+      this.handleRecoveryError(error as Error, '短信验证码验证失败');
     } finally { this.busy = false; }
   }
 
@@ -165,7 +240,7 @@ struct PasswordRecoveryPage {
   }
 
   private async submitPassword(): Promise<void> {
-    if (this.busy) return;
+    if (this.busy || this.stage !== 2 || !this.recoveryId) return;
     if (!this.newPassword || this.newPassword !== this.newPassword.trim()) {
       promptAction.showToast({ message: '请输入新密码，首尾不能有空格', duration: 2000 });
       return;
@@ -185,17 +260,27 @@ struct PasswordRecoveryPage {
     try {
       await PasswordRecoveryApi.reset(this.recoveryId, this.newPassword);
       this.resultMessage = '密码修改成功，请使用新密码重新登录教务系统。';
-    } catch {
+    } catch (error) {
+      if (error instanceof PasswordRecoveryError && error.code >= 400 && error.code < 500 && error.code !== 408) {
+        if (error.code === 410) {
+          // 会话过期：回到第一步并自动换新图，不能卡在设置密码页。
+          this.handleRecoveryError(error as Error, '会话已过期');
+          return;
+        }
+        // 密码规则不通过等业务错误：留在设置页，允许修改后重试。
+        promptAction.showToast({ message: error.message || '密码修改失败', duration: 2400 });
+        this.busy = false;
+        return;
+      }
       // The server may have processed the request before a timeout or other failure.
       // Do not submit it again automatically, and do not claim that it failed.
       this.resultMessage = '本次提交的结果无法确认。请先尝试用新密码登录，确认后再决定是否重新操作。';
-    } finally {
-      this.recoveryId = '';
-      this.newPassword = '';
-      this.confirmPassword = '';
-      this.stage = 3;
-      this.busy = false;
     }
+    this.recoveryId = '';
+    this.newPassword = '';
+    this.confirmPassword = '';
+    this.stage = 3;
+    this.busy = false;
   }
 
   @Builder
@@ -221,8 +306,6 @@ struct PasswordRecoveryPage {
             Text('通过学校身份核验和绑定手机验证，设置新的教务登录密码。研究生暂不支持。')
               .fontSize(14).fontColor('#777777').lineHeight(21).width('100%').margin({ top: 8 })
             this.field('学号', this.studentId, (value: string) => { this.studentId = value; })
-            this.field('姓名', this.realName, (value: string) => { this.realName = value; })
-            this.field('身份证号', this.idCard, (value: string) => { this.idCard = value; })
             Row() {
               TextInput({ text: this.captchaCode, placeholder: '图形验证码' }).layoutWeight(1).height(48)
                 .enabled(!this.busy).enableAutoFill(false).onChange((value: string) => { this.captchaCode = value; })
@@ -241,10 +324,25 @@ struct PasswordRecoveryPage {
             Text('验证绑定手机').fontSize(20).fontWeight(FontWeight.Bold).width('100%')
             Text(`验证码将发送到${this.phone || '学校绑定的手机号'}`).fontSize(14).fontColor('#777777')
               .width('100%').margin({ top: 12 })
+            this.field('绑定的手机号', this.phone, (value: string) => { this.phone = value; })
+            Row() {
+              TextInput({ text: this.smsCaptchaCode, placeholder: '图形验证码' }).layoutWeight(1).height(48)
+                .enabled(!this.busy).enableAutoFill(false)
+                .onChange((value: string) => { this.smsCaptchaCode = value; })
+              if (this.smsCaptchaImage) {
+                Image(this.smsCaptchaImage).width(120).height(48).objectFit(ImageFit.Contain).margin({ left: 8 })
+                  .onClick(() => this.loadSmsCaptcha())
+              } else {
+                Text('获取验证码').fontSize(14).fontColor('#20C894').margin({ left: 8 })
+                  .onClick(() => this.loadSmsCaptcha())
+              }
+            }.width('100%').margin({ top: 16 })
+            Text('点击图片可更换短信图形验证码').fontSize(13).fontColor('#999999')
+              .width('100%').margin({ top: 6 })
             this.field('短信验证码', this.smsCode, (value: string) => { this.smsCode = value; })
             Button(this.cooldown > 0 ? `${this.cooldown} 秒后重新发送` : '发送短信验证码')
               .width('100%').height(46).margin({ top: 20 }).backgroundColor('#E6F8F1').fontColor('#168F66')
-              .enabled(!this.busy && this.cooldown === 0).onClick(() => this.sendSms())
+              .enabled(!this.busy && this.cooldown === 0 && !!this.smsCaptchaImage).onClick(() => this.sendSms())
             Button(this.busy ? '请稍候…' : '验证短信').width('100%').height(48).margin({ top: 12 })
               .backgroundColor('#20C894').enabled(!this.busy).onClick(() => this.verifySms())
             Text('无法接收短信？请联系学校处理绑定手机问题。').fontSize(13).fontColor('#777777')

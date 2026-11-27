@@ -28,19 +28,23 @@ test('all stages use one pinned HTTPS backend and the correct payloads', async (
   mock.response = ok({ recovery_id: 'session', image_base64: 'image' });
   await api.captcha();
   mock.response = ok({ masked_phone: '***' });
-  await api.identity('session', '123', 'name', 'identity', 'image-code');
+  await api.identity('session', '123', 'image-code');
+  mock.response = ok({ recovery_id: 'session', image_base64: 'sms-image' });
+  await api.smsCaptcha('session');
   mock.response = ok({ cooldown_seconds: 60 });
-  await api.sendCode('session');
+  await api.sendCode('session', '13800000000', 'sms-code');
   mock.response = ok({ verified: true });
   await api.verify('session', 'sms');
   mock.response = ok({ success: true });
   await api.reset('session', 'new-password');
-  assert.deepEqual(mock.calls.map(c => c.url.split('/').at(-1)), ['captcha', 'identityAuth', 'sendCode', 'verify', 'reset']);
-  assert.ok(mock.calls.every(c => c.url.startsWith('https://lyzyy.love:8081/UnderGraduate/Support/passwordRecovery/')));
-  assert.equal(mock.calls[0].options.pinBackend, true);
+  assert.deepEqual(mock.calls.map(c => c.url.split('/').at(-1)), ['captcha', 'identityAuth', 'smsCaptcha', 'sendCode', 'verify', 'reset']);
+  assert.ok(mock.calls.every(c => c.url.startsWith('https://port.happylandmc.cc:52145/UnderGraduate/Support/passwordRecovery/')));
+  assert.ok(mock.calls[0].url.includes('/captcha'));
   assert.ok(mock.calls.slice(1).every(c => c.pinned));
-  assert.deepEqual(mock.calls[1].body, { recovery_id: 'session', user_id: '123', user_name: 'name', id_card: 'identity', captcha_code: 'image-code' });
-  assert.deepEqual(mock.calls[4].body, { recovery_id: 'session', new_password: 'new-password' });
+  assert.deepEqual(mock.calls[1].body, { recovery_id: 'session', user_id: '123', captcha_code: 'image-code' });
+  assert.deepEqual(mock.calls[2].body, { recovery_id: 'session' });
+  assert.deepEqual(mock.calls[3].body, { recovery_id: 'session', phone: '13800000000', captcha_code: 'sms-code' });
+  assert.deepEqual(mock.calls[5].body, { recovery_id: 'session', new_password: 'new-password' });
 });
 
 test('HTTP and business failures and incomplete success responses do not advance the process', async () => {
@@ -67,29 +71,33 @@ async function pageHarness(options = {}) {
   const events = [];
   const mock = {
     studentId: options.savedStudentId ?? '123', graduate: options.graduate ?? false,
-    resetFails: options.resetFails ?? false, clearFails: options.clearFails ?? false,
+    resetFails: options.resetFails ?? false, resetCode: options.resetCode, clearFails: options.clearFails ?? false,
   };
   const storage = {
     getStudentId: async () => mock.studentId, getIsGraduate: async () => mock.graduate,
     setPassword: async value => { events.push(['password', value]); if (mock.clearFails) throw Error('store'); },
     setToken: async value => events.push(['token', value]), setIsLogin: async value => events.push(['isLogin', value])
   };
+  const PasswordRecoveryError = class extends Error { constructor(message, code) { super(message); this.code = code; } };
   const context = createContext({ Error, Date, Math, setInterval: () => 1, clearInterval: () => {},
     PreferencesStorage: { getInstance: () => storage }, promptAction: { showToast: e => events.push(['toast', e.message]) },
+    PasswordRecoveryError,
     PasswordRecoveryApi: {
       captcha: async () => ({ recovery_id: 'session', image_base64: 'iVBORw0KGgo=' }),
       identity: async () => ({ account: '123', masked_phone: '138****0000' }),
+    smsCaptcha: options.smsCaptcha ?? (async () => ({ recovery_id: 'session', image_base64: 'iVBORw0KGgo=' })),
       sendCode: async () => 60,
       verify: async () => {},
-      reset: async (id, password) => { events.push(['reset', id, password]); if (mock.resetFails) throw Error('timeout'); }
+      reset: async (id, password) => { events.push(['reset', id, password]); if (mock.resetCode) throw new PasswordRecoveryError('timeout', mock.resetCode); if (mock.resetFails) throw Error('timeout'); }
     } });
   const mod = new SourceTextModule(transform(`export class Page {\n${methods}\n}`), { context });
   await mod.link(() => {});
   await mod.evaluate();
   const page = new mod.namespace.Page();
   Object.assign(page, { studentId: '123', newPassword: 'new-password', confirmPassword: 'new-password',
-    recoveryId: 'session', busy: false, stage: 2, resultMessage: '', cooldown: 0, countdownTimer: -1 });
-  return { page, events };
+    recoveryId: 'session', busy: false, stage: 2, resultMessage: '', cooldown: 0, countdownTimer: -1,
+    captchaSeq: 0, smsCaptchaSeq: 0 });
+  return { page, events, PasswordRecoveryError };
 }
 
 test('identity, SMS, and new password flow advances only after each successful step', async () => {
@@ -97,12 +105,12 @@ test('identity, SMS, and new password flow advances only after each successful s
   await page.loadCaptcha();
   assert.equal(page.stage, 0);
   assert.match(page.captchaImage, /^data:image\/png;base64,/);
-  page.realName = '测试';
-  page.idCard = 'test-identity';
   page.captchaCode = 'abcd';
   await page.verifyIdentity();
   assert.equal(page.stage, 1);
-  assert.equal(page.idCard, '');
+  assert.equal(page.captchaImage, '');
+  page.phone = '13800000000';
+  page.smsCaptchaCode = 'ab12';
   await page.sendSms();
   assert.equal(page.cooldown, 60);
   page.smsCode = '123456';
@@ -158,4 +166,32 @@ test('invalid or mismatched new passwords never reach the network or clear saved
     assert.deepEqual(events.map(e => e[0]), ['toast']);
     assert.equal(page.stage, 2);
   }
+});
+
+test('HTTP 504 and JSON 504 cannot be re-submitted from the password page', async () => {
+  const { api, mock } = await apiHarness();
+  mock.response = { response: { responseCode: 504 }, data: { code: 400, message: 'gateway' } };
+  await assert.rejects(api.reset('session', 'pw'), { code: -1 });
+  const { page, events } = await pageHarness({ resetCode: 504 });
+  await page.submitPassword();
+  assert.equal(page.stage, 3);
+  assert.equal(page.recoveryId, '');
+  assert.match(page.resultMessage, /无法确认/);
+  await page.submitPassword();
+  assert.equal(events.filter(e => e[0] === 'reset').length, 1);
+});
+
+test('重新开始后迟到的短信图形码过期结果不清空新验证码', async () => {
+  let rejectOld;
+  const pending = new Promise((_resolve, reject) => { rejectOld = reject; });
+  const { page, events, PasswordRecoveryError } = await pageHarness({ smsCaptcha: () => pending });
+  page.stage = 1;
+  const old = page.loadSmsCaptcha();
+  await page.loadCaptcha();
+  page.captchaCode = 'new-captcha';
+  rejectOld(new PasswordRecoveryError('expired', 410));
+  await old;
+  assert.equal(page.captchaCode, 'new-captcha');
+  assert.equal(page.stage, 0);
+  assert.deepEqual(events, []);
 });
