@@ -10,7 +10,7 @@ const source = (path) => readFile(new URL(`../entry/src/main/ets/${path}`, impor
 test('BannerImageLoader 按显示尺寸解码并合并并发请求', async () => {
   const loader = await source('utils/BannerImageLoader.ets');
   assert.match(loader, /MAX_CACHE_BYTES: number = 24 \* 1024 \* 1024/, '缺少缓存上限');
-  assert.match(loader, /desiredSize: \{ width: decodeWidth, height: decodeHeight \}/, '没有按显示尺寸解码');
+  assert.match(loader, /Math\.min\(1, decodeWidth \/ size\.width, decodeHeight \/ size\.height\)/, '没有按显示尺寸解码');
   assert.match(loader, /private static readonly inflight: Map<string, Promise<image\.PixelMap \| undefined>>/, '缺少并发请求合并');
   assert.match(loader, /BannerImageLoader\.inflight\.get\(cacheKey\)/, '并发请求没有复用');
 });
@@ -50,8 +50,13 @@ test('同一图片更换解码尺寸时只保护当前尺寸，旧尺寸按上�
     RequestMethod: { GET: 1 }, HttpDataType: { ARRAY_BUFFER: 1 },
   };
   let released = 0;
+  const sizes = [];
   const image = { createImageSource: () => ({
-    createPixelMap: async () => ({ getPixelBytesNumber: () => 9 * 1024 * 1024, release: () => released++ }),
+    getImageInfo: async () => ({ size: { width: 1200, height: 600 } }),
+    createPixelMap: async options => {
+      sizes.push([options.desiredSize.width, options.desiredSize.height]);
+      return { getPixelBytesNumber: () => 9 * 1024 * 1024, release: () => released++ };
+    },
     release() {},
   }) };
   await mod.link(path => {
@@ -68,4 +73,5 @@ test('同一图片更换解码尺寸时只保护当前尺寸，旧尺寸按上�
     assert.ok(loader.totalBytes <= 24 * 1024 * 1024);
   }
   assert.equal(released, 1);
+  assert.deepEqual(sizes, [[600, 300], [600, 300], [600, 300]]);
 });

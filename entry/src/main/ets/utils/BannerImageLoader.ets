@@ -119,8 +119,14 @@ export class BannerImageLoader {
       try {
         const decodeWidth = Math.max(1, Math.min(Math.round(width), MAX_DECODE_WIDTH));
         const decodeHeight = Math.max(1, Math.min(Math.round(height), MAX_DECODE_HEIGHT));
+        const size = (await source.getImageInfo()).size;
+        if (size.width <= 0 || size.height <= 0) return undefined;
+        const scale = Math.min(1, decodeWidth / size.width, decodeHeight / size.height);
         const pixelMap = await source.createPixelMap({
-          desiredSize: { width: decodeWidth, height: decodeHeight }
+          desiredSize: {
+            width: Math.max(1, Math.round(size.width * scale)),
+            height: Math.max(1, Math.round(size.height * scale))
+          }
         });
         return pixelMap;
       } finally {
