@@ -24,7 +24,7 @@ test('学校请求转发只允许指定教务域名且不跟随重定向', async
   for (const host of ['auth.wust.edu.cn', 'portal.wust.edu.cn', 'bkjx.wust.edu.cn']) {
     assert.match(ws, new RegExp(host.replace(/\./g, '\\.')));
   }
-  assert.match(ws, /maxRedirects: 0/);
+  assert.match(ws, /autoRedirect: false/);
   assert.match(ws, /Accept-Encoding'\] = 'identity'/);
   assert.match(ws, /MAX_BODY_BYTES: number = 10 \* 1024 \* 1024/);
 });
@@ -119,13 +119,15 @@ test('Cookie 失效时走新设备登录，切号后不读取密码', async () =
   }
 });
 
-async function loadDeviceLogin(socket) {
+async function loadDeviceLogin(socket, remote = {}, exposeRelay = false) {
   const context = createContext({ console, setTimeout, clearTimeout });
-  const code = stripTypeScriptTypes(await source('UndergradDeviceLogin.ts'), { mode: 'transform' });
+  const sourceCode = await source('UndergradDeviceLogin.ts');
+  const code = stripTypeScriptTypes(sourceCode + '\nexport { relaySchoolRequest };', { mode: 'transform' });
   const module = new SourceTextModule(code, { context });
   const imports = {
     '@kit.NetworkKit': { webSocket: { createWebSocket: () => socket }, http: {} },
-    '@kit.ArkTS': { url: {} },
+    '@kit.ArkTS': { url: { URL } },
+    '@kit.RemoteCommunicationKit': { rcp: remote },
     '@kit.BasicServicesKit': { BusinessError: undefined },
     './DeviceLoginCrypto': {
       aesGcmDecrypt: () => assert.fail('unexpected decrypt'),
@@ -146,7 +148,7 @@ async function loadDeviceLogin(socket) {
     }, { context });
   });
   await module.evaluate();
-  return module.namespace.UndergradDeviceLogin;
+  return exposeRelay ? module.namespace.relaySchoolRequest : module.namespace.UndergradDeviceLogin;
 }
 
 test('设备登录只在发送凭据前断开时允许回退', async () => {
@@ -199,4 +201,24 @@ test('新接口超时或返回 503 时回退旧 App 登录，切号后不提交�
     await api.loginAppAuthFromSavedCredentials(storage);
     assert.equal(fallbackCalls, outage === 'account changed' ? 0 : 1);
   }
+});
+
+test('设备代理把 302、Location 和多个 Cookie 原样交给后端', async () => {
+  const calls = [];
+  const remote = {
+    Request: class {},
+    createSession: () => ({
+      fetch: async request => {
+        calls.push(request.configuration.transfer.autoRedirect);
+        return { statusCode: 302, headers: { location: '/next', 'set-cookie': ['a=1', 'b=2'] } };
+      },
+      close() {},
+    }),
+  };
+  const relay = await loadDeviceLogin({}, remote, true);
+  const result = await relay({ id: 1, url: 'https://auth.wust.edu.cn/start', method: 'POST' });
+  assert.equal(result.status_code, 302);
+  assert.deepEqual(Array.from(result.headers.location), ['/next']);
+  assert.deepEqual(Array.from(result.headers['set-cookie']), ['a=1', 'b=2']);
+  assert.deepEqual(calls, [false]);
 });

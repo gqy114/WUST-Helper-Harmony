@@ -1,10 +1,11 @@
+import { rcp } from '@kit.RemoteCommunicationKit';
 import { webSocket } from '@kit.NetworkKit';
 import { http } from '@kit.NetworkKit';
 import { url } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import {
   aesGcmDecrypt, aesGcmEncrypt, base64Decode, base64Encode, bytesToString, encryptSessionKey,
-  randomBytes, stringToBytes
+  randomBytes
 } from './DeviceLoginCrypto';
 
 export const DEVICE_LOGIN_BASE: string = 'https://port.happylandmc.cc:52145';
@@ -146,35 +147,34 @@ async function relaySchoolRequest(request: RelayRequest): Promise<RelayResponse>
     body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   }
 
-  const client = http.createHttp();
+  const client = rcp.createSession();
   try {
-    const response = await client.request(target, {
-      method: method === 'POST' ? http.RequestMethod.POST : http.RequestMethod.GET,
-      header: headers,
-      extraData: body,
-      expectDataType: http.HttpDataType.ARRAY_BUFFER,
-      connectTimeout: 15000,
-      readTimeout: 30000,
-      maxLimit: MAX_BODY_BYTES,
-      maxRedirects: 0
-    });
-    let encoded = '';
-    if (response.result instanceof ArrayBuffer) {
-      encoded = base64Encode(new Uint8Array(response.result));
-    } else if (typeof response.result === 'string') {
-      encoded = base64Encode(stringToBytes(response.result));
+    const relay = new rcp.Request(target, method === 'POST' ? 'POST' : 'GET', headers, body);
+    relay.configuration = {
+      transfer: { autoRedirect: false, timeout: { connectMs: 15000, transferMs: 30000 } },
+      tracing: {
+        httpEventsHandler: {
+          onDownloadProgress: (_total: number, received: number): void => {
+            if (received > MAX_BODY_BYTES) client.cancel(relay);
+          }
+        }
+      }
+    };
+    const response = await client.fetch(relay);
+    if (response.body && response.body.byteLength > MAX_BODY_BYTES) {
+      return { kind: 'response', id, error: '响应体过大' };
     }
     return {
       kind: 'response',
       id,
-      status_code: response.responseCode,
-      headers: headersToRecord(response.header),
-      body_base64: encoded
+      status_code: response.statusCode,
+      headers: headersToRecord(response.headers),
+      body_base64: response.body ? base64Encode(new Uint8Array(response.body)) : ''
     };
   } catch (error) {
     return { kind: 'response', id, error: `手机无法访问学校：${(error as Error).message ?? '网络错误'}` };
   } finally {
-    client.destroy();
+    client.close();
   }
 }
 
