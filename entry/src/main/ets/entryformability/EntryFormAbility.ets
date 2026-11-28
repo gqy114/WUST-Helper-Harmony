@@ -16,8 +16,14 @@ const FORM_ID_KEY = 'ohos.extra.param.key.form_identity';
 const FORM_NAME_KEY = 'ohos.extra.param.key.form_name';
 const FORM_MODE_PREFIX = 'widgetFormMode_';
 
+interface WidgetCardMessage {
+  action?: string;
+  archiveId?: string;
+}
+
 export default class EntryFormAbility extends FormExtensionAbility {
   private storageReady: boolean = false;
+  private updateQueue: Promise<void> = Promise.resolve();
 
   private async ensureStorage(): Promise<void> {
     if (this.storageReady) return;
@@ -34,7 +40,7 @@ export default class EntryFormAbility extends FormExtensionAbility {
       if (formId.length > 0) {
         modeOverride = (await storage.getSettingString(`${FORM_MODE_PREFIX}${formId}`, '')).trim();
       }
-      const snapshot: WidgetSnapshot = await WidgetData.build(storage, dark, modeOverride);
+      const snapshot: WidgetSnapshot = await WidgetData.build(storage, dark, modeOverride, formId);
       return formBindingData.createFormBindingData(snapshot);
     } catch (error) {
       console.warn(TAG, `build binding data failed: ${JSON.stringify(error)}`);
@@ -88,9 +94,9 @@ export default class EntryFormAbility extends FormExtensionAbility {
     } else if (formName.indexOf('quick') >= 0) {
       initialMode = 'quick';
     }
-    this.rememberFormMode(formId, initialMode);
-    // 先返回占位数据，等卡片注册完成后异步补充真实数据，避免首次添加时一直空白。
-    setTimeout(() => this.refreshForm(formId), 300);
+    this.rememberFormMode(formId, initialMode).then(() => {
+      setTimeout(() => this.refreshForm(formId), 300);
+    });
     return formBindingData.createFormBindingData({
       mode: initialMode,
       countdownCompact: want?.parameters?.['ohos.extra.param.key.form_dimension'] === formInfo.FormDimension.Dimension_2_2,
@@ -119,8 +125,13 @@ export default class EntryFormAbility extends FormExtensionAbility {
   }
 
   onFormEvent(formId: string, message: string): void {
-    console.info(TAG, `form event: ${message}`);
-    this.applyData(formId);
+    let event: WidgetCardMessage | undefined;
+    try {
+      event = JSON.parse(message) as WidgetCardMessage;
+    } catch {
+      event = undefined;
+    }
+    this.applyData(formId, event?.action === 'selectArchive' ? event.archiveId : undefined);
   }
 
   onChangeFormVisibility(newStatus: Record<string, number>): void {
@@ -132,14 +143,22 @@ export default class EntryFormAbility extends FormExtensionAbility {
     return formInfo.FormState.READY;
   }
 
-  private rememberFormMode(formId: string | undefined, mode: string): void {
+  private rememberFormMode(formId: string | undefined, mode: string): Promise<void> {
     const id = (formId || '').trim();
-    if (!id) return;
-    this.ensureStorage().then(() => {
-      return AppStorage.getInstance().setSettingString(`${FORM_MODE_PREFIX}${id}`, mode);
-    }).catch((error: Error) => {
-      console.warn(TAG, `remember form mode failed: ${JSON.stringify(error)}`);
+    if (!id) return Promise.resolve();
+    return this.enqueue(async () => {
+      await this.ensureStorage();
+      const storage = AppStorage.getInstance();
+      await storage.setSettingString(`${FORM_MODE_PREFIX}${id}`, mode);
+      if (mode === 'daily' || mode === 'weekly') await storage.getWidgetSchedule(id);
     });
+  }
+
+  private enqueue(task: () => Promise<void>): Promise<void> {
+    this.updateQueue = this.updateQueue.then(task).catch((error: Error) => {
+      console.warn(TAG, `form update failed: ${JSON.stringify(error)}`);
+    });
+    return this.updateQueue;
   }
 
   private refreshForm(formId: string | undefined): void {
@@ -157,11 +176,16 @@ export default class EntryFormAbility extends FormExtensionAbility {
     });
   }
 
-  private applyData(formId: string): void {
-    this.buildBindingData(formId).then((data: formBindingData.FormBindingData) => {
-      return formProvider.updateForm(formId, data);
-    }).catch((error: Error) => {
-      console.warn(TAG, `update form ${formId} failed: ${JSON.stringify(error)}`);
+  private applyData(formId: string, archiveId?: string): void {
+    this.enqueue(async () => {
+      if (typeof archiveId === 'string' && archiveId) {
+        await this.ensureStorage();
+        const storage = AppStorage.getInstance();
+        const mode = await storage.getSettingString(FORM_MODE_PREFIX + formId, '');
+        if (mode === 'daily' || mode === 'weekly') await storage.setWidgetScheduleArchive(formId, archiveId);
+      }
+      const data = await this.buildBindingData(formId);
+      await formProvider.updateForm(formId, data);
     });
   }
 }

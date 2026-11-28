@@ -1,3 +1,5 @@
+import common from '@ohos.app.ability.common';
+import { ScheduleWidgetRefresh } from '../../widget/ScheduleWidgetRefresh';
 /**
  * CoursePage — 课表页面（不含 @Entry，供 MainPage Tabs 嵌入）
  *
@@ -83,12 +85,13 @@ export struct CoursePage {
     // 切换档案可能换了学期：优先使用档案自己的开学日期，但不改 App 当前学期。
     const storage = PreferenceStorage.getInstance();
     const archiveId = await storage.getCurrentArchiveId();
-    // 只有查看共享档案时才用档案日期；刷新“我的课表”必须用自己的开学日期。
+    const sid = (await storage.getStudentId()).trim();
+    const semester = await storage.getSemester();
     const cached = archiveId === 'mine'
-      ? await storage.getTermStartDate()
+      ? await storage.getAccountTermStartDate(sid, semester) || PreferenceStorage.archiveTermStartForSemester(semester)
       : await storage.getSharedArchiveTermStartDate(archiveId);
     if (this.applyTermStartDateFromString(cached)) {
-      this.updateWeekDates();
+      await this.syncActualWeekWithClock(true);
       this.refreshKey = this.refreshKey + 1;
     }
   }
@@ -130,32 +133,33 @@ export struct CoursePage {
         if (!this.applyTermStartDateFromString(archiveStart)) this.semesterStart = new Date(2025, 8, 1);
         return;
       }
-      const cached = await s.getTermStartDate();
-      if (this.applyTermStartDateFromString(cached)) {
-        console.info(TAG, `resolveSemesterStart from cache: ${cached}`);
-        return;
-      }
-    } catch {
-      // 忽略缓存读取异常。
-    }
+      const epoch = s.getSessionEpoch();
+      const sid = (await s.getStudentId()).trim();
+      const semester = await s.getSemester();
+      const cached = await s.getAccountTermStartDate(sid, semester);
+      if (s.getSessionEpoch() !== epoch || await s.getCurrentArchiveId() !== archiveId) return;
+      if (this.applyTermStartDateFromString(cached)) return;
+      this.applyTermStartDateFromString(PreferenceStorage.archiveTermStartForSemester(semester));
 
-    try {
       const token = await s.getToken();
       if (!token) {
         return;
       }
       const resp = await CourseApi.getTermStartDate(token);
+      if (await s.getCurrentArchiveId() !== archiveId || s.getSessionEpoch() !== epoch) return;
       if (resp.code === 10000 || resp.code === 200 || resp.code === 0) {
         if (resp.data) {
           const year = resp.data.year;
           const month = resp.data.month;
           const day = resp.data.day;
           if (year > 0 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-            this.semesterStart = new Date(year, month - 1, day);
             const mm = month < 10 ? `0${month}` : `${month}`;
             const dd = day < 10 ? `0${day}` : `${day}`;
-            await s.setTermStartDate(`${year}-${mm}-${dd}`);
-            console.info(TAG, `resolveSemesterStart from api: ${year}-${mm}-${dd}`);
+            const termStart = `${year}-${mm}-${dd}`;
+            // 接口只返回学校当前学期，查询历史课表时不能把它当成所选学期。
+            if (!PreferenceStorage.isTermStartForSemester(termStart, semester)) return;
+            this.applyTermStartDateFromString(termStart);
+            await s.setAccountTermStartDate(sid, semester, termStart);
           }
         }
       }
@@ -660,12 +664,18 @@ export struct CoursePage {
     const archive = await DynamicScheduleApi.getSharedSchedule(archiveId);
     const archives = await storage.getCourseArchives();
     if (await storage.getCurrentArchiveId() !== archiveId || storage.getSessionEpoch() !== accountEpoch) return;
+    const previous = archives.find(item => item.id === archive.id);
+    if (!previous) return;
+    archive.relation = previous.relation;
+    archive.ownerStudentId = archive.ownerStudentId || previous.ownerStudentId;
+    archive.termStartDate = previous.termStartDate;
     const updated = archives.map(item => item.id === archive.id ? archive : item);
     await storage.setCourseArchives(updated, accountEpoch);
     if (await storage.getCurrentArchiveId() !== archiveId || storage.getSessionEpoch() !== accountEpoch) return;
     await storage.setCurrentArchiveCourses(archiveId, archive.courses);
     AppStorage.setOrCreate('courseArchives', updated);
     await this.loadCurrentArchiveCourses();
+    ScheduleWidgetRefresh.run(getContext(this) as common.UIAbilityContext, accountEpoch);
   }
 
   /** 右上角刷新课表 */
@@ -892,6 +902,7 @@ export struct CoursePage {
     this.errorMsg = '';
     try {
       await this.fetchCourses();
+      await this.resolveSemesterStartAndRefreshWeek();
       this.refreshKey = this.refreshKey + 1;
       if (!this.errorMsg) {
         promptAction.showToast({ message: `已切换到${semester}`, duration: 1500 });

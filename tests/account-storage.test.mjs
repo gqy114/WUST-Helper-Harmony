@@ -220,6 +220,53 @@ test('共享档案读取本档案的实验，刷新共享课程不丢失实验�
   assert.deepEqual(await names(), ['刷新后的共享课程']);
 });
 
+test('删除当前共享档案前先恢复自己的课程，且保留同账号其他档案', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  const epoch = storage.getSessionEpoch();
+  const mine = { id: 'mine', name: '我的课表', semester: '2026-2027-1', courses: courses('我的课程'), isMine: true };
+  const shared = { id: 'shared_example', name: '同学', semester: '2025-2026-2',
+    courses: courses('共享课程'), isMine: false, relation: '同学课表', termStartDate: '2026-03-02' };
+  const friend = { ...shared, id: 'archive_friend', relation: '朋友课表' };
+  await storage.setCourseArchives([mine, shared, friend]);
+  assert.equal(await storage.activateCourseArchive(shared, epoch), true);
+  assert.equal(await storage.getSharedArchiveTermStartDate(shared.id), '2026-03-02');
+  assert.equal((await storage.getCurrentCourses())[0].courseName, '共享课程');
+  assert.equal(await storage.removeCourseArchive(shared.id, epoch), false);
+  assert.equal(await storage.activateCourseArchive(mine, epoch), true);
+  assert.equal(await storage.removeCourseArchive(shared.id, epoch), true);
+  assert.equal((await storage.getCurrentCourses())[0].courseName, '我的课程');
+  assert.deepEqual(Array.from(await storage.getCourseArchives(), item => item.id), [mine.id, friend.id]);
+});
+
+test('每张桌面课表卡片独立保存课表，切换 App 档案不会改变已添加的卡片', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  const epoch = storage.getSessionEpoch();
+  const mine = { id: 'mine', name: '我的课表', semester: '2026-2027-1',
+    courses: courses('我的课程'), isMine: true, termStartDate: '2026-09-01' };
+  const friend = { id: 'shared_friend', name: '朋友', semester: '2025-2026-2',
+    courses: courses('朋友课程'), isMine: false, termStartDate: '2026-03-02' };
+  await storage.setCourseArchives([mine, friend]);
+  await storage.activateCourseArchive(friend, epoch);
+  assert.equal((await storage.getWidgetSchedule('daily-1')).archiveId, friend.id);
+  await storage.activateCourseArchive(mine, epoch);
+  assert.equal((await storage.getWidgetSchedule('weekly-2')).archiveId, mine.id);
+  assert.equal((await storage.getWidgetSchedule('daily-1')).termStart, friend.termStartDate);
+
+  await storage.setWidgetScheduleArchive('weekly-2', friend.id);
+  await storage.setWidgetScheduleArchive('daily-1', mine.id);
+  await storage.setWidgetScheduleArchive('weekly-2', 'missing');
+  await storage.init({});
+  assert.equal((await storage.getWidgetSchedule('daily-1')).courses[0].courseName, '我的课程');
+  assert.equal((await storage.getWidgetSchedule('weekly-2')).courses[0].courseName, '朋友课程');
+  assert.equal(await storage.getCurrentArchiveId(), mine.id);
+
+  await storage.removeCourseArchive(friend.id, epoch);
+  assert.equal((await storage.getWidgetSchedule('weekly-2')).archiveId, mine.id);
+  assert.equal((await storage.getWidgetSchedule('weekly-2')).archives.some(item => item.id === friend.id), false);
+});
+
 test('共享档案开学日期从当前账号档案取得，不读取全局缓存', async () => {
   const { storage } = await createStorage();
   await storage.setStudentId('A');
@@ -231,4 +278,52 @@ test('共享档案开学日期从当前账号档案取得，不读取全局缓�
     courses: [] }]);
   assert.equal(await storage.getSharedArchiveTermStartDate('shared_same'), '2026-09-07');
   assert.equal(await storage.getSharedArchiveTermStartDate('shared_missing'), '');
+});
+
+test('当前我的课表在升级后采用当前课程的学期，不沿用旧档案日期', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  await storage.setSemester('2026-2027-1');
+  await storage.setCourseArchives([{ id: 'mine', name: '我的课表', isMine: true, semester: '2025-2026-2',
+    termStartDate: '2026-03-02', courses: courses('旧课程') }]);
+  await storage.setCurrentCourses(courses('当前课表'));
+  const widget = await storage.getWidgetSchedule('weekly');
+  assert.equal(widget.semester, '2026-2027-1');
+  assert.match(widget.termStart, /^2026-(08|09)-/);
+  assert.equal(widget.courses[0].courseName, '当前课表');
+});
+
+test('同一账号切换学期后桌面周次只使用所选学期的开学日', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  await storage.setSettingString('termStartDate_A', '2026-09-07');
+  await storage.setSemester('2026-2027-1');
+  assert.equal((await storage.getWidgetSchedule()).termStart, '2026-09-07');
+  await storage.setSemester('2026-2027-2');
+  const spring = await storage.getWidgetSchedule();
+  assert.equal(spring.semester, '2026-2027-2');
+  assert.match(spring.termStart, /^2027-/);
+  await storage.setAccountTermStartDate('A', '2026-2027-2', '2027-03-01');
+  assert.equal((await storage.getWidgetSchedule()).termStart, '2027-03-01');
+  await storage.setSemester('2026-2027-1');
+  assert.equal((await storage.getWidgetSchedule()).termStart, '2026-09-07');
+});
+
+test('档案激活等待实验课写入键时切号不会覆盖新账号实验记录', async () => {
+  const { storage } = await createStorage();
+  const experiments = name => courses(name).map(course => ({ ...course, isPhysicalExperiment: true }));
+  await storage.setStudentId('B');
+  await storage.setPhysicalExperimentCourses(experiments('B 的实验'));
+  await storage.setStudentId('A');
+  await storage.getPhysicalExperimentCourses();
+  const resolveKey = storage.physicalExperimentKey.bind(storage);
+  let requests = 0;
+  storage.physicalExperimentKey = async id => {
+    if (++requests === 2) await storage.setStudentId('B');
+    return resolveKey(id);
+  };
+  const epoch = storage.getSessionEpoch();
+  const archive = { id: 'mine', name: 'A 的课表', courses: experiments('A 的实验') };
+  assert.equal(await storage.activateCourseArchive(archive, epoch), false);
+  assert.deepEqual(Array.from(await storage.getPhysicalExperimentCourses(), course => course.courseName), ['B 的实验']);
 });

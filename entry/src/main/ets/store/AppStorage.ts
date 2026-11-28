@@ -8,6 +8,14 @@ import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { ScheduleSettings, DEFAULT_SETTINGS, CourseArchive, CourseData } from '../model/CourseModel';
 
+export interface WidgetSchedule {
+  archiveId: string;
+  archives: CourseArchive[];
+  courses: CourseData[];
+  termStart: string;
+  semester: string;
+}
+
 const STORE_NAME = 'wusthelper_prefs';
 
 export class AppStorage {
@@ -278,6 +286,33 @@ export class AppStorage {
   async setWeekday(v: number): Promise<void> { return this.putNum('weekday', v); }
   async getTermStartDate(): Promise<string> { return this.getStr('termStartDate'); }
   async setTermStartDate(v: string): Promise<void> { return this.putStr('termStartDate', v); }
+
+  static isTermStartForSemester(value: string, semester: string): boolean {
+    const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    const term = /^(\d{4})-(\d{4})-([12])$/.exec(semester);
+    if (!date || !term) return false;
+    const year = Number(date[1]);
+    const month = Number(date[2]);
+    const day = Number(date[3]);
+    const parsed = new Date(year, month - 1, day);
+    if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) return false;
+    return term[3] === '1' ? date[1] === term[1] && month >= 7 : date[1] === term[2] && month <= 6;
+  }
+
+  async getAccountTermStartDate(studentId: string, semester: string): Promise<string> {
+    if (!studentId || !semester) return '';
+    const key = 'termStartDate_' + encodeURIComponent(studentId);
+    const exact = await this.getStr(key + '_' + semester, '');
+    if (AppStorage.isTermStartForSemester(exact, semester)) return exact;
+    // 旧缓存只有学号，日期能确认属于所查学期时才读取。
+    const legacy = await this.getStr(key, '');
+    return AppStorage.isTermStartForSemester(legacy, semester) ? legacy : '';
+  }
+
+  async setAccountTermStartDate(studentId: string, semester: string, value: string): Promise<void> {
+    if (!studentId || !AppStorage.isTermStartForSemester(value, semester)) return;
+    await this.putStr('termStartDate_' + encodeURIComponent(studentId) + '_' + semester, value);
+  }
 
   // ── 登录与 Token ──
 
@@ -595,8 +630,11 @@ export class AppStorage {
    * 队列内部不能再调用会再次入队的公开方法，否则会等待自身造成死锁。
    */
   private async readPhysicalExperimentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {
+    const epoch = this.sessionEpoch;
+    if (this.accountChangesPending > 0) return [];
     const key = await this.physicalExperimentKey(archiveId);
     let saved = await this.getStoredCourses(key);
+    if (this.sessionEpoch !== epoch || this.accountChangesPending > 0) return [];
     // 别人的档案只读自己的缓存，绝不吸收「我的课表」数据。
     if (archiveId !== 'mine') {
       return saved;
@@ -612,6 +650,7 @@ export class AppStorage {
     if (migrated) {
       return saved;
     }
+    if (this.sessionEpoch !== epoch || this.accountChangesPending > 0) return [];
     if (!owner) {
       await this.putStr('physicalExperimentMigratedOwner', sid);
     }
@@ -624,6 +663,7 @@ export class AppStorage {
     // 不再从 currentCourses 提取实验课：切换档案时 currentCourses 可能是别人的课表，
     // 升级后第一次读取时会把别人的实验课迁进「我的课表」。
     const merged = saved;
+    if (this.sessionEpoch !== epoch || this.accountChangesPending > 0) return [];
     if (merged.length > 0) {
       await this.putStr(key, JSON.stringify(merged));
     }
@@ -669,19 +709,24 @@ export class AppStorage {
   }
 
   async setPhysicalExperimentCourses(value: CourseData[]): Promise<void> {
+    const epoch = this.sessionEpoch;
     return this.enqueueCourseWrite(async () => {
+      if (this.sessionEpoch !== epoch || this.accountChangesPending > 0) return;
       const archiveId = await this.getCurrentArchiveId();
-      await this.writePhysicalExperimentCoursesUnlocked(value, archiveId);
+      await this.writePhysicalExperimentCoursesUnlocked(value, archiveId, epoch);
     });
   }
 
   private async writePhysicalExperimentCoursesUnlocked(value: CourseData[],
-    archiveId: string = 'mine'): Promise<void> {
+    archiveId: string, expectedEpoch: number): Promise<void> {
+    if (this.sessionEpoch !== expectedEpoch || this.accountChangesPending > 0) return;
+    const key = await this.physicalExperimentKey(archiveId);
+    if (this.sessionEpoch !== expectedEpoch || this.accountChangesPending > 0) return;
     const experiments: CourseData[] = [];
     for (let i = 0; i < value.length; i++) {
       if (this.isPhysicalExperimentCourse(value[i])) experiments.push(this.normalizePhysicalExperiment(value[i]));
     }
-    await this.putStr(await this.physicalExperimentKey(archiveId), JSON.stringify(experiments));
+    await this.putStr(key, JSON.stringify(experiments));
   }
 
   /**
@@ -721,6 +766,53 @@ export class AppStorage {
     return this.enqueueCourseWrite(async () => {
       const archiveId = await this.getCurrentArchiveId();
       return this.readCurrentCoursesUnlocked(archiveId);
+    });
+  }
+
+  async getWidgetSchedule(formId: string = ''): Promise<WidgetSchedule> {
+    return this.enqueueCourseWrite(async () => {
+      const epoch = this.sessionEpoch;
+      const studentId = await this.getStudentId();
+      const key = await this.archiveKey('widgetScheduleArchive_' + formId);
+      const current = await this.getCurrentArchiveId();
+      const archives = await this.getCourseArchives();
+      const saved = formId ? await this.getStr(key, '') : '';
+      let archiveId = saved || current;
+      let selected = archives.find(item => item.id === archiveId);
+      if (archiveId !== 'mine' && !selected) {
+        archiveId = 'mine';
+        selected = archives.find(item => item.id === 'mine');
+      }
+      let courses: CourseData[] = [];
+      if (archiveId === current) {
+        courses = await this.readCurrentCoursesUnlocked(current);
+      } else {
+        const experiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
+        courses = this.mergePhysicalExperiments(selected?.courses ?? [], experiments);
+      }
+      const currentSemester = archiveId === 'mine' ? await this.getSemester() : '';
+      const liveOwn = archiveId === 'mine' && current === 'mine';
+      const semester = liveOwn ? currentSemester
+        : (selected?.semester || currentSemester);
+      const ownStart = archiveId === 'mine' ? await this.getAccountTermStartDate(studentId, semester) : '';
+      const archiveStart = selected?.semester === semester ? selected?.termStartDate || '' : '';
+      const matchingArchiveStart = archiveId !== 'mine' || AppStorage.isTermStartForSemester(archiveStart, semester)
+        ? archiveStart : '';
+      const termStart = ownStart || matchingArchiveStart || AppStorage.archiveTermStartForSemester(semester);
+      if (epoch !== this.sessionEpoch) return { archiveId: '', archives: [], courses: [], termStart: '', semester: '' };
+      if (formId && saved !== archiveId) await this.putStr(key, archiveId);
+      return { archiveId, archives, courses, termStart, semester };
+    });
+  }
+
+  async setWidgetScheduleArchive(formId: string, archiveId: string): Promise<void> {
+    if (!formId || !archiveId) return;
+    const epoch = this.sessionEpoch;
+    return this.enqueueCourseWrite(async () => {
+      const key = await this.archiveKey('widgetScheduleArchive_' + formId);
+      const archives = await this.getCourseArchives();
+      if (epoch !== this.sessionEpoch) return;
+      if (archiveId === 'mine' || archives.some(item => item.id === archiveId)) await this.putStr(key, archiveId);
     });
   }
 
@@ -771,7 +863,7 @@ export class AppStorage {
       }
       const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
       if (this.sessionEpoch !== epochAtStart) return;
-      await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId);
+      await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId, epochAtStart);
       if (this.sessionEpoch !== epochAtStart) return;
       if (expectedArchive && await this.getCurrentArchiveId() !== expectedArchive) return;
       if (this.sessionEpoch !== epochAtStart) return;
@@ -790,21 +882,53 @@ export class AppStorage {
     const epochAtStart = this.sessionEpoch;
     return this.enqueueCourseWrite(async () => {
       if (this.sessionEpoch !== epochAtStart) return;
-      // 该档案自己的实验课缓存要保留：切回自己的档案时不能把已有实验课清掉。
-      const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
-      const incomingExperiments: CourseData[] = [];
-      for (let i = 0; i < value.length; i++) {
-        if (this.isPhysicalExperimentCourse(value[i])) {
-          incomingExperiments.push(this.normalizePhysicalExperiment(value[i]));
-        }
-      }
-      const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
-      await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId);
-      if (this.sessionEpoch !== epochAtStart) return;
-      const merged = this.mergePhysicalExperiments(value, experiments);
-      this.courseCacheMarker = `archive_${archiveId}_${Date.now()}`;
-      await this.putStr('currentCourses', JSON.stringify(merged));
+      await this.writeArchiveCoursesUnlocked(archiveId, value, epochAtStart);
     });
+  }
+
+  async activateCourseArchive(archive: CourseArchive, expectedEpoch: number): Promise<boolean> {
+    return this.enqueueCourseWrite(async () => {
+      if (this.sessionEpoch !== expectedEpoch || this.accountChangesPending > 0) return false;
+      const idKey = await this.archiveKey('currentArchiveId');
+      if (this.sessionEpoch !== expectedEpoch) return false;
+      await this.writeArchiveCoursesUnlocked(archive.id, archive.courses, expectedEpoch);
+      if (this.sessionEpoch !== expectedEpoch) return false;
+      await this.putStr(idKey, archive.id);
+      return this.sessionEpoch === expectedEpoch;
+    });
+  }
+
+  async removeCourseArchive(id: string, expectedEpoch: number): Promise<boolean> {
+    return this.enqueueCourseWrite(async () => {
+      if (id === 'mine' || this.sessionEpoch !== expectedEpoch || await this.getCurrentArchiveId() === id) return false;
+      const archivesKey = await this.archiveKey('courseArchives');
+      const experimentsKey = await this.physicalExperimentKey(id);
+      const archives = await this.getCourseArchives();
+      if (this.sessionEpoch !== expectedEpoch) return false;
+      await this.putStr(archivesKey, JSON.stringify(archives.filter(item => item.id !== id)));
+      if (this.sessionEpoch !== expectedEpoch) return false;
+      await this.putStr(experimentsKey, '[]');
+      return this.sessionEpoch === expectedEpoch;
+    });
+  }
+
+  private async writeArchiveCoursesUnlocked(archiveId: string, value: CourseData[],
+    epochAtStart: number): Promise<void> {
+    // 该档案自己的实验课缓存要保留：切回自己的档案时不能把已有实验课清掉。
+    if (this.sessionEpoch !== epochAtStart || this.accountChangesPending > 0) return;
+    const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
+    const incomingExperiments: CourseData[] = [];
+    for (let i = 0; i < value.length; i++) {
+      if (this.isPhysicalExperimentCourse(value[i])) {
+        incomingExperiments.push(this.normalizePhysicalExperiment(value[i]));
+      }
+    }
+    const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
+    await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId, epochAtStart);
+    if (this.sessionEpoch !== epochAtStart) return;
+    const merged = this.mergePhysicalExperiments(value, experiments);
+    this.courseCacheMarker = `archive_${archiveId}_${Date.now()}`;
+    await this.putStr('currentCourses', JSON.stringify(merged));
   }
 
   /**

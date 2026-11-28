@@ -26,3 +26,14 @@ test('周课表只在非本周显示锁，锁定后不再 30 秒回本周', asyn
   assert.match(page, /if \(this\.locked\) return;/, '锁定后仍会启动 30 秒回本周');
   assert.match(page, /else if \(this\.displayIndex !== this\.currentPageIndex\(\)\) \{\s*this\.startAutoReturn\(\);/, '取消锁定后没有恢复 30 秒逻辑');
 });
+
+test('日课表和周课表把锁定与档案切换排在同一行，选档时保留轮播状态', async () => {
+  for (const name of ['DailyWidgetCarousel.ets', 'WeeklyWidgetCarousel.ets']) {
+    const sourceCode = await source(name);
+    assert.match(sourceCode, /Row\(\{ space: 6 \}\) \{[\s\S]+?ic_widget_lock[\s\S]+?widget_archive_switch/,
+      name + '没有把锁定和档案放入同一行');
+  }
+  const card = await source('WidgetCard.ets');
+  assert.match(card, /\.visibility\(this\.choosingArchive \? Visibility\.Hidden : Visibility\.Visible\)/);
+  assert.match(card, /if \(this\.choosingArchive\) \{[\s\S]+?this\.archivePicker\(\)/);
+});

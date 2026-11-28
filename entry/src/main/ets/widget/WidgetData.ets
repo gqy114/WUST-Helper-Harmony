@@ -72,6 +72,13 @@ export interface WidgetSnapshot {
   dailyCourses?: string;
   dailyWeekday?: string;
   countdownSlides?: string;
+  scheduleArchiveId?: string;
+  scheduleOptions?: string;
+}
+
+export interface WidgetScheduleOption {
+  id: string;
+  label: string;
 }
 
 export interface WeeklyWidgetPages {
@@ -248,12 +255,18 @@ export class WidgetData {
     return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null;
   }
 
-  private static async currentWeek(storage: AppStorage): Promise<number> {
-    const startText = await storage.getTermStartDate();
-    const start = WidgetData.parseDate(startText);
+  private static async currentWeek(storage: AppStorage, termStart: string, semester: string): Promise<number> {
+    let start = WidgetData.parseDate(termStart);
     if (start === null) {
-      const saved = await storage.getWeek();
-      return saved > 0 ? saved : 1;
+      const match = /^(\d{4})-\d{4}-([12])$/.exec(semester);
+      if (match) {
+        const year = Number(match[1]);
+        start = match[2] === '1' ? new Date(year, 8, 1) : new Date(year + 1, 1, 15);
+        while (start.getDay() !== 1) start.setDate(start.getDate() + 1);
+      } else {
+        const saved = await storage.getWeek();
+        return saved > 0 ? saved : 1;
+      }
     }
     const today = new Date();
     const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
@@ -509,7 +522,7 @@ export class WidgetData {
   }
 
   static async build(storage: AppStorage, systemDark: boolean = false,
-    modeOverride: string = ''): Promise<WidgetSnapshot> {
+    modeOverride: string = '', formId: string = ''): Promise<WidgetSnapshot> {
     const mode = modeOverride.length > 0 ? modeOverride : await WidgetPrefs.getMode(storage);
     const accent = await WidgetPrefs.getAccent(storage);
     const theme = await WidgetPrefs.getTheme(storage);
@@ -531,15 +544,19 @@ export class WidgetData {
       const custom = await WidgetPrefs.getCountdowns(storage);
       snapshot = WidgetData.countdownSnapshot([...exams, ...custom], accent, today);
     } else {
-      let courses: CourseData[] = [];
-      try {
-        courses = await storage.getCurrentCourses();
-      } catch {
-        courses = [];
-      }
-      const week = await WidgetData.currentWeek(storage);
+      const schedule = await storage.getWidgetSchedule(formId);
+      const week = await WidgetData.currentWeek(storage, schedule.termStart, schedule.semester);
       const campus = await storage.getSettingString('courseCampus', '黄家湖校区');
-      snapshot = WidgetData.courseSnapshot(courses, week, mode, accent, new Date(), campus);
+      snapshot = WidgetData.courseSnapshot(schedule.courses, week, mode, accent, new Date(), campus);
+      if (formId && schedule.archiveId) {
+        const options: WidgetScheduleOption[] = [{ id: 'mine', label: '我的课表' }];
+        schedule.archives.filter(archive => archive.id !== 'mine').forEach(archive => {
+          options.push({ id: archive.id, label: archive.relation ? archive.relation + '（' + archive.name + '）'
+            : archive.name });
+        });
+        snapshot.scheduleArchiveId = schedule.archiveId;
+        snapshot.scheduleOptions = JSON.stringify(options);
+      }
       snapshot.campus = campus;
     }
     snapshot.bg = bg;

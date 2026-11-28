@@ -233,7 +233,7 @@ struct WidgetSettingsPage {
           const formMode = (await storage.getSettingString(
             `widgetFormMode_${infos[i].formId}`, '')).trim();
           const mode = formMode.length > 0 ? formMode : TAB_MODES[this.selectedTab] || 'countdown';
-          const snapshot = await WidgetData.build(storage, this.systemDark(), mode);
+          const snapshot = await WidgetData.build(storage, this.systemDark(), mode, infos[i].formId);
           const data = formBindingData.createFormBindingData(snapshot);
           await formProvider.updateForm(infos[i].formId, data);
           updated++;

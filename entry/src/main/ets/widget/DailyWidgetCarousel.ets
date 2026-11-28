@@ -13,6 +13,9 @@ export struct DailyWidgetCarousel {
   @Prop subColor: string = '#666666';
   @State private locked: boolean = false;
   onSettings: () => void = () => {};
+  @Prop showArchiveSwitch: boolean = false;
+  onArchiveSwitch: () => void = () => {};
+  onOpen: () => void = () => {};
   onRefresh: () => void = () => {};
 
   private entries(): DailyWidgetCourse[] {
@@ -30,14 +33,19 @@ export struct DailyWidgetCarousel {
           Text(this.dateText).fontSize(17).fontWeight(FontWeight.Bold).fontColor(this.textColor).maxLines(1)
           Text(this.weekText).fontSize(11).fontColor(this.subColor).maxLines(1)
         }.alignItems(HorizontalAlign.Start).layoutWeight(1)
-        Image($r('app.media.ic_widget_lock')).width(22).height(28).objectFit(ImageFit.Contain)
-          .fillColor(this.locked ? '#61A5FA' : this.subColor)
-          .accessibilityText(this.locked ? '取消锁定日课表' : '锁定日课表')
-          .onClick(() => { this.locked = !this.locked; })
         Image($r('app.media.setting')).width(22).height(28).objectFit(ImageFit.Contain).fillColor(this.subColor)
           .accessibilityText('小组件设置').onClick(() => this.onSettings())
         Image($r('app.media.refresh')).width(22).height(28).objectFit(ImageFit.Contain).fillColor(this.subColor)
           .accessibilityText('刷新日课表').onClick(() => this.onRefresh())
+        Image($r('app.media.ic_widget_lock')).width(22).height(28).objectFit(ImageFit.Contain)
+          .fillColor(this.locked ? '#61A5FA' : this.subColor)
+          .accessibilityText(this.locked ? '取消锁定日课表' : '锁定日课表')
+          .onClick(() => { this.locked = !this.locked; })
+        if (this.showArchiveSwitch) {
+          Image($r('app.media.widget_archive_switch')).width(22).height(28)
+            .objectFit(ImageFit.Contain).fillColor(this.subColor)
+            .accessibilityText('切换课表档案').onClick(() => this.onArchiveSwitch())
+        }
       }.width('100%')
 
       Divider().color('#33808080').margin({ top: 6, bottom: 4 })
@@ -67,10 +75,10 @@ export struct DailyWidgetCarousel {
         .vertical(true)
         .indicator(false)
         .width('100%')
-        .layoutWeight(1)
+        .layoutWeight(1).onClick(() => this.onOpen())
       } else {
         Text(this.emptyText).fontSize(13).fontColor(this.subColor)
-          .width('100%').textAlign(TextAlign.Center).layoutWeight(1)
+          .width('100%').textAlign(TextAlign.Center).layoutWeight(1).onClick(() => this.onOpen())
       }
     }.width('100%').height('100%')
   }
