@@ -308,3 +308,22 @@ test('同一账号切换学期后桌面周次只使用所选学期的开学日',
   await storage.setSemester('2026-2027-1');
   assert.equal((await storage.getWidgetSchedule()).termStart, '2026-09-07');
 });
+
+test('档案激活等待实验课写入键时切号不会覆盖新账号实验记录', async () => {
+  const { storage } = await createStorage();
+  const experiments = name => courses(name).map(course => ({ ...course, isPhysicalExperiment: true }));
+  await storage.setStudentId('B');
+  await storage.setPhysicalExperimentCourses(experiments('B 的实验'));
+  await storage.setStudentId('A');
+  await storage.getPhysicalExperimentCourses();
+  const resolveKey = storage.physicalExperimentKey.bind(storage);
+  let requests = 0;
+  storage.physicalExperimentKey = async id => {
+    if (++requests === 2) await storage.setStudentId('B');
+    return resolveKey(id);
+  };
+  const epoch = storage.getSessionEpoch();
+  const archive = { id: 'mine', name: 'A 的课表', courses: experiments('A 的实验') };
+  assert.equal(await storage.activateCourseArchive(archive, epoch), false);
+  assert.deepEqual(Array.from(await storage.getPhysicalExperimentCourses(), course => course.courseName), ['B 的实验']);
+});

@@ -630,8 +630,11 @@ export class AppStorage {
    * 队列内部不能再调用会再次入队的公开方法，否则会等待自身造成死锁。
    */
   private async readPhysicalExperimentCoursesUnlocked(archiveId: string = 'mine'): Promise<CourseData[]> {
+    const epoch = this.sessionEpoch;
+    if (this.accountChangesPending > 0) return [];
     const key = await this.physicalExperimentKey(archiveId);
     let saved = await this.getStoredCourses(key);
+    if (this.sessionEpoch !== epoch || this.accountChangesPending > 0) return [];
     // 别人的档案只读自己的缓存，绝不吸收「我的课表」数据。
     if (archiveId !== 'mine') {
       return saved;
@@ -647,6 +650,7 @@ export class AppStorage {
     if (migrated) {
       return saved;
     }
+    if (this.sessionEpoch !== epoch || this.accountChangesPending > 0) return [];
     if (!owner) {
       await this.putStr('physicalExperimentMigratedOwner', sid);
     }
@@ -659,6 +663,7 @@ export class AppStorage {
     // 不再从 currentCourses 提取实验课：切换档案时 currentCourses 可能是别人的课表，
     // 升级后第一次读取时会把别人的实验课迁进「我的课表」。
     const merged = saved;
+    if (this.sessionEpoch !== epoch || this.accountChangesPending > 0) return [];
     if (merged.length > 0) {
       await this.putStr(key, JSON.stringify(merged));
     }
@@ -704,19 +709,24 @@ export class AppStorage {
   }
 
   async setPhysicalExperimentCourses(value: CourseData[]): Promise<void> {
+    const epoch = this.sessionEpoch;
     return this.enqueueCourseWrite(async () => {
+      if (this.sessionEpoch !== epoch || this.accountChangesPending > 0) return;
       const archiveId = await this.getCurrentArchiveId();
-      await this.writePhysicalExperimentCoursesUnlocked(value, archiveId);
+      await this.writePhysicalExperimentCoursesUnlocked(value, archiveId, epoch);
     });
   }
 
   private async writePhysicalExperimentCoursesUnlocked(value: CourseData[],
-    archiveId: string = 'mine'): Promise<void> {
+    archiveId: string, expectedEpoch: number): Promise<void> {
+    if (this.sessionEpoch !== expectedEpoch || this.accountChangesPending > 0) return;
+    const key = await this.physicalExperimentKey(archiveId);
+    if (this.sessionEpoch !== expectedEpoch || this.accountChangesPending > 0) return;
     const experiments: CourseData[] = [];
     for (let i = 0; i < value.length; i++) {
       if (this.isPhysicalExperimentCourse(value[i])) experiments.push(this.normalizePhysicalExperiment(value[i]));
     }
-    await this.putStr(await this.physicalExperimentKey(archiveId), JSON.stringify(experiments));
+    await this.putStr(key, JSON.stringify(experiments));
   }
 
   /**
@@ -853,7 +863,7 @@ export class AppStorage {
       }
       const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
       if (this.sessionEpoch !== epochAtStart) return;
-      await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId);
+      await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId, epochAtStart);
       if (this.sessionEpoch !== epochAtStart) return;
       if (expectedArchive && await this.getCurrentArchiveId() !== expectedArchive) return;
       if (this.sessionEpoch !== epochAtStart) return;
@@ -878,6 +888,7 @@ export class AppStorage {
 
   async activateCourseArchive(archive: CourseArchive, expectedEpoch: number): Promise<boolean> {
     return this.enqueueCourseWrite(async () => {
+      if (this.sessionEpoch !== expectedEpoch || this.accountChangesPending > 0) return false;
       const idKey = await this.archiveKey('currentArchiveId');
       if (this.sessionEpoch !== expectedEpoch) return false;
       await this.writeArchiveCoursesUnlocked(archive.id, archive.courses, expectedEpoch);
@@ -904,6 +915,7 @@ export class AppStorage {
   private async writeArchiveCoursesUnlocked(archiveId: string, value: CourseData[],
     epochAtStart: number): Promise<void> {
     // 该档案自己的实验课缓存要保留：切回自己的档案时不能把已有实验课清掉。
+    if (this.sessionEpoch !== epochAtStart || this.accountChangesPending > 0) return;
     const savedExperiments = await this.readPhysicalExperimentCoursesUnlocked(archiveId);
     const incomingExperiments: CourseData[] = [];
     for (let i = 0; i < value.length; i++) {
@@ -912,7 +924,7 @@ export class AppStorage {
       }
     }
     const experiments = this.mergePhysicalExperiments(savedExperiments, incomingExperiments);
-    await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId);
+    await this.writePhysicalExperimentCoursesUnlocked(experiments, archiveId, epochAtStart);
     if (this.sessionEpoch !== epochAtStart) return;
     const merged = this.mergePhysicalExperiments(value, experiments);
     this.courseCacheMarker = `archive_${archiveId}_${Date.now()}`;
