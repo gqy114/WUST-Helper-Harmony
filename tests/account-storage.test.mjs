@@ -258,3 +258,17 @@ test('共享档案开学日期从当前账号档案取得，不读取全局缓�
   assert.equal(await storage.getSharedArchiveTermStartDate('shared_same'), '2026-09-07');
   assert.equal(await storage.getSharedArchiveTermStartDate('shared_missing'), '');
 });
+
+test('电表缓存合并时保留仍未读到的本地电表，更新云端匹配的余额', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  await storage.setIsLogin(true);
+  const oldEpoch = storage.getSessionEpoch();
+  await storage.setElectricityRoomsCache('A', oldEpoch, '[{"id":"local"},{"id":"shared","remaining":"10"}]');
+  await storage.setStudentId('A');
+  const epoch = storage.getSessionEpoch();
+  assert.equal(await storage.setElectricityRoomsCache('A', epoch, '[{"id":"shared","remaining":"20"}]', true), true);
+  assert.deepEqual(JSON.parse(await storage.getElectricityRoomsCache()), [
+    { id: 'shared', remaining: '20' }, { id: 'local' },
+  ]);
+});

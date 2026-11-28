@@ -10,6 +10,8 @@ import { ScheduleSettings, DEFAULT_SETTINGS, CourseArchive, CourseData } from '.
 
 const STORE_NAME = 'wusthelper_prefs';
 
+interface ElectricityCacheRoom { id: string; }
+
 export class AppStorage {
   private static instance: AppStorage;
   private kvStore: preferences.Preferences | null = null;
@@ -336,17 +338,36 @@ export class AppStorage {
     return this.sessionEpoch === epoch && this.accountChangesPending === 0 ? value : '';
   }
 
-  async setElectricityRoomsCache(account: string, epoch: number, value: string): Promise<boolean> {
+  async setElectricityRoomsCache(account: string, epoch: number, value: string,
+    preserveLocal: boolean = false): Promise<boolean> {
     const sid = account.trim();
+    const key = 'electricityRooms_' + sid;
     let written = false;
     const saved = await this.commitSessionWrite(epoch, sid, async (): Promise<void> => {
       if (!await this.getIsLogin() || this.sessionEpoch !== epoch) return;
-      await this.putStr('electricityRooms_' + sid, value);
+      let next = value;
+      if (preserveLocal) {
+        const existing = this.parseElectricityRooms(await this.getStr(key, ''));
+        const incoming = this.parseElectricityRooms(value);
+        next = JSON.stringify(incoming.concat(existing.filter(room =>
+          !incoming.some(updated => updated.id === room.id))));
+      }
+      if (this.sessionEpoch !== epoch) return;
+      await this.putStr(key, next);
       written = true;
     });
     if (!saved || !written || this.sessionEpoch !== epoch) return false;
     this.onElectricityRoomsChanged?.();
     return true;
+  }
+
+  private parseElectricityRooms(value: string): ElectricityCacheRoom[] {
+    try {
+      const rooms = JSON.parse(value) as ElectricityCacheRoom[];
+      return Array.isArray(rooms) ? rooms : [];
+    } catch {
+      return [];
+    }
   }
 
   async getPassword(): Promise<string> { return this.getStr('password'); }

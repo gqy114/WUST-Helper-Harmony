@@ -72,7 +72,7 @@ struct ElectricityPage {
 
   private async saveLocalRooms(epoch: number = this.roomEpoch): Promise<void> {
     await AppStorage.getInstance().setElectricityRoomsCache(
-      this.roomAccount, epoch, JSON.stringify(this.savedRooms));
+      this.roomAccount, epoch, JSON.stringify(this.savedRooms), true);
   }
 
   private async isRoomSessionCurrent(): Promise<boolean> {
