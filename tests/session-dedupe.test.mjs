@@ -8,7 +8,7 @@ import { createContext, SourceTextModule, SyntheticModule } from 'node:vm';
 const source = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const transform = (code) => stripTypeScriptTypes(code, { mode: 'transform' });
 
-async function createSession() {
+async function createSession(overrides = {}, refresh) {
   const calls = [];
   const context = createContext({ console });
   const storage = new SyntheticModule(['AppStorage'], function () {
@@ -17,14 +17,17 @@ async function createSession() {
       getStudentId: async () => { await new Promise((r) => setTimeout(r, 5)); return '20240001'; },
       getPassword: async () => { await new Promise((r) => setTimeout(r, 5)); return 'pwd'; },
       getIsGraduate: async () => false,
-      setIsLogin: async () => {},
+      getSessionEpoch: () => 1,
+      isSessionCurrent: (epoch) => epoch === 1,
+      ...overrides,
     };
     this.setExport('AppStorage', { getInstance: () => instance });
   });
   const api = new SyntheticModule(['ApiService'], function () {
     this.setExport('ApiService', {
-      refreshUndergradToken: async () => {
+      refreshUndergradToken: async (_storage, sid, password) => {
         calls.push('undergrad');
+        if (refresh) return refresh(sid, password);
         await new Promise((r) => setTimeout(r, 20));
         return true;
       },
@@ -50,4 +53,43 @@ test('并发 ensureSession 只发出一次登录请求', async () => {
   const results = await Promise.all([service.ensureSession(true), service.ensureSession(true)]);
   assert.deepEqual(results, [true, true]);
   assert.equal(calls.length, 1, `登录请求次数=${calls.length}`);
+});
+
+test('切号后不等待旧刷新，并且旧刷新结果失效', async () => {
+  let epoch = 1;
+  let releaseOld;
+  let oldStarted;
+  const oldPending = new Promise(resolve => { releaseOld = resolve; });
+  const oldReady = new Promise(resolve => { oldStarted = resolve; });
+  const { service } = await createSession({
+    getSessionEpoch: () => epoch,
+    isSessionCurrent: requested => requested === epoch,
+    getStudentId: async () => epoch === 1 ? 'A' : 'B',
+    getPassword: async () => epoch === 1 ? 'pwd-A' : 'pwd-B',
+  }, async (sid, password) => {
+    assert.equal(password, 'pwd-' + sid);
+    if (sid === 'B') return true;
+    oldStarted();
+    return oldPending;
+  });
+  const oldRefresh = service.ensureSession(true);
+  await oldReady;
+  epoch++;
+  try {
+    assert.equal(await service.ensureSession(), true);
+  } finally {
+    releaseOld(true);
+  }
+  assert.equal(await oldRefresh, false);
+});
+
+test('读密码期间切号时不向教务提交混用的凭据', async () => {
+  let epoch = 1;
+  const { calls, service } = await createSession({
+    getSessionEpoch: () => epoch,
+    isSessionCurrent: requested => requested === epoch,
+    getPassword: async () => { epoch++; return 'pwd-B'; },
+  });
+  assert.equal(await service.ensureSession(true), false);
+  assert.deepEqual(calls, []);
 });

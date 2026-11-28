@@ -177,6 +177,20 @@ test('未登录时不认领旧档案', async () => {
   assert.equal(claimed.length, 1, '登录后由当前账号认领');
 });
 
+test('教务自动刷新迟到后不能覆盖新账号的教务会话', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  const epoch = storage.getSessionEpoch();
+  await storage.setToken('old-A');
+  await storage.setStudentId('B');
+  assert.equal(await storage.getToken(), '');
+  await storage.setToken('B-token');
+  assert.equal(await storage.setTeachingSessionIfCurrent(epoch, 'A', 'late-A', 'A'), false);
+  assert.equal(await storage.getToken(), 'B-token');
+  assert.equal(await storage.setTeachingSessionIfCurrent(storage.getSessionEpoch(), 'B', 'new-B', 'B'), true);
+  assert.equal(await storage.getToken(), 'new-B');
+});
+
 test('共享课表启用时，个人课表写入无法覆盖已选档案的课程', async () => {
   const { storage } = await createStorage();
   await storage.setStudentId('A');

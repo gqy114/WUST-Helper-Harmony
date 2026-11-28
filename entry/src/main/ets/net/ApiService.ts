@@ -10,6 +10,8 @@ import {
   AppAuthDataContent,
 } from '../model/BaseResponse';
 import { AppStorage } from '../store/AppStorage';
+import type { DeviceAppAuth, DeviceLoginOutcome } from './UndergradDeviceLogin';
+import { UndergradDeviceLogin } from './UndergradDeviceLogin';
 
 // 从 WustApi.java 抽取的常量子集
 // 登录接口以 iOS 接口文档为准：本科生换取教务 Cookie，研究生直接返回个人信息。
@@ -66,6 +68,8 @@ interface GraduateLoginResponse<T> {
 }
 
 export class ApiService {
+  private static appAuthRestore: Promise<void> | null = null;
+  private static appAuthRestoreEpoch: number = -1;
   private static undergradSessionBackend: string = 'https://lyzyy.love:8081';
 
   static async sendUndergradVerifyCode(state: string): Promise<BaseResponse<{ cooldown_seconds?: number }>> {
@@ -275,45 +279,94 @@ export class ApiService {
     }
   }
 
-  /** 用保存的凭据恢复 App Auth */
-  static async loginAppAuthFromSavedCredentials(
-    storage: AppStorage,
-  ): Promise<void> {
-    // 先同步固定会话代次，再读凭据：请求期间切号，返回结果一律丢弃。
+  /** 启动和各业务入口共享同一账号的认证恢复任务。 */
+  static async loginAppAuthFromSavedCredentials(storage: AppStorage): Promise<void> {
     const sessionEpoch = storage.getSessionEpoch();
-    const studentId = await storage.getStudentId();
-    const password = await storage.getPassword();
-    if (!studentId || !password) {
-      console.warn('ApiService', 'missing saved credentials for app auth');
-      return;
+    if (!storage.isSessionCurrent(sessionEpoch)) return;
+    if (ApiService.appAuthRestoreEpoch === sessionEpoch && ApiService.appAuthRestore) {
+      return ApiService.appAuthRestore;
     }
-    if (storage.getSessionEpoch() !== sessionEpoch) {
-      console.warn('ApiService', 'account changed while reading credentials, auth restore cancelled');
-      return;
+    const task = ApiService.restoreAppAuth(storage, sessionEpoch);
+    ApiService.appAuthRestoreEpoch = sessionEpoch;
+    ApiService.appAuthRestore = task;
+    try {
+      await task;
+    } finally {
+      if (ApiService.appAuthRestore === task) ApiService.appAuthRestore = null;
     }
+  }
+
+  private static async restoreAppAuth(storage: AppStorage, sessionEpoch: number): Promise<void> {
+    const studentId = (await storage.getStudentId()).trim();
     const isGraduate = await storage.getIsGraduate();
-    const data = await ApiService.loginAppAuth(studentId, password, isGraduate);
-    if (data && data.code === 200 && data.data) {
-      const d = data.data;
-      // 令牌写入走会话校验队列；切号后不把旧账号令牌写给新账号。
-      const saved = await storage.setAppAuthTokensIfSession(sessionEpoch, studentId,
-        d.accessToken ?? '', d.refreshToken ?? '', d.expiresAt ?? 0, d.refreshExpiresAt ?? 0);
-      if (!saved) {
-        console.warn('ApiService', 'account changed during auth restore, tokens discarded');
-        return;
-      }
-      if (d.user) {
-        if (d.user.displayName?.trim()) {
-          // 可根据业务需要存到 UserInfo
+    const useMock = await storage.getUseMock();
+    if (!studentId || !storage.isSessionCurrent(sessionEpoch)) return;
+
+    if (!isGraduate && !useMock) {
+      const cookie = (await storage.getToken()).trim();
+      if (!storage.isSessionCurrent(sessionEpoch)) return;
+      if (cookie) {
+        let outcome: DeviceLoginOutcome;
+        try {
+          outcome = await UndergradDeviceLogin.complete(studentId, cookie);
+        } catch {
+          // 换取会话只提交了 Cookie，新服务不可达时可以走原有凭据恢复。
+          await ApiService.restoreLegacyAppAuth(storage, sessionEpoch, studentId, isGraduate);
+          return;
         }
-        if (d.user.avatarUrl?.trim()) {
-          // 头像按发起认证的账号写入，不污染当前账号。
-          await storage.setAvatarUrlForAccount(sessionEpoch, studentId, d.user.avatarUrl.trim());
+        if (!storage.isSessionCurrent(sessionEpoch)) return;
+        if (outcome.code === 200 && outcome.data?.appAuth?.accessToken?.trim()) {
+          await ApiService.saveRestoredAppAuth(storage, sessionEpoch, studentId, outcome.data.appAuth);
+          return;
         }
+        if (outcome.code === 404 || outcome.code === 408 || (outcome.code >= 500 && outcome.code < 600)) {
+          await ApiService.restoreLegacyAppAuth(storage, sessionEpoch, studentId, isGraduate);
+          return;
+        }
+        if (outcome.code !== 401) return;
       }
-      console.info('ApiService', 'app auth restored');
-    } else {
-      console.warn('ApiService', `app auth restore failed: ${data?.msg}`);
+
+      const password = await storage.getPassword();
+      if (!password || !storage.isSessionCurrent(sessionEpoch)) return;
+      try {
+        const outcome = await UndergradDeviceLogin.login(studentId, password);
+        if (outcome.code !== 200 || !outcome.data?.appAuth?.accessToken?.trim()) return;
+        if (outcome.data.token?.trim()) {
+          const saved = await storage.setTeachingSessionIfCurrent(sessionEpoch, studentId,
+            outcome.data.token, outcome.message);
+          if (!saved) return;
+        }
+        await ApiService.saveRestoredAppAuth(storage, sessionEpoch, studentId, outcome.data.appAuth);
+      } catch (error) {
+        if (!UndergradDeviceLogin.canFallback(error as Error)) throw error;
+        await ApiService.restoreLegacyAppAuth(storage, sessionEpoch, studentId, isGraduate);
+      }
+      return;
+    }
+    await ApiService.restoreLegacyAppAuth(storage, sessionEpoch, studentId, isGraduate);
+  }
+
+  private static async restoreLegacyAppAuth(storage: AppStorage, sessionEpoch: number,
+    studentId: string, isGraduate: boolean): Promise<void> {
+    const password = await storage.getPassword();
+    if (!password || !storage.isSessionCurrent(sessionEpoch)) return;
+    const response = await ApiService.loginAppAuth(studentId, password, isGraduate);
+    if (response?.code === 200 && response.data) {
+      await ApiService.saveRestoredAppAuth(storage, sessionEpoch, studentId, response.data);
+    }
+  }
+
+  private static async saveRestoredAppAuth(storage: AppStorage, sessionEpoch: number,
+    studentId: string, data: DeviceAppAuth): Promise<void> {
+    if (!data.accessToken?.trim()) return;
+    const saved = await storage.setAppAuthTokensIfSession(sessionEpoch, studentId,
+      data.accessToken, data.refreshToken ?? '', data.expiresAt ?? 0, data.refreshExpiresAt ?? 0);
+    if (!saved) {
+      console.warn('ApiService', 'account changed during auth restore, tokens discarded');
+      return;
+    }
+    if (data.user?.avatarUrl?.trim()) {
+      await storage.setAvatarUrlForAccount(sessionEpoch, studentId, data.user.avatarUrl.trim());
     }
   }
 
@@ -322,16 +375,27 @@ export class ApiService {
     storage: AppStorage,
     studentId: string,
     password: string,
+    epoch: number,
   ): Promise<boolean> {
+    if (!storage.isSessionCurrent(epoch)) return false;
     try {
+      try {
+        if (!await storage.getUseMock()) {
+          if (!storage.isSessionCurrent(epoch)) return false;
+          const outcome = await UndergradDeviceLogin.login(studentId, password);
+          if (outcome.code === 200 && outcome.data?.token?.trim()) {
+            return await storage.setTeachingSessionIfCurrent(epoch, studentId, outcome.data.token, outcome.message);
+          }
+          return false;
+        }
+      } catch (error) {
+        if (!UndergradDeviceLogin.canFallback(error as Error)) return false;
+      }
+      // 设备登录服务未部署/不可用时，旧 HTTP 登录仍可恢复教务会话。
+      if (!storage.isSessionCurrent(epoch)) return false;
       const resp = await ApiService.loginUndergrad(studentId, password);
       if (resp && resp.data?.token) {
-        const token = resp.data.token;
-        await storage.setToken(token);
-        await storage.setTokenUpdateTime(Date.now());
-        await storage.setTokenLastUseTime(Date.now());
-        await storage.setMessage(resp.msg ?? '');
-        return true;
+        return await storage.setTeachingSessionIfCurrent(epoch, studentId, resp.data.token, resp.msg ?? '');
       }
       return false;
     } catch {
@@ -345,17 +409,13 @@ export class ApiService {
     storage: AppStorage,
     studentId: string,
     password: string,
+    epoch: number,
   ): Promise<boolean> {
+    if (!storage.isSessionCurrent(epoch)) return false;
     try {
       const resp = await ApiService.loginGraduate(studentId, password);
       if (resp && resp.code === 200) {
-        const token = 'grad_' + studentId;
-        const msg = resp.msg ?? '';
-        await storage.setToken(token);
-        await storage.setTokenUpdateTime(Date.now());
-        await storage.setTokenLastUseTime(Date.now());
-        await storage.setMessage(msg);
-        return true;
+        return await storage.setTeachingSessionIfCurrent(epoch, studentId, 'grad_' + studentId, resp.msg ?? '');
       }
       return false;
     } catch {

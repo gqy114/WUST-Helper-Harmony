@@ -80,8 +80,7 @@ struct LaunchPage {
         // ② 跳主页（先跳，不阻塞）
         RouterUtil.toMain();
         // ③ 后台恢复 AppAuth 并刷新 Token
-        this.ensureAppAuthAsync();
-        this.refreshTokenAsync();
+        this.ensureAppAuthAsync().then(() => this.refreshTokenAsync()).catch((): void => {});
       } else {
         RouterUtil.toLogin();
       }
@@ -124,22 +123,8 @@ struct LaunchPage {
 
   /** Token 后台刷新（不阻塞跳转） */
   private async refreshTokenAsync(): Promise<void> {
-    const storage = AppStorage.getInstance();
-    const sid = await storage.getStudentId();
-    const pwd = await storage.getPassword();
-    if (!sid || !pwd) {
-      console.info(TAG, 'skip refresh: no creds');
-      return;
-    }
     try {
-      const isGraduate = await storage.getIsGraduate();
-      let ok: boolean;
-      if (isGraduate) {
-        ok = await ApiService.refreshGraduateToken(storage, sid, pwd);
-      } else {
-        ok = await ApiService.refreshUndergradToken(storage, sid, pwd);
-      }
-      console.info(TAG, `token refresh ${ok ? 'ok' : 'failed'}`);
+      await TeachingSessionService.ensureFreshSession();
     } catch {
       console.warn(TAG, 'refreshToken failed');
     }

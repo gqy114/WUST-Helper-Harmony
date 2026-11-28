@@ -40,6 +40,12 @@ async function createApiService(handler) {
     if (name === './HttpRequest') return http;
     if (name === '../store/AppStorage') return storage;
     if (name === '../model/BaseResponse') return model;
+    if (name === './UndergradDeviceLogin') {
+      const device = new SyntheticModule(['UndergradDeviceLogin'], function () {
+        this.setExport('UndergradDeviceLogin', { login: async () => ({ code: 503, message: 'stub' }) });
+      });
+      return device;
+    }
     throw new Error(`Unexpected import: ${name}`);
   });
   await api.evaluate();

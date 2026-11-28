@@ -12,12 +12,13 @@ import netConnection from '@ohos.net.connection';
 import { AppStorage } from '../../store/AppStorage';
 import { CourseStore } from '../../store/CourseStore';
 import { ApiService } from '../../net/ApiService';
+import { DeviceAppAuth, DeviceLoginData, UndergradDeviceLogin } from '../../net/UndergradDeviceLogin';
 import { RouterUtil } from '../../utils/RouterUtil';
 import { StorageUtil } from '../../utils/StorageUtil';
 import { common } from '@kit.AbilityKit'
 import { router } from '@kit.ArkUI';
 
-import { TokenDataContent, GraduateLoginDataContent } from '../../model/BaseResponse';
+import { BaseResponse, TokenDataContent, GraduateLoginDataContent } from '../../model/BaseResponse';
 // ═══════════════════════════════════════════════ 常量 ═══════════════════════════════════════════════
 
 const TAG = 'LoginPage';
@@ -145,9 +146,14 @@ struct LoginPage {
   @State private showTwoVerifyPanel: boolean = false;
   @State private verifyCode: string = '';
   private verifyState: string = '';
+  private verifyStudentId: string = '';
+  private verifyPassword: string = '';
+  private verifying: boolean = false;
   // ── 内部状态 ──
   private errorCount: Record<string, number> = {};
   private isLoggingIn: boolean = false;
+  // 每次登录尝试递增；超时/重试后旧请求的结果必须丢弃。
+  private loginAttempt: number = 0;
   private courseFinished: boolean = false;
   private loginTimer?: number;
   private courseTimer?: number;
@@ -206,9 +212,7 @@ struct LoginPage {
 
   // ══════════ 切换 研究生/本科 ══════════
 
-  private async onSwitchChanged(): Promise<void> {
-    const s = AppStorage.getInstance();
-    await s.setIsGraduate(this.isGraduate);
+  private onSwitchChanged(): void {
     this.showVolunteer = !this.isGraduate;
   }
 
@@ -255,46 +259,79 @@ struct LoginPage {
   // ══════════ 执行登录 ══════════
 
   private async doLogin(sid: string, pwd: string): Promise<void> {
-    if (this.isLoggingIn) return;
+    if (this.isLoggingIn || this.verifying) return;
     this.isLoggingIn = true;
+    const attempt = ++this.loginAttempt;
+    const isGraduate = this.isGraduate;
     this.semesterStr = this.calcSemester();
     await AppStorage.getInstance().setSemester(this.semesterStr);
     this.showLoading('\u767b\u5f55\u4e2d...');
     // 研究生登录需要后端现登录研究生系统（aTrust 网关 + 验证码），耗时明显更长。
-    this.startLoginTimer(this.isGraduate ? 60000 : TIMEOUT_LOGIN);
+    this.startLoginTimer(isGraduate ? 60000 : TIMEOUT_LOGIN);
 
     try {
-      const resp = this.isGraduate
-        ? await ApiService.loginGraduate(sid, pwd)
-        : await ApiService.loginUndergrad(sid, pwd);
+      let resp: BaseResponse<TokenDataContent | GraduateLoginDataContent>;
+      let deviceData: DeviceLoginData | undefined = undefined;
+      if (isGraduate) {
+        resp = await ApiService.loginGraduate(sid, pwd);
+      } else if (await AppStorage.getInstance().getUseMock()) {
+        resp = await ApiService.loginUndergrad(sid, pwd);
+      } else {
+        // 新的设备登录：WebSocket 由后端驱动学校登录；不可用时回退旧 HTTP 登录。
+        try {
+          const outcome = await UndergradDeviceLogin.login(sid, pwd);
+          if (outcome.code === 200 && outcome.data?.token?.trim()) {
+            deviceData = outcome.data;
+            const tokenData: TokenDataContent = {
+              token: outcome.data.token,
+              student_id: outcome.data.student_id || sid,
+              student_type: 'undergrad'
+            };
+            resp = { code: 200, msg: outcome.message, data: tokenData };
+          } else {
+            resp = outcome.code === 200
+              ? { code: 502, msg: '登录响应缺少教务会话，请稍后再试' }
+              : { code: outcome.code, msg: outcome.message };
+          }
+        } catch (deviceError) {
+          if (!this.isPageAlive || attempt !== this.loginAttempt) return;
+          if (!UndergradDeviceLogin.canFallback(deviceError as Error)) {
+            const message = (deviceError as Error).message || '登录连接中断，请稍后再试';
+            resp = { code: 503, msg: message };
+          } else {
+            resp = await ApiService.loginUndergrad(sid, pwd);
+          }
+        }
+      }
+      if (!this.isPageAlive || attempt !== this.loginAttempt) return;
       this.clearLoginTimer();
 
-      if (!this.isGraduate) {
+      if (!isGraduate) {
         const undergradData = resp.data as TokenDataContent | undefined;
         if (resp.code === 428 && undergradData?.state) {
           this.hideLoading();
           this.isLoggingIn = false;
-          this.showTwoVerify(undergradData.state, undergradData.phone ?? '');
+          this.showTwoVerify(undergradData.state, undergradData.phone ?? '', sid, pwd);
           return;
         }
       }
 
       if (resp && (resp.code === 200 || String(resp.code) === '200' || resp.code === 0 || resp.code === 10000 || resp.code === 11000)) {
+        if (!isGraduate && !(resp.data as TokenDataContent | undefined)?.token?.trim()) {
+          this.hideLoading();
+          this.isLoggingIn = false;
+          this.handleLoginFail(sid, '登录响应缺少教务会话，请稍后再试', false);
+          return;
+        }
         const s = AppStorage.getInstance();
         // 切换账号/身份时必须丢掉上一个账号的课表存档，否则新账号会显示别人的课表。
         const prevSid = await s.getStudentId();
         const prevGraduate = await s.getIsGraduate();
-        await s.setIsGraduate(this.isGraduate);
-        if (prevSid && (prevSid !== sid || prevGraduate !== this.isGraduate)) {
-          // 不能调用 setCurrentCourses 清空：它会先把旧账号的实验课迁移回来。
-          await s.resetCourseCache();
-          await s.setToken('');
-          // 只清磁盘不够：CourseStore 里的内存课表也要清，避免断网时仍显示上一个账号的课程。
-          CourseStore.getInstance().setCourses([]);
-          console.info(TAG, `account switched ${prevSid} -> ${sid}, cached timetable cleared`);
-        }
+        if (!this.isPageAlive || attempt !== this.loginAttempt) return;
+        await this.prepareLoginAccount(s, sid, isGraduate, prevSid, prevGraduate);
+        if (!this.isPageAlive || attempt !== this.loginAttempt) return;
         if (resp.data) {
-          if (this.isGraduate) {
+          if (isGraduate) {
             const gdata = resp.data as GraduateLoginDataContent;
             // 先切到本次登录的账号，再读写按学号隔离的昵称。
             await this.saveLoginData(`grad_${sid}`, resp.msg ?? '登录成功', sid, pwd);
@@ -312,12 +349,14 @@ struct LoginPage {
           } else {
             const tdata = resp.data as TokenDataContent;
             if (tdata.token) {
+              await s.setStudentId(sid);
               await s.setToken(tdata.token);
-              await s.setIsLogin(true);
+              await s.setMessage(resp.msg ?? '');
               await s.setTokenUpdateTime(Date.now());
               await s.setTokenLastUseTime(Date.now());
-              await s.setStudentId(sid);
               await s.setPassword(pwd);
+              await s.setIsLogin(true);
+              if (deviceData?.appAuth) await this.saveDeviceAppAuth(deviceData.appAuth, sid);
               await StorageUtil.saveLoginInfo(tdata.token, sid, sid);
               console.info(TAG, 'login token saved');
             }
@@ -337,9 +376,10 @@ struct LoginPage {
       } else {
         this.hideLoading();
         this.isLoggingIn = false;
-        this.handleLoginFail(sid, resp?.msg ?? '\u767b\u5f55\u5931\u8d25');
+        this.handleLoginFail(sid, resp?.msg ?? '登录失败', resp?.code === 400 || resp?.code === 401 || resp?.code === 403);
       }
     } catch {
+      if (!this.isPageAlive || attempt !== this.loginAttempt) return;
       this.clearLoginTimer();
       this.hideLoading();
       this.isLoggingIn = false;
@@ -348,8 +388,10 @@ struct LoginPage {
     }
   }
 
-  private showTwoVerify(state: string, phone: string): void {
+  private showTwoVerify(state: string, phone: string, sid: string, pwd: string): void {
     this.verifyState = state;
+    this.verifyStudentId = sid;
+    this.verifyPassword = pwd;
     this.verifyCode = '';
     this.showTwoVerifyPanel = true;
     this.sendVerifyCode(phone);
@@ -366,21 +408,38 @@ struct LoginPage {
   }
 
   private async submitVerifyCode(): Promise<void> {
+    if (this.verifying) return;
+    const code = this.verifyCode.trim();
+    if (!code) {
+      promptAction.showToast({ message: '请输入验证码', duration: 1200 });
+      return;
+    }
+    this.verifying = true;
+    const attempt = this.loginAttempt;
+    const sid = this.verifyStudentId;
+    const pwd = this.verifyPassword;
     try {
-      if (!this.verifyCode.trim()) { promptAction.showToast({ message: '请输入验证码', duration: 1200 }); return; }
-      const result = await ApiService.verifyUndergradCode(this.verifyState, this.verifyCode.trim());
-      if ((result.code === 200 || String(result.code) === '200') && result.data?.token) {
-        await this.saveLoginData(result.data.token, result.msg ?? '', this.studentId, this.password);
+      const result = await ApiService.verifyUndergradCode(this.verifyState, code);
+      if (!this.isPageAlive || attempt !== this.loginAttempt || !this.showTwoVerifyPanel) return;
+      if ((result.code === 200 || String(result.code) === '200') && result.data?.token?.trim()) {
+        const storage = AppStorage.getInstance();
+        const prevSid = await storage.getStudentId();
+        const prevGraduate = await storage.getIsGraduate();
+        if (!this.isPageAlive || !this.showTwoVerifyPanel) return;
+        await this.prepareLoginAccount(storage, sid, false, prevSid, prevGraduate);
+        await this.saveLoginData(result.data.token, result.msg ?? '', sid, pwd);
         this.showTwoVerifyPanel = false;
         promptAction.showToast({ message: '登录成功', duration: 1500 });
         await router.pushUrl({ url: 'pages/main/MainPage' });
       } else {
         promptAction.showToast({ message: result.msg ?? '验证码错误', duration: 1800 });
       }
-    } catch (error) {
-      console.error(TAG, `verify login failed: ${JSON.stringify(error)}`);
+    } catch {
+      if (!this.isPageAlive) return;
       this.showTwoVerifyPanel = false;
-      promptAction.showToast({ message: '登录信息保存失败，请重新登录', duration: 2200 });
+      promptAction.showToast({ message: '登录确认失败，请重新登录', duration: 2200 });
+    } finally {
+      this.verifying = false;
     }
   }
   private async loginUndergrad(sid: string, pwd: string): Promise<void> {
@@ -431,9 +490,10 @@ struct LoginPage {
       this.handleLoginFail(sid, '网络异常，请稍后重试');
     }
   }
-  private handleLoginFail(sid: string, msg: string): void {
+  private handleLoginFail(sid: string, msg: string, countCredentialFailure: boolean = true): void {
     this.hideLoading();
     promptAction.showToast({ message: msg || '登录失败', duration: 2000 });
+    if (!countCredentialFailure) return;
     if (!this.errorCount[sid]) this.errorCount[sid] = 0;
     this.errorCount[sid]++;
     const c = this.errorCount[sid];
@@ -448,16 +508,47 @@ struct LoginPage {
 
   // ══════════ 保存登录数据 ══════════
 
+  private async prepareLoginAccount(storage: AppStorage, sid: string, isGraduate: boolean,
+    prevSid: string, prevGraduate: boolean): Promise<void> {
+    await storage.setIsGraduate(isGraduate);
+    if (prevSid && (prevSid !== sid || prevGraduate !== isGraduate)) {
+      await storage.resetCourseCache();
+      await storage.setToken('');
+      CourseStore.getInstance().setCourses([]);
+    }
+  }
+
+  /** 设备登录返回的 App 会话单独保存；教务 Cookie 仍然走 token 字段。 */
+  private async saveDeviceAppAuth(appAuth: DeviceAppAuth, sid: string): Promise<void> {
+    try {
+      if (!appAuth.accessToken?.trim()) return;
+      const s = AppStorage.getInstance();
+      const epoch = s.getSessionEpoch();
+      const saved = await s.setAppAuthTokensIfSession(epoch, sid,
+        appAuth.accessToken ?? '', appAuth.refreshToken ?? '',
+        appAuth.expiresAt ?? 0, appAuth.refreshExpiresAt ?? 0);
+      if (!saved) return;
+      if (appAuth.user?.avatarUrl) {
+        await s.setAvatarUrlForAccount(epoch, sid, appAuth.user.avatarUrl);
+      }
+      if (appAuth.user?.realName) await s.setRealName(appAuth.user.realName);
+      if (appAuth.user?.college) await s.setCollege(appAuth.user.college);
+      if (appAuth.user?.major) await s.setMajor(appAuth.user.major);
+    } catch (error) {
+      console.warn(TAG, `save device app auth failed: ${JSON.stringify(error)}`);
+    }
+  }
+
   private async saveLoginData(token: string, msg: string, sid: string, pwd: string): Promise<void> {
     try {
     const s = AppStorage.getInstance();
     const now = Date.now();
+    await s.setStudentId(sid);
     await s.setToken(token);
     await s.setTokenUpdateTime(now);
     await s.setTokenLastUseTime(now);
     await s.setMessage(msg);
     await s.setIsLogin(true);
-    await s.setStudentId(sid);
     await s.setPassword(pwd);
     await s.setSelectSemester(this.semesterStr);
     await s.setSemester(this.semesterStr);
@@ -544,9 +635,7 @@ private async fetchUserInfo(_sid: string): Promise<void> {
     this.clearLoginTimer();
     this.loginTimer = setTimeout(() => {
       if (!this.isPageAlive) return;
-      this.hideLoading();
-      promptAction.showToast({ message: '登录超时，请检查网络或稍后再试', duration: 3000 });
-      this.isLoggingIn = false;
+      this.updateLoading('教务系统响应较慢，仍在登录…');
     }, timeoutMs);
   }
 
