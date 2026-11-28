@@ -177,6 +177,32 @@ test('未登录时不认领旧档案', async () => {
   assert.equal(claimed.length, 1, '登录后由当前账号认领');
 });
 
+test('电表缓存隔离账号，旧全局缓存和切号在途写入都不会泄露给新账号', async () => {
+  const { storage } = await createStorage();
+  await storage.setSettingString('electricityRooms', '[{"id":"legacy"}]');
+  await storage.setStudentId('A');
+  await storage.setIsLogin(true);
+  assert.equal(await storage.getElectricityRoomsCache(), '');
+  const firstSession = storage.getSessionEpoch();
+  const cached = '[{"id":"A-room","remaining":"12"}]';
+  assert.equal(await storage.setElectricityRoomsCache('A', firstSession, cached), true);
+  assert.equal(await storage.getElectricityRoomsCache(), cached);
+
+  await storage.setStudentId('B');
+  assert.equal(await storage.getElectricityRoomsCache(), '');
+  assert.equal(await storage.setElectricityRoomsCache('A', firstSession, '[{"id":"late-A"}]'), false);
+  assert.equal(await storage.getElectricityRoomsCache(), '');
+  const secondSession = storage.getSessionEpoch();
+  assert.equal(await storage.setElectricityRoomsCache('B', secondSession, '[{"id":"B-room"}]'), true);
+
+  await storage.setIsLogin(false);
+  assert.equal(await storage.getElectricityRoomsCache(), '');
+  await storage.setIsLogin(true);
+  assert.equal(await storage.setElectricityRoomsCache('B', secondSession, '[]'), false);
+  await storage.setStudentId('A');
+  assert.equal(await storage.getElectricityRoomsCache(), cached);
+});
+
 test('共享课表启用时，个人课表写入无法覆盖已选档案的课程', async () => {
   const { storage } = await createStorage();
   await storage.setStudentId('A');
@@ -231,4 +257,18 @@ test('共享档案开学日期从当前账号档案取得，不读取全局缓�
     courses: [] }]);
   assert.equal(await storage.getSharedArchiveTermStartDate('shared_same'), '2026-09-07');
   assert.equal(await storage.getSharedArchiveTermStartDate('shared_missing'), '');
+});
+
+test('电表缓存合并时保留仍未读到的本地电表，更新云端匹配的余额', async () => {
+  const { storage } = await createStorage();
+  await storage.setStudentId('A');
+  await storage.setIsLogin(true);
+  const oldEpoch = storage.getSessionEpoch();
+  await storage.setElectricityRoomsCache('A', oldEpoch, '[{"id":"local"},{"id":"shared","remaining":"10"}]');
+  await storage.setStudentId('A');
+  const epoch = storage.getSessionEpoch();
+  assert.equal(await storage.setElectricityRoomsCache('A', epoch, '[{"id":"shared","remaining":"20"}]', true), true);
+  assert.deepEqual(JSON.parse(await storage.getElectricityRoomsCache()), [
+    { id: 'shared', remaining: '20' }, { id: 'local' },
+  ]);
 });

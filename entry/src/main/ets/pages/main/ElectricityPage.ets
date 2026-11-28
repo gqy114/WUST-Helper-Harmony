@@ -17,41 +17,79 @@ struct ElectricityPage {
   @State private showAdd: boolean = false;
   @State private locationEnd: boolean = false;
   private savedRooms: YKTSavedRoom[] = [];
+  private roomAccount: string = '';
+  private roomEpoch: number = -1;
 
   aboutToAppear(): void { this.loadSavedRooms(); }
 
   private async loadSavedRooms(): Promise<void> {
     this.loading = true;
+    const storage = AppStorage.getInstance();
+    this.roomEpoch = storage.getSessionEpoch();
+    this.roomAccount = (await storage.getStudentId()).trim();
+    if (!await this.isRoomSessionCurrent()) {
+      this.loading = false;
+      return;
+    }
     const result: RoomBalance[] = [];
     try {
       let cloudRooms: YKTSavedRoom[] = [];
       try { cloudRooms = await ElectricityApi.savedRooms(); } catch { console.warn('ElectricityPage', 'cloud rooms unavailable'); }
-      const localRooms = await this.localSavedRooms();
-      const rooms: YKTSavedRoom[] = cloudRooms.length > 0 ? cloudRooms : localRooms;
+      // 缓存读取期间重登时，存储层可能临时返回空值。等同账号的新会话稳定后再读。
+      const readEpoch = storage.getSessionEpoch();
+      let localRooms = await this.localSavedRooms();
+      if (!await this.isRoomSessionCurrent()) return;
+      if (readEpoch !== this.roomEpoch) localRooms = await this.localSavedRooms();
+      const snapshotEpoch = this.roomEpoch;
+      const rooms: YKTSavedRoom[] = cloudRooms.concat(localRooms.filter(local =>
+        !cloudRooms.some(cloud => cloud.id === local.id)));
       this.savedRooms = rooms;
       for (let i = 0; i < rooms.length; i++) {
         const room: YKTSavedRoom = rooms[i];
         try {
           const balance = await ElectricityApi.electricity(room.id);
+          if (!await this.isRoomSessionCurrent()) return;
           result.push({ id: room.id, name: room.name || '我的寝室', type: room.type || '', remaining: balance.remaining, unit: balance.unit });
+          room.remaining = balance.remaining;
+          room.unit = balance.unit;
         } catch { console.warn('ElectricityPage', `room query failed: ${room.id}`); }
       }
+      // 后台读到空列表不代表用户删除了电表；迟到的快照也不能覆盖重登后的缓存。
+      if (rooms.length > 0) await this.saveLocalRooms(snapshotEpoch);
     } catch { console.warn('ElectricityPage', 'saved rooms unavailable'); }
+    finally { this.loading = false; }
+    if (!await this.isRoomSessionCurrent()) return;
     this.balances = result;
-    this.loading = false;
     if (result.length === 0 && this.savedRooms.length === 0) { this.showAdd = true; this.loadLocations(''); }
     else if (result.length === 0) { promptAction.showToast({ message: '电费查询失败，请点击刷新重试', duration: 1800 }); }
   }
 
   private async localSavedRooms(): Promise<YKTSavedRoom[]> {
-    const raw = await AppStorage.getInstance().getSettingString('electricityRooms', '');
+    const raw = await AppStorage.getInstance().getElectricityRoomsCache();
     if (!raw) return [];
     try { return JSON.parse(raw) as YKTSavedRoom[]; } catch { return []; }
   }
 
-  private async saveLocalRooms(): Promise<void> {
+  private async saveLocalRooms(epoch: number = this.roomEpoch): Promise<void> {
+    await AppStorage.getInstance().setElectricityRoomsCache(
+      this.roomAccount, epoch, JSON.stringify(this.savedRooms), true);
+  }
+
+  private async isRoomSessionCurrent(): Promise<boolean> {
+    if (!this.roomAccount) return false;
     const storage = AppStorage.getInstance();
-    await storage.setSettingString('electricityRooms', JSON.stringify(this.savedRooms));
+    const account = (await storage.getStudentId()).trim();
+    const loggedIn = await storage.getIsLogin();
+    // 同一学号重新保存登录态会换 session epoch，但电表仍属于这个账号，不能清空。
+    if (loggedIn && account === this.roomAccount) {
+      this.roomEpoch = storage.getSessionEpoch();
+      return true;
+    }
+    if (loggedIn && account !== this.roomAccount) {
+      this.balances = [];
+      this.savedRooms = [];
+    }
+    return false;
   }
 
   private async refreshBalances(): Promise<void> {
@@ -64,10 +102,12 @@ struct ElectricityPage {
     let failed = 0;
     const updated = this.balances.slice();
     try {
+      if (!await this.isRoomSessionCurrent()) return;
       for (let i = 0; i < this.savedRooms.length; i++) {
         const room = this.savedRooms[i];
         try {
           const balance = await ElectricityApi.electricity(room.id);
+          if (!await this.isRoomSessionCurrent()) return;
           const index = updated.findIndex((item: RoomBalance) => item.id === room.id);
           const current = index >= 0 ? updated[index] : undefined;
           const next: RoomBalance = {
@@ -80,6 +120,7 @@ struct ElectricityPage {
           failed++;
         }
       }
+      if (!await this.isRoomSessionCurrent()) return;
       this.balances = updated;
       // 把最新余额写进本地电表记录，快捷卡片才能直接读到。
       for (let i = 0; i < this.savedRooms.length; i++) {
@@ -104,6 +145,7 @@ struct ElectricityPage {
     this.loading = true;
     try {
       const data = await ElectricityApi.electricity(room.id);
+      if (!await this.isRoomSessionCurrent()) return;
       const pathName = this.selected.map((item: YKTLocationItem) => item.name).join(' ');
       const roomType = pathName.includes('空调') ? '空调' : '寝室';
       const next = this.balances.filter((item: RoomBalance) => item.id !== room.id);
@@ -116,7 +158,7 @@ struct ElectricityPage {
       await this.saveLocalRooms();
       this.showAdd = false; this.selected = []; this.level = 0;
     } catch { promptAction.showToast({ message: '电费查询失败，请稍后重试', duration: 1500 }); }
-    this.loading = false;
+    finally { this.loading = false; }
   }
   private roomLabel(item: RoomBalance): string { const text = `${item.type}${item.name}`; return text.includes('空调') ? '空调电费' : '寝室电费'; }
 

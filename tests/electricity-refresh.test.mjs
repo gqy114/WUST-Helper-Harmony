@@ -15,6 +15,7 @@ async function createPage(query) {
   await module.evaluate();
   const page = new module.namespace.Page();
   page.saveLocalRooms = async () => {};
+  page.isRoomSessionCurrent = async () => true;
   Object.assign(page, { loading: false, refreshing: false, showAdd: false,
     savedRooms: [{ id: 'room', name: '寝室' }, { id: 'ac', name: '空调' }],
     balances: [{ id: 'room', name: '寝室', type: '', remaining: '10', unit: '度' },

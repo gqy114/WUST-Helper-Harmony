@@ -475,7 +475,12 @@ export class WidgetData {
     let roomLabel = '未绑定房间';
     let valueText = '—';
     try {
-      const raw = await storage.getSettingString('electricityRooms', '');
+      let raw = '';
+      try {
+        raw = await storage.getElectricityRoomsCache();
+      } catch (error) {
+        raw = '';
+      }
       const rooms = JSON.parse(raw || '[]') as QuickRoomPref[];
       if (Array.isArray(rooms) && rooms.length > 0) {
         const room = rooms[0];

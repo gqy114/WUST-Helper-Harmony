@@ -10,9 +10,12 @@ import { ScheduleSettings, DEFAULT_SETTINGS, CourseArchive, CourseData } from '.
 
 const STORE_NAME = 'wusthelper_prefs';
 
+interface ElectricityCacheRoom { id: string; }
+
 export class AppStorage {
   private static instance: AppStorage;
   private kvStore: preferences.Preferences | null = null;
+  onElectricityRoomsChanged?: () => void;
 
   private constructor() {}
 
@@ -282,13 +285,19 @@ export class AppStorage {
   // ── 登录与 Token ──
 
   async getIsLogin(): Promise<boolean> { return this.getBool('isLogin'); }
-  async setIsLogin(v: boolean): Promise<void> { return this.putBool('isLogin', v); }
+  async setIsLogin(v: boolean): Promise<void> {
+    const previous = await this.getIsLogin();
+    if (previous && !v) this.bumpSessionEpoch();
+    await this.putBool('isLogin', v);
+    if (previous !== v) this.onElectricityRoomsChanged?.();
+  }
   async getToken(): Promise<string> { return this.getStr('token'); }
   async setToken(v: string): Promise<void> { return this.putStr('token', v); }
   async getStudentId(): Promise<string> { return this.getStr('studentId'); }
   async setStudentId(v: string): Promise<void> {
     this.accountChangesPending++;
     this.bumpSessionEpoch();
+    let changed = false;
     const changeAccount = async (): Promise<void> => {
       // 等正在提交的资料/令牌写入完成：它们属于旧账号，必须在新学号落盘前写完，
       // 否则旧请求的结果可能被写到新账号下。
@@ -307,6 +316,7 @@ export class AppStorage {
       await this.claimLegacyArchives();
       await this.claimLegacyProfileForAccount(v);
       this.authIdentityAppliedVersion = identityVersion;
+      changed = previousSid !== v.trim();
     };
     const run = this.accountWriteChain.then(changeAccount, changeAccount);
     this.accountWriteChain = run.then((): void => {}, (): void => {});
@@ -314,8 +324,52 @@ export class AppStorage {
       await run;
     } finally {
       this.accountChangesPending--;
+      if (changed) this.onElectricityRoomsChanged?.();
     }
   }
+
+  async getElectricityRoomsCache(): Promise<string> {
+    const epoch = this.sessionEpoch;
+    if (this.accountChangesPending > 0 || !await this.getIsLogin()) return '';
+    const account = (await this.getStudentId()).trim();
+    if (!account || this.sessionEpoch !== epoch || this.accountChangesPending > 0) return '';
+    // 旧的全局缓存没有所有者，不能将它自动归给当前登录用户。
+    const value = await this.getStr('electricityRooms_' + account, '');
+    return this.sessionEpoch === epoch && this.accountChangesPending === 0 ? value : '';
+  }
+
+  async setElectricityRoomsCache(account: string, epoch: number, value: string,
+    preserveLocal: boolean = false): Promise<boolean> {
+    const sid = account.trim();
+    const key = 'electricityRooms_' + sid;
+    let written = false;
+    const saved = await this.commitSessionWrite(epoch, sid, async (): Promise<void> => {
+      if (!await this.getIsLogin() || this.sessionEpoch !== epoch) return;
+      let next = value;
+      if (preserveLocal) {
+        const existing = this.parseElectricityRooms(await this.getStr(key, ''));
+        const incoming = this.parseElectricityRooms(value);
+        next = JSON.stringify(incoming.concat(existing.filter(room =>
+          !incoming.some(updated => updated.id === room.id))));
+      }
+      if (this.sessionEpoch !== epoch) return;
+      await this.putStr(key, next);
+      written = true;
+    });
+    if (!saved || !written || this.sessionEpoch !== epoch) return false;
+    this.onElectricityRoomsChanged?.();
+    return true;
+  }
+
+  private parseElectricityRooms(value: string): ElectricityCacheRoom[] {
+    try {
+      const rooms = JSON.parse(value) as ElectricityCacheRoom[];
+      return Array.isArray(rooms) ? rooms : [];
+    } catch {
+      return [];
+    }
+  }
+
   async getPassword(): Promise<string> { return this.getStr('password'); }
   async setPassword(v: string): Promise<void> { return this.putStr('password', v); }
   async getPhysicalExperimentPassword(): Promise<string> { return this.getStr('physicalExperimentPassword'); }

@@ -60,7 +60,7 @@ test('快捷功能卡片渲染入口并支持点击跳转', async () => {
 test('快捷功能数据包含电量，且 EntryAbility 支持直达页面', async () => {
   const data = await src('entry/src/main/ets/widget/WidgetData.ets');
   assert.match(data, /WIDGET_MODE_QUICK/, '缺少快捷功能模式');
-  assert.match(data, /electricityRooms/, '没有读取电量缓存');
+  assert.match(data, /getElectricityRoomsCache/, '没有读取电量缓存');
   assert.match(data, /quickSnapshot/, '缺少快捷功能快照');
   const ability = await src('entry/src/main/ets/entryability/EntryAbility.ets');
   assert.match(ability, /widgetRoute/, 'EntryAbility 没有接收跳转路由');
