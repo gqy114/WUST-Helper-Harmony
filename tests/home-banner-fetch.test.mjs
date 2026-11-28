@@ -11,7 +11,7 @@ test('BannerImageLoader 自行抓取字节解码，不依赖 HTTP 状态码', as
   assert.match(loader, /http\.createHttp\(\)/, '缺少 http 请求');
   assert.match(loader, /expectDataType: http\.HttpDataType\.ARRAY_BUFFER/, '没有按二进制取响应');
   assert.match(loader, /image\.createImageSource\(body\)/, '没有解码响应体');
-  assert.match(loader, /createPixelMap\(\)/, '没有生成 PixelMap');
+  assert.match(loader, /createPixelMap\(/, '没有生成 PixelMap');
   assert.doesNotMatch(loader, /responseCode\s*!==\s*200/, '不能只认 200；图片字节有效即可');
   assert.match(loader, /BannerImageLoader\.cache\.set/, '缺少缓存');
 });
@@ -19,7 +19,7 @@ test('BannerImageLoader 自行抓取字节解码，不依赖 HTTP 状态码', as
 test('主页先用默认 banner 垫底，再用解码后的图片覆盖', async () => {
   const page = await source(`${root}/pages/main/MainPage.ets`);
   assert.match(page, /this\.loadBannerPixels\(\)/, 'banner 拉取后没有异步解码');
-  assert.match(page, /private bannerSource\(banner: HomeBanner\): image\.PixelMap \| string/, '缺少图片来源选择');
+  assert.match(page, /private bannerSource\(banner: HomeBanner\): image\.PixelMap \| Resource/, '缺少图片来源选择');
   const block = page.slice(page.indexOf('// ── Banner ──'), page.indexOf('// ── 公告栏 ──'));
   assert.match(block, /\$r\('app\.media\.default_banner'\)/, '缺少默认 banner 兜底');
   assert.ok(block.indexOf('app.media.default_banner') < block.indexOf('Image(this.bannerSource'),
@@ -60,6 +60,7 @@ test('返回仍在运行的首页会触发失败图片重试', async () => {
   assert.match(onShow, /this\.homeBanners\.some\(/, 'onPageShow 没有检查缺失的轮播图');
   assert.match(onShow, /BannerImageLoader\.clearFailures\(\)/, 'onPageShow 没有清掉失败缓存');
   assert.match(onShow, /this\.loadBannerPixels\(\)/, 'onPageShow 没有重新发起加载');
+  assert.match(onShow, /this\.failedBannerKeys = \[\]/, '页面仍然隐藏失败横幅，无法重试');
   // 已完全加载时不再重复下载
-  assert.match(page, /private bannerLoading: boolean = false;/, '缺少并发保护');
+  assert.match(page, /pendingBannerKeys/, '缺少并发保护');
 });
